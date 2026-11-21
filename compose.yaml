@@ -1,0 +1,62 @@
+name: campusfix-ai
+services:
+  web:
+    build: ./apps/web
+    environment:
+      API_BASE_URL: http://api:8080
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok) process.exitCode=1}).catch(()=>{process.exitCode=1})"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+  api:
+    build: ./apps/api
+    environment:
+      API_PORT: "8080"
+      DATABASE_URL: "${DATABASE_URL:-postgresql://${POSTGRES_USER:-campusfix}:${POSTGRES_PASSWORD:-campusfix-local}@db:5432/${POSTGRES_DB:-campusfix}?sslmode=disable}"
+      AI_BASE_URL: http://ai:8000
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      ai:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+  ai:
+    build: ./apps/ai
+    environment:
+      AI_PORT: "8000"
+    ports:
+      - "127.0.0.1:${AI_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+  db:
+    image: postgres:18.7-bookworm
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-campusfix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-campusfix-local}
+      POSTGRES_DB: ${POSTGRES_DB:-campusfix}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  postgres-data:

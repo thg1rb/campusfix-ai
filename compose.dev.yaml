@@ -1,0 +1,29 @@
+services:
+  web:
+    build:
+      target: development
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/web/src
+          target: /app/src
+        - action: rebuild
+          path: ./apps/web
+          ignore: [src/, node_modules/, .next/, .env, .env.local]
+  api:
+    develop:
+      watch:
+        - action: rebuild
+          path: ./apps/api
+          ignore: [.env]
+  ai:
+    build:
+      target: development
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/ai/src
+          target: /app/src
+        - action: rebuild
+          path: ./apps/ai
+          ignore: [src/, .venv/, .env]
