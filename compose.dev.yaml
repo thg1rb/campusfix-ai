@@ -1,5 +1,7 @@
 services:
   web:
+    # Keep Watch rebuilds from recreating dependencies.
+    depends_on: !reset {}
     build:
       target: development
     develop:
@@ -11,6 +13,7 @@ services:
           path: ./apps/web
           ignore: [src/, node_modules/, .next/, .env, .env.local]
   api:
+    depends_on: !reset {}
     develop:
       watch:
         - action: rebuild

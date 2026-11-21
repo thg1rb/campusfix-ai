@@ -30,10 +30,10 @@ check:
 	cd apps/ai && uv lock --check && uv sync --locked && uv run --locked python -c 'from campusfix_ai.main import app_factory; app_factory()'
 
 smoke:
-	@set -a; if [ -f .env ]; then . ./.env; fi; scripts/smoke.sh
+	@scripts/smoke.sh
 
 smoke-outage:
-	@set -a; if [ -f .env ]; then . ./.env; fi; scripts/smoke.sh --ai-outage
+	@scripts/smoke.sh --ai-outage
 
 migration-create:
 	@test -n "$(NAME)" || { echo "Usage: make migration-create NAME=describe_change"; exit 1; }

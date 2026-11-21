@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
-web="http://127.0.0.1:${WEB_PORT:-3000}"
-api="http://127.0.0.1:${API_PORT:-8080}"
-ai="http://127.0.0.1:${AI_PORT:-8000}"
+web="http://$(docker compose port web 3000)"
+api="http://$(docker compose port api 8080)"
+ai="http://$(docker compose port ai 8000)"
 body=$(mktemp)
 cleanup() {
   if [ "${restore:-0}" = 1 ]; then docker compose start ai; fi

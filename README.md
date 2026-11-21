@@ -37,6 +37,8 @@ Readiness returns HTTP 200 when both dependencies respond successfully and 503 w
 | `make smoke-outage` | Temporarily stop this project's AI container and check failure and recovery. |
 | `make down` | Take down the project while preserving its PostgreSQL volume. |
 
+The development override starts services independently so a Watch rebuild can replace one service without recreating its dependencies. Run `make smoke` in another terminal to wait for readiness. The smoke script uses the running Compose project's published ports.
+
 Stop the base stack before starting standalone services on the same ports. Start just the database with `docker compose up -d --wait db`. Run these commands in separate terminals from the repository root, after `make env`.
 
 ```sh

@@ -17,5 +17,13 @@ Verified on Docker Engine 29.1.5 with Compose v5.0.1.
 | AI stopped | API liveness stayed HTTP 200. API and Web readiness returned HTTP 503 with AI `unavailable` and PostgreSQL `ok`. |
 | AI restarted | Both readiness routes recovered to HTTP 200 with both dependencies `ok`. |
 | Database schema | PostgreSQL reported zero public tables. The migration command reported no migrations to apply. |
+| Development source changes | With `make dev`, Web rendered a temporary heading, AI reloaded to return a temporary health marker, and an API rebuild returned a temporary health marker. Each original response returned after restoring the source. The API rebuild preserved the Web and AI containers. |
+| Goose execution | The documented Make targets created and applied a temporary SQL migration against a disposable PostgreSQL container. Goose rolled it back successfully. No migration entered the repository history or touched the project database. |
 
-The PostgreSQL volume was preserved. The base stack was restored after development verification. Source-edit reload behavior and migration application against a real migration are outside these checks. Gateway health confirms process availability. JEV, similarity scoring and storage are reserved for future implementation.
+## Release review findings
+
+- **High:** An API Watch rebuild could recreate the AI dependency and leave it stopped. The development override now starts services independently. The base configuration retains health-gated startup.
+- **Medium:** The smoke targets sourced Compose's dotenv file as shell code and could probe different ports from the ones actually published. The script now discovers each running service's port through Compose.
+- **Low:** The Web and AI runtime images retain development-stage tooling. Image slimming is a separate optimization.
+
+The PostgreSQL volume was preserved. The base stack was restored after development verification. Gateway health confirms process availability. JEV, similarity scoring and storage are reserved for future implementation.
