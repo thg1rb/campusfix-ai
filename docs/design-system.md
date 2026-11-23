@@ -52,6 +52,7 @@ CampusFix AI คือเครื่องมือแจ้งและติ�
 | :--- | :--- | :--- |
 | Ticket `CONFIRMED` | เผยแพร่แล้ว | Emerald (`#065F46` / `#ECFDF5` / `#A7F3D0`) |
 | Ticket `WAITING_INFO` | รอข้อมูลเพิ่มเติม | Amber (`#92400E` / `#FFFBEB` / `#FDE68A`) |
+| Ticket `RESOLVED` | แก้ไขแล้ว | Neutral-Ink (`#334155` / `#F1F5F9` / `#CBD5E1`) |
 | Report `PENDING` | รอตรวจสอบ | Slate-Blue (`#1E40AF` / `#EFF6FF` / `#BFDBFE`) |
 | Report `CONFIRMED` | ยืนยันแล้ว | Emerald (`#065F46` / `#ECFDF5` / `#A7F3D0`) |
 | Report `REJECTED` | ไม่ผ่านการตรวจสอบ | Crimson (`#991B1B` / `#FEF2F2` / `#FECACA`) |
@@ -109,7 +110,7 @@ CampusFix AI คือเครื่องมือแจ้งและติ�
 - **Card Anatomy (เรียงลำดับข้อมูลชัดเจน):**
   1. ภาพปกสัดส่วน `16:10` (object-cover, ไม่มี overlay รก) + Badge Severity มุมบน
   2. หัวข้อ Ticket (สูงสุด 2 บรรทัด) + สถานที่ (Location)
-  3. Metadata แถวล่าง: Category, Status (แสดงชัดถ้าเป็น `WAITING_INFO`), จำนวน Report, จำนวนผู้ได้รับผลกระทบ (`Affected`) และเวลาที่ยืนยัน
+  3. Metadata แถวล่าง: Category, Status (แสดงชัดเมื่อเป็น `WAITING_INFO` หรือ `RESOLVED`), จำนวน Report, จำนวนผู้ได้รับผลกระทบ (`Affected`) และเวลาที่ยืนยัน
 - **ฟอร์มแจ้งปัญหา (Create Report):** ออกแบบให้ใช้งานมือเดียวบนมือถือได้ง่าย (ปุ่มถ่าย/เลือก 1–5 ภาพ, ปักหมุดบนแผนที่, Auto-save ชั่วคราวในเบราว์เซอร์ และปุ่ม `Submit` ชัดเจน)
 
 ### 4.2 Reviewer & Admin Workspace (Desktop-First, Operational)

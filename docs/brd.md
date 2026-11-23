@@ -17,7 +17,7 @@
 | **ชื่อระบบ** | CampusFix AI - แพลตฟอร์มรับแจ้ง วิเคราะห์ จัดกลุ่ม และติดตามสถานะการคัดกรองปัญหาทางกายภาพภายในมหาวิทยาลัย |
 | **ประเภทเอกสาร** | Business Requirements Document (BRD) |
 | **วันที่จัดทำ** | 5 ตุลาคม 2569 |
-| **สถานะ** | ฉบับปรับปรุงขอบเขต (สิ้นสุดกระบวนการที่ Reviewer) |
+| **สถานะ** | ฉบับปรับปรุงขอบเขต (ดำเนินการคัดกรอง เผยแพร่ และปิดสถานะแก้ไขโดย Reviewer) |
 | **ผู้อ่านหลัก** | ผู้สนับสนุนโครงการ ผู้บริหาร Reviewer ทีมพัฒนา ทีมปฏิบัติการ และผู้แทนผู้ใช้ |
 
 ### วิธีอ่านเอกสาร
@@ -46,7 +46,7 @@
 
 **CampusFix AI** เป็นแพลตฟอร์มกลางสำหรับรับ วิเคราะห์ ตรวจสอบ จัดกลุ่ม และเผยแพร่ข้อมูลปัญหาทางกายภาพหรือบริการส่วนกลางภายในมหาวิทยาลัยเกษตรศาสตร์ วิทยาเขตบางเขน
 
-ระบบครอบคลุมตั้งแต่ผู้ใช้รายงานปัญหาพร้อมภาพและตำแหน่ง ให้ AI ช่วยวิเคราะห์และจับคู่ปัญหาเบื้องต้น ให้มนุษย์ (Reviewer) ตรวจสอบยืนยันความถูกต้อง และเปิดเผยข้อมูลปัญหาที่ได้รับการยืนยันแล้วสู่สาธารณะเพื่อให้รับทราบทั่วกันอย่างโปร่งใส *(หมายเหตุ: ขั้นตอนการส่งต่อใบงานเพื่อลงมือซ่อมแซมและปิดงานโดยหน่วยงานปฏิบัติการอยู่นอกขอบเขตของระบบนี้)*
+ระบบครอบคลุมตั้งแต่ผู้ใช้รายงานปัญหาพร้อมภาพและตำแหน่ง ให้ AI ช่วยวิเคราะห์และจับคู่ปัญหาเบื้องต้น ให้มนุษย์ (Reviewer) ตรวจสอบยืนยันความถูกต้อง เปิดเผยข้อมูลปัญหาสู่สาธารณะ และอัปเดตสถานะเป็น `RESOLVED` เมื่อปัญหาได้รับการแก้ไขแล้วเพื่อให้ผู้แจ้งรับทราบ *(หมายเหตุ: ขั้นตอนการส่งต่อใบงานและระบบบริหารงานซ่อมของหน่วยงานปฏิบัติการอยู่นอกขอบเขตของระบบนี้)*
 
 ### 1.1 แนวคิดหลัก: Report กับ Ticket
 
@@ -76,7 +76,7 @@ AI ช่วยจำแนก Category ประเมิน Severity ค้น
 
 ### 1.4 ขอบเขต MVP โดยสรุป
 
-MVP จำกัดที่วิทยาเขตบางเขน ใช้ Google OAuth สำหรับการเข้าสู่ระบบ (และออกแบบรองรับการเปลี่ยนไปใช้ KU-ALL SSO ในระยะถัดไป) รองรับรายงานพร้อมภาพ 1–5 ภาพ (ลบข้อมูล EXIF เพื่อความเป็นส่วนตัว) และตำแหน่ง การวิเคราะห์ AI จากข้อความ/ภาพ/ตำแหน่ง การ Review และยืนยันข้อมูลโดยมนุษย์ Public Feed/Map, Email แจ้งเตือนผลการตรวจสอบ และ Dashboard/การจัดการข้อมูลหลัก ทั้งนี้ **กระบวนการส่งต่อเรื่องให้หน่วยงานลงมือแก้ไขซ่อมแซม (Department Workflow & Resolution)**, การให้ Feedback หลังซ่อม, SLA, วิดีโอ, AI Assistant, Heatmap ขั้นสูง และ KU-ALL SSO อยู่นอกขอบเขต MVP *(รายละเอียดในบทที่ 5)*
+MVP จำกัดที่วิทยาเขตบางเขน ใช้ Google OAuth สำหรับการเข้าสู่ระบบ (และออกแบบรองรับการเปลี่ยนไปใช้ KU-ALL SSO ในระยะถัดไป) รองรับรายงานพร้อมภาพ 1–5 ภาพ (ลบข้อมูล EXIF เพื่อความเป็นส่วนตัว) และตำแหน่ง การวิเคราะห์ AI จากข้อความ/ภาพ/ตำแหน่ง การ Review ยืนยัน และอัปเดตสถานะ `RESOLVED` โดย Reviewer, Public Feed/Map, Email แจ้งเตือนผลการตรวจสอบและเมื่อปัญหาได้รับการแก้ไข และ Dashboard/การจัดการข้อมูลหลัก ทั้งนี้ **กระบวนการส่งต่อใบงานและระบบปฏิบัติการซ่อมแซมของหน่วยงาน (Department Workflow)**, การให้ Feedback หลังซ่อม, SLA, วิดีโอ, AI Assistant, Heatmap ขั้นสูง และ KU-ALL SSO อยู่นอกขอบเขต MVP *(รายละเอียดในบทที่ 5)*
 
 ---
 
@@ -126,8 +126,8 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 
 | บทบาท | ความต้องการหลัก | สิทธิ์/ขอบเขตโดยสรุป |
 | :--- | :--- | :--- |
-| **Reporter** | ดูปัญหาที่ผ่านการยืนยันแล้ว, แจ้งง่าย, ติดตามสถานะการตรวจสอบ และให้ข้อมูลเพิ่ม | อ่าน Ticket ที่เผยแพร่แล้ว (`CONFIRMED` และ `WAITING_INFO`), Feed, Map, Timeline; สร้าง/แก้/ถอน Report ที่ยัง `PENDING`, ติดตาม Ticket ของตน, กด `Mark Affected` และใช้ Private Thread *(เฉพาะ Ticket ที่ตนมี Confirmed Report)* |
-| **Reviewer** | คัดกรอง ควบคุมคุณภาพข้อมูล จัดกลุ่ม และอนุมัติเผยแพร่ | ตรวจ Report, ปรับ AI Result, Confirm/Reject, เลือก Ticket หรือสร้าง Ticket ใหม่ และขอข้อมูลเพิ่มเติมบน Ticket ที่ยืนยันแล้ว |
+| **Reporter** | ดูปัญหาที่ผ่านการยืนยันแล้ว, แจ้งง่าย, ติดตามสถานะการตรวจสอบและการแก้ไข และให้ข้อมูลเพิ่ม | อ่าน Ticket ที่เผยแพร่แล้ว (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`), Feed, Map, Timeline; สร้าง/แก้/ถอน Report ที่ยัง `PENDING`, ติดตาม Ticket ของตน, กด `Mark Affected` และใช้ Private Thread *(เฉพาะ Ticket ที่ตนมี Confirmed Report)* |
+| **Reviewer** | คัดกรอง ควบคุมคุณภาพข้อมูล จัดกลุ่ม อนุมัติเผยแพร่ และอัปเดตสถานะเมื่อแก้ไขแล้ว | ตรวจ Report, ปรับ AI Result, Confirm/Reject, เลือก Ticket หรือสร้าง Ticket ใหม่, ขอข้อมูลเพิ่มเติมบน Ticket ที่ยืนยันแล้ว และเปลี่ยนสถานะ Ticket เป็น `RESOLVED` เมื่อปัญหาได้รับการแก้ไข |
 | **Administrator** | กำกับข้อมูลหลัก สิทธิ์ และภาพรวมระบบ | จัดการ User/Role/Permission, Category, Location, Configuration และ System Analytics |
 
 ### 4.1 หลักสิทธิ์ที่ใช้ร่วมกันทุกบทบาท
@@ -146,15 +146,15 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 | ขอบเขต | ความสามารถ |
 | :--- | :--- |
 | **พื้นที่และการเข้าสู่ระบบ** | KU บางเขน; Google OAuth (ออกแบบรองรับ KU-ALL SSO ในระยะถัดไป); Username สาธารณะ; Public Read ไม่ต้อง Login |
-| **Reporter** | สร้าง/แก้/ถอน Report ที่ยัง `PENDING`, ภาพ, Map Point, Public Feed, Thread, Email แจ้งผลตรวจ, Mark Affected |
-| **AI** | Classification, Severity (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`), Matching กับ Confirmed Ticket, Title/Summary, Confidence, Fallback |
-| **Reviewer** | Review, แก้ผล AI, ยืนยัน Ticket ใหม่/เดิม, Reject พร้อมเหตุผล, Request Information (เฉพาะบน Ticket ที่ยืนยันแล้ว) |
+| **Reporter** | สร้าง/แก้/ถอน Report ที่ยัง `PENDING`, ภาพ, Map Point, Public Feed, Thread, Email แจ้งผลตรวจและเมื่อแก้ไขแล้ว, Mark Affected |
+| **AI** | Classification, Severity (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`), Matching กับ Ticket ที่ยังเปิดอยู่ (`CONFIRMED`/`WAITING_INFO`), Title/Summary, Confidence, Fallback |
+| **Reviewer** | Review, แก้ผล AI, ยืนยัน Ticket ใหม่/เดิม, Reject พร้อมเหตุผล, Request Information (เฉพาะบน Ticket ที่ยืนยันแล้ว), เปลี่ยนสถานะ Ticket เป็น `RESOLVED` |
 | **Administrator** | จัดการ User/Role/Permission, Category, Location; System Dashboard และ Analytics |
 | **แผนที่** | เลือกตำแหน่ง Report และแสดง Ticket บนแผนที่แบบพื้นฐาน |
 
 ### 5.2 สิ่งที่อยู่นอก MVP (Out of Scope)
 
-**การส่งต่อเรื่องเพื่อดำเนินการแก้ไข/ซ่อมแซม (Department Workflow, การเปลี่ยนสถานะกำลังซ่อม, การบันทึกหลักฐานการซ่อม และการปิดงาน Resolved)**; การประเมินความพึงพอใจหลังซ่อม (Feedback); Video Upload/Analysis; AI Assistant; Detailed Heatmap และ Advanced Spatial Analytics; Predictive Maintenance; Recurring Ticket Link; SLA/Escalation; Internal Note; Public Comment Discussion; Multi-University/Multi-Tenant; และ KU-ALL SSO รวมถึง Authentication Provider อื่น (เลื่อนไปเชื่อมต่อในระยะถัดไป)
+**กระบวนการส่งต่อใบงานและระบบปฏิบัติการซ่อมแซมของหน่วยงาน (Department Role/Workflow, Work Dashboard, สถานะกำลังซ่อม `IN_PROGRESS`/`CANNOT_RESOLVE` และการบันทึกหลักฐานการซ่อมโดยช่าง)**; การประเมินความพึงพอใจหลังซ่อม (Feedback); Video Upload/Analysis; AI Assistant; Detailed Heatmap และ Advanced Spatial Analytics; Predictive Maintenance; Recurring Ticket Link; SLA/Escalation; Internal Note; Public Comment Discussion; Multi-University/Multi-Tenant; และ KU-ALL SSO รวมถึง Authentication Provider อื่น (เลื่อนไปเชื่อมต่อในระยะถัดไป)
 
 ### 5.3 ขอบเขตเชิงปริมาณที่ระบุไว้
 
@@ -171,16 +171,16 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 
 ### 6.1 ภาพรวมการไหลของงาน
 
-เรื่องแจ้งหนึ่งเรื่องเดินทางผ่าน 6 ขั้นตอน โดยสิ้นสุดกระบวนการเมื่อ Reviewer ยืนยันข้อมูลและเผยแพร่เข้าสู่ระบบสาธารณะ
+เรื่องแจ้งหนึ่งเรื่องเดินทางผ่าน 6 ขั้นตอน ตั้งแต่ผู้ใช้แจ้งปัญหา คัดกรองและเผยแพร่ จนถึงเมื่อ Reviewer อัปเดตสถานะเป็น `RESOLVED` หลังปัญหาได้รับการแก้ไข
 
 | ขั้น | ผู้ดำเนินการ | ผลลัพธ์/การควบคุม |
 | :--- | :--- | :--- |
 | **1** | Reporter | สร้าง Report; เลือก Location และแนบภาพ; กด Submit เพื่อส่งตรวจ |
-| **2** | ระบบ + AI | ตั้งสถานะ `PENDING`; วิเคราะห์ข้อความ/ภาพ/ตำแหน่ง; ค้นหา Confirmed Ticket ที่ใกล้เคียง และแนบข้อเสนอ AI ไว้บน Report |
+| **2** | ระบบ + AI | ตั้งสถานะ `PENDING`; วิเคราะห์ข้อความ/ภาพ/ตำแหน่ง; ค้นหา Ticket ที่ยังเปิดอยู่ (`CONFIRMED`/`WAITING_INFO`) และแนบข้อเสนอ AI ไว้บน Report |
 | **3** | Reviewer | ตรวจเวอร์ชันล่าสุด; แก้ข้อเสนอ AI; เลือกผูก Ticket เดิม/สร้าง Ticket ใหม่ หรือ Reject พร้อมเหตุผล |
 | **4** | ระบบ | Confirm: Report ผูก Ticket หนึ่งรายการ; หากสร้างใหม่ Ticket จะเกิดขึ้นในสถานะ `CONFIRMED` และเปิดเผยบน Public Feed/Map ทันที; ส่งอีเมลแจ้ง Reporter |
-| **5** | Reviewer / Reporter / ผู้ได้รับผลกระทบ | ติดตาม Ticket ที่เผยแพร่แล้ว, กด Mark Affected, และหากผู้มีอำนาจหรือ Reviewer ต้องการข้อมูลเพิ่มบน Ticket นั้น สามารถเปลี่ยนเป็น `WAITING_INFO` เพื่อสื่อสารผ่าน Private Thread |
-| **6** | Administrator | วิเคราะห์สถิติข้อมูลการแจ้งปัญหาและประสิทธิภาพการคัดกรองผ่าน Dashboard |
+| **5** | Reviewer / Reporter / ผู้ได้รับผลกระทบ | ติดตาม Ticket ที่เผยแพร่แล้ว, กด Mark Affected (บน Ticket ที่ยังเปิดอยู่), หากต้องการข้อมูลเพิ่ม Reviewer เปลี่ยนเป็น `WAITING_INFO` เพื่อสื่อสารผ่าน Private Thread และเมื่อปัญหาได้รับการแก้ไขแล้ว Reviewer เปลี่ยนเป็น `RESOLVED` พร้อมส่งอีเมลแจ้ง Reporter |
+| **6** | Administrator | วิเคราะห์สถิติข้อมูลการแจ้งปัญหา สถานะการแก้ไข และประสิทธิภาพการคัดกรองผ่าน Dashboard |
 
 ### 6.2 ขั้นที่ 1: Reporter สร้าง Report
 
@@ -215,7 +215,7 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 | **จำแนกปัญหา** | แนะนำ Category, Confidence และ Alternative Category เมื่อเหมาะสม; Category จัดการโดย Administrator |
 | **ประเมิน Severity** | ประเมินระดับของ Report และช่วยประเมิน Ticket จาก Reports ที่อยู่ภายใต้ Ticket; Reviewer กำหนดค่า Final |
 | **ไม่อนุมานความรุนแรงจากจำนวนล้วน** | จำนวน Report ที่มากไม่ทำให้ Severity สูงขึ้นโดยอัตโนมัติ |
-| **ค้นหาเหตุการณ์ซ้ำ** | จับคู่กับ Confirmed Ticket เท่านั้น โดยใช้ภาพ+ข้อความ+ตำแหน่ง แสดงรายการ Ticket ที่ใกล้เคียงพร้อม Confidence/Similarity |
+| **ค้นหาเหตุการณ์ซ้ำ** | จับคู่กับ Ticket ที่ยังเปิดอยู่ (`CONFIRMED` และ `WAITING_INFO`) เท่านั้น โดยใช้ภาพ+ข้อความ+ตำแหน่ง แสดงรายการ Ticket ที่ใกล้เคียงพร้อม Confidence/Similarity |
 | **สร้างหัวข้อ/สรุป** | สร้างข้อเสนอ Report Title และ Ticket Title/Summary แนบไว้บน Report; Reviewer ตรวจ/แก้ก่อน Confirm |
 | **ไม่เปลี่ยนข้อมูล Final เอง** | เมื่อมี Report เพิ่ม อาจคำนวณข้อเสนอ Ticket Title/Summary ใหม่ได้ แต่ห้ามเปลี่ยน Final Ticket Data โดยไม่มี Reviewer ตรวจ |
 | **ความทนทานเมื่อ AI ขัดข้อง** | Timeout/Error/Unavailable/วิเคราะห์ไม่ได้ ต้องบันทึก Report ได้; Reviewer ทำ Classification, Severity, Title/Summary และ Duplicate Review เองได้ |
@@ -249,20 +249,21 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 | **Reject** | Reject Report สถานะ `PENDING` พร้อม Reason; Report เป็น Final, ไม่ผูก Ticket, ไม่ Public และบันทึก Audit Log |
 | **ข้อมูลก่อน Confirm Ticket ใหม่** | ต้องมี Category, Severity, Matching Decision และ Title/Summary ครบถ้วน |
 | **ขอข้อมูลเพิ่มเติม** | เกิดขึ้นได้เฉพาะบน **Ticket ที่ `CONFIRMED` แล้วเท่านั้น** (ไม่เกิดกับ Report ในสถานะ `PENDING`) เพื่อรองรับกรณีแจ้งเรื่องต่อผู้มีอำนาจแล้วต้องการรายละเอียดเพิ่มเติมจาก Reporter |
-| **ข้อจำกัดตนเอง** | ห้าม Review/Confirm/Reject Report ที่ตนเป็น Reporter; ห้ามดำเนินการกับรายการของตนเอง |
+| **อัปเดตสถานะแก้ไขแล้ว (`RESOLVED`)** | Reviewer สามารถเปลี่ยนสถานะ Ticket (`CONFIRMED` หรือ `WAITING_INFO`) เป็น `RESOLVED` พร้อมบันทึกสรุปสั้น ๆ (ไม่บังคับ) เมื่อได้รับการยืนยันว่าปัญหาถูกแก้ไขแล้ว และส่งอีเมลแจ้ง Reporter |
+| **ข้อจำกัดตนเอง** | ห้าม Review/Confirm/Reject หรือเปลี่ยนสถานะ `RESOLVED` รายการที่ตนเป็น Reporter; ห้ามดำเนินการกับรายการของตนเอง |
 
-> **กรณี Report ซ้ำ:** การตรวจซ้ำเป็นการจัดกลุ่ม ไม่ใช่การลบ Report ใหม่ยังคงเป็นข้อมูลแยกและมี Reporter/รายละเอียด/ภาพของตนเอง เมื่อ Reviewer ยืนยันว่าเป็นเหตุการณ์เดียวกัน Report นั้นจึงผูกกับ Ticket เดิม
+> **กรณี Report ซ้ำ:** การตรวจซ้ำเป็นการจัดกลุ่ม ไม่ใช่การลบ Report ใหม่ยังคงเป็นข้อมูลแยกและมี Reporter/รายละเอียด/ภาพของตนเอง เมื่อ Reviewer ยืนยันว่าเป็นเหตุการณ์เดียวกัน Report นั้นจึงผูกกับ Ticket เดิมที่ยังเปิดอยู่
 
 ### 6.5 ขั้นที่ 4–5: หลังการยืนยัน ผู้ใช้ติดตามและมีส่วนร่วม
 
-เมื่อ Reviewer Confirm แล้ว Report ผูกกับ Ticket หนึ่งรายการ และหากเป็นการสร้างใหม่ Ticket จะเกิดขึ้นในสถานะ `CONFIRMED` และเปิดเป็น Public ทันที (และยังคงแสดงเป็น Ticket ที่เปิดอยู่ในระบบสาธารณะแม้เปลี่ยนเป็น `WAITING_INFO`) ผู้ใช้สามารถติดตามและมีส่วนร่วมได้ดังนี้
+เมื่อ Reviewer Confirm แล้ว Report ผูกกับ Ticket หนึ่งรายการ และหากเป็นการสร้างใหม่ Ticket จะเกิดขึ้นในสถานะ `CONFIRMED` และเปิดเป็น Public ทันที ผู้ใช้สามารถติดตามและมีส่วนร่วมได้ดังนี้
 
 | ข้อกำหนด | เกณฑ์การยอมรับโดยสรุป |
 | :--- | :--- |
-| **ติดตาม/ข้อมูลเพิ่ม** | ติดตาม Ticket ที่เผยแพร่แล้ว (`CONFIRMED` และ `WAITING_INFO`) และเข้าร่วม Private Thread เมื่อ Reviewer เปิด Request Additional Information บน Ticket นั้น (เฉพาะ Reporter ที่มี Confirmed Report ใน Ticket; ดูหัวข้อ 8.2) |
-| **Mark Affected** | ต้อง Login; หนึ่ง User ต่อ Ticket; สามารถกดยืนยันหรือยกเลิก (Unmark) ได้บน Ticket ที่เผยแพร่แล้ว (`CONFIRMED` และ `WAITING_INFO`) |
+| **ติดตาม/ข้อมูลเพิ่ม** | ติดตาม Ticket ที่เผยแพร่แล้ว (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`) และเข้าร่วม Private Thread เมื่อ Reviewer เปิด Request Additional Information บน Ticket นั้น (เฉพาะ Reporter ที่มี Confirmed Report ใน Ticket; ดูหัวข้อ 8.2) |
+| **Mark Affected** | ต้อง Login; หนึ่ง User ต่อ Ticket; สามารถกดยืนยันหรือยกเลิก (Unmark) ได้บน Ticket ที่ยังเปิดอยู่ (`CONFIRMED` และ `WAITING_INFO`) เท่านั้น (เมื่อเป็น `RESOLVED` จะคงยอดไว้เป็นข้อมูลประวัติ) |
 
-### 6.6 วงจรสถานะและ Transition ของ Ticket (`CONFIRMED`, `WAITING_INFO`)
+### 6.6 วงจรสถานะและ Transition ของ Ticket (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`)
 
 Ticket จะถูกสร้างขึ้นเมื่อ Reviewer ยืนยันสร้าง Ticket ใหม่เท่านั้น ดังนั้น Ticket ทุกรายการในระบบคือปัญหาที่ผ่านการยืนยันแล้วและแสดงบนระบบสาธารณะ
 
@@ -271,8 +272,9 @@ Ticket จะถูกสร้างขึ้นเมื่อ Reviewer ยื
 | *(สร้างใหม่)* | **CONFIRMED** | Reviewer ยืนยันสร้าง Ticket ใหม่พร้อมข้อมูลบังคับ (Category, Severity, Title/Summary) → กลายเป็น Public ทันที และบันทึก Audit Log |
 | **CONFIRMED** | **WAITING_INFO** | Reviewer ขอข้อมูลเพิ่มเติมจาก Reporter บน Ticket (เช่น กรณีผู้มีอำนาจต้องการรายละเอียดเพิ่ม) → เปิด Private Thread และส่งอีเมลแจ้ง Reporter; Ticket ยังคงแสดงใน Public Feed/Map โดยระบุสถานะ `WAITING_INFO` |
 | **WAITING_INFO** | **CONFIRMED** | Reviewer ได้รับข้อมูลครบถ้วนและยืนยันข้อมูลล่าสุด → ปิดสถานะรอข้อมูลและบันทึก Audit Log |
+| **CONFIRMED** / **WAITING_INFO** | **RESOLVED** | Reviewer ยืนยันว่าปัญหาได้รับการแก้ไขแล้ว (ระบุหมายเหตุสรุปเพิ่มเติมได้) → ส่งอีเมลแจ้ง Reporter ของ Ticket, แสดงสถานะ `RESOLVED` บน Public Feed/Timeline และบันทึก Audit Log *(Final)* |
 
-*(หมายเหตุ: กรณี Reviewer ยืนยัน Report ใหม่ให้ผูกเข้ากับ Ticket เดิม สถานะของ Ticket เดิมจะไม่เปลี่ยนโดยอัตโนมัติ)*
+*(หมายเหตุ: กรณี Reviewer ยืนยัน Report ใหม่ให้ผูกเข้ากับ Ticket เดิมที่ยังเปิดอยู่ สถานะของ Ticket เดิมจะไม่เปลี่ยนโดยอัตโนมัติ; หากปัญหาเกิดซ้ำหลัง Ticket เป็น `RESOLVED` แล้ว ให้สร้างเป็น Ticket ใหม่)*
 
 ---
 
@@ -287,7 +289,7 @@ Ticket จะถูกสร้างขึ้นเมื่อ Reviewer ยื
 | **AI ไม่ขวางการแจ้ง** | Timeout/Error/Unavailable/วิเคราะห์ภาพไม่ได้ ต้องไม่ทำให้การบันทึก Report ล้มเหลว |
 | **สร้าง Ticket เมื่อยืนยันเท่านั้น** | ข้อเสนอของ AI เก็บไว้บน Report และระบบจะสร้าง Ticket จริงเมื่อ Reviewer กด Confirm เท่านั้น |
 | **แยกตัวชี้วัด** | Ticket Count, Report Count และ Affected User Count เป็นคนละ Metric |
-| **Public เฉพาะข้อมูลที่ยืนยัน** | Ticket ทุกรายการ (`CONFIRMED` และ `WAITING_INFO`) เป็น Public; Report ที่ยังไม่ Confirm (`PENDING`), `REJECTED` และ Additional Information Thread ไม่เป็น Public |
+| **Public เฉพาะข้อมูลที่ยืนยัน** | Ticket ทุกรายการ (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`) เป็น Public; Report ที่ยังไม่ Confirm (`PENDING`), `REJECTED` และ Additional Information Thread ไม่เป็น Public |
 | **ควบคุมสิทธิ์ตามหน้าที่** | Google OAuth สำหรับการใช้งานที่ต้อง Login (ออกแบบรองรับ KU-ALL SSO ในระยะถัดไป); Public Read เปิดได้; Separation of Duties บังคับใช้ |
 | **เก็บร่องรอย** | การเปลี่ยนข้อมูล/สถานะ/ผล AI/การตัดสินใจ/การถอน Report ต้องระบุผู้กระทำและเวลา |
 
@@ -299,9 +301,9 @@ Ticket จะถูกสร้างขึ้นเมื่อ Reviewer ยื
 
 | ส่วน | พฤติกรรมที่กำหนด |
 | :--- | :--- |
-| **Feed** | ไม่ต้อง Login; แสดง Ticket ที่เปิดอยู่และผ่านการยืนยันแล้ว (`CONFIRMED` และ `WAITING_INFO`); เรียง Confirmed Time ล่าสุดก่อน |
+| **Feed** | ไม่ต้อง Login; แสดง Ticket ที่ผ่านการยืนยันแล้ว (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`); เรียง Confirmed Time ล่าสุดก่อน |
 | **ค้นหา** | Ticket ID, Title, Description, Location, Category |
-| **ตัวกรอง** | Severity, Category, Date, Location |
+| **ตัวกรอง** | Status, Severity, Category, Date, Location |
 | **Pagination** | รองรับการแบ่งหน้า 25, 50 หรือ 100 รายการต่อหน้า |
 | **Ticket Detail** | ID, Title, Summary, Status, Severity, Category, Location, Reports/Thumbnail/AI Report Title, Counts และ Public Timeline |
 | **Report Detail** | Reporter Username ปัจจุบัน, Description, รูปภาพ และ Location |
@@ -318,6 +320,7 @@ MVP ใช้ Email เฉพาะเหตุการณ์สำคัญข
 * Report Confirmed กับ Ticket ใหม่
 * Report Confirmed เข้าสู่ Ticket เดิม
 * WAITING_INFO (Reviewer ขอข้อมูลเพิ่มเติม)
+* RESOLVED (Reviewer ยืนยันว่าปัญหาได้รับการแก้ไขแล้ว)
 
 ผู้รับคือ Reporter ของ Ticket เท่านั้น ผู้ที่กด Mark Affected อย่างเดียวไม่ได้รับอีเมล
 
@@ -354,7 +357,7 @@ MVP ใช้ Email เฉพาะเหตุการณ์สำคัญข
 | **ข้อมูลที่ไม่เปิดเผย** | ไม่เปิดเผยชื่อจริง, Email, รหัสนิสิต หรือภาควิชา; รูปภาพที่อัปโหลดต้องถูกลบ EXIF Metadata ก่อนจัดเก็บ/เผยแพร่ |
 | **Separation of Duties** | Reporter ของ Report/Ticket ห้าม Review/Confirm/Reject รายการเดียวกัน |
 | **Thread** | Private สำหรับผู้เกี่ยวข้องตามสิทธิ์เท่านั้น (เปิดใช้งานเฉพาะบน Ticket ที่ยืนยันแล้ว) |
-| **สถานะข้อมูล** | Report สถานะ `PENDING`, `REJECTED` และ Additional Information Thread ไม่ Public; Ticket ทุกรายการ (`CONFIRMED` และ `WAITING_INFO`) เป็น Public |
+| **สถานะข้อมูล** | Report สถานะ `PENDING`, `REJECTED` และ Additional Information Thread ไม่ Public; Ticket ทุกรายการ (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`) เป็น Public |
 | **Retention** | Report ที่ถูกถอนก่อนตรวจจะถูกลบออกจากคิวตรวจโดยเก็บ Audit Log ไว้ตรวจสอบย้อนหลัง; Report สถานะ `CONFIRMED`/`REJECTED` และ Ticket ไม่มี Retention Rule ในข้อกำหนดปัจจุบัน |
 | **Audit** | Actor, Role, Timestamp และประวัติการเปลี่ยนแปลงสำคัญรวมถึงการถอน Report ตรวจสอบย้อนหลังได้ |
 
@@ -368,11 +371,11 @@ MVP ใช้ Email เฉพาะเหตุการณ์สำคัญข
 * Authentication ในระยะ MVP ใช้ Google OAuth โดยออกแบบแยกชั้น Provider เพื่อรองรับ KU-ALL SSO ในระยะถัดไป; Public Read เปิดโดยไม่ Login
 * Category เริ่มต้นประมาณ 5 กลุ่มหลัก แต่ Administrator จัดการได้
 * Map ใน MVP เป็นการเลือกพิกัดและแสดง Ticket ขั้นพื้นฐาน
-* ขอบเขตของระบบสิ้นสุดที่การยืนยันและเผยแพร่ข้อมูลปัญหาที่ผ่านการคัดกรองโดย Reviewer (รวมถึงการขอข้อมูลเพิ่มเติมบน Ticket ที่ยืนยันแล้วเมื่อผู้มีอำนาจต้องการรายละเอียดเพิ่ม)
+* ขอบเขตของระบบดำเนินการโดย Reviewer ตั้งแต่การยืนยันและเผยแพร่ข้อมูลปัญหา การขอข้อมูลเพิ่มเติมบน Ticket ไปจนถึงการอัปเดตสถานะเป็น `RESOLVED` เมื่อปัญหาได้รับการแก้ไขแล้ว
 
 ### 11.2 สิ่งที่อยู่นอกขอบเขต / เลื่อนไประยะถัดไป
 
-* **กระบวนการรับเรื่องไปดำเนินการแก้ไขซ่อมแซม (Department Workflow, Work Dashboard, Status IN_PROGRESS/RESOLVED/CANNOT_RESOLVE, และการบันทึกหลักฐานการซ่อม)**
+* **กระบวนการส่งต่อใบงานและระบบปฏิบัติการซ่อมแซมของหน่วยงาน (Department Role/Workflow, Work Dashboard, Status `IN_PROGRESS`/`CANNOT_RESOLVE`, และการบันทึกหลักฐานการซ่อมโดยช่าง)**
 * **การให้คะแนนความพึงพอใจหลังซ่อมแซม (Post-Resolution Feedback)**
 * **KU-ALL SSO** และผู้ให้บริการยืนยันตัวตนอื่นนอกเหนือจาก Google OAuth (เลื่อนไปเชื่อมต่อในระยะถัดไป)
 * วิดีโอและการวิเคราะห์วิดีโอ; Heatmap/Spatial Analytics ขั้นสูง; AI Summarization ขั้นสูง/AI Assistant; Recurring Problem Analysis; Predictive Maintenance; SLA/Escalation; ช่องทางแจ้งเตือนเพิ่มเติม; การขยายวิทยาเขต/มหาวิทยาลัย; Integration กับระบบบริหารงานซ่อมของหน่วยงานภายนอก
