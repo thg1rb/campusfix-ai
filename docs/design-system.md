@@ -51,11 +51,10 @@ CampusFix AI คือเครื่องมือแจ้งและติ�
 | Entity / Status | ความหมายบน UI | โทนสี |
 | :--- | :--- | :--- |
 | Ticket `CONFIRMED` | เผยแพร่แล้ว | Emerald (`#065F46` / `#ECFDF5` / `#A7F3D0`) |
-| Ticket `WAITING_INFORMATION` | รอข้อมูลเพิ่มเติม | Amber (`#92400E` / `#FFFBEB` / `#FDE68A`) |
-| Report `DRAFT` | ฉบับร่าง | Neutral (`#475569` / `#F1F5F9` / `#CBD5E1`) |
-| Report `PENDING_REVIEW` | รอตรวจสอบ | Slate-Blue (`#1E40AF` / `#EFF6FF` / `#BFDBFE`) |
+| Ticket `WAITING_INFO` | รอข้อมูลเพิ่มเติม | Amber (`#92400E` / `#FFFBEB` / `#FDE68A`) |
+| Report `PENDING` | รอตรวจสอบ | Slate-Blue (`#1E40AF` / `#EFF6FF` / `#BFDBFE`) |
+| Report `CONFIRMED` | ยืนยันแล้ว | Emerald (`#065F46` / `#ECFDF5` / `#A7F3D0`) |
 | Report `REJECTED` | ไม่ผ่านการตรวจสอบ | Crimson (`#991B1B` / `#FEF2F2` / `#FECACA`) |
-| Report `CANCELLED` | ยกเลิกแล้ว | Muted Neutral (`#64748B` / `#F8FAFC` / `#E2E8F0`) |
 
 ### 2.4 Tailwind CSS v4 `@theme` Mapping
 
@@ -104,21 +103,21 @@ CampusFix AI คือเครื่องมือแจ้งและติ�
 
 แยกความหนาแน่นของหน้าจอออกเป็น **2 โหมด** ตามบริบทการใช้งานจริง:
 
-### 4.1 Public & Reporter Views (Mobile-First, Scannable)
+### 4.1 Reporter Views (Mobile-First, Scannable)
 - **Public Feed เป็นหน้าหลักทันที:** ไม่ใส่ Marketing Hero Banner สูงครึ่งหน้า — เปิดมาเห็นแถบค้นหา/ตัวกรอง + ปุ่ม **"แจ้งปัญหา"** + รายการ Ticket จริง (พร้อมปุ่มสลับมุมมอง List/Grid กับ Map)
 - **Responsive Grid:** ใช้ Grid ที่ยืดหยุ่นตามขนาดจอ (`1` คอลัมน์บนมือถือ, `2` บน Tablet, `3` บน Laptop `1280px`, `4` บนจอใหญ่ `≥1536px`) เพื่อให้หัวข้อภาษาไทยและข้อมูลสถานที่อ่านสบาย ไม่เบียดแคบ
 - **Card Anatomy (เรียงลำดับข้อมูลชัดเจน):**
   1. ภาพปกสัดส่วน `16:10` (object-cover, ไม่มี overlay รก) + Badge Severity มุมบน
   2. หัวข้อ Ticket (สูงสุด 2 บรรทัด) + สถานที่ (Location)
-  3. Metadata แถวล่าง: Category, Status (แสดงชัดถ้าเป็น `WAITING_INFORMATION`), จำนวน Report, จำนวนผู้ได้รับผลกระทบ (`Affected`) และเวลาที่ยืนยัน
-- **ฟอร์มแจ้งปัญหา (Create Report):** ออกแบบให้ใช้งานมือเดียวบนมือถือได้ง่าย (ปุ่มถ่าย/เลือก 1–5 ภาพ, ปักหมุดบนแผนที่, บันทึก `DRAFT` หรือ `Submit` ชัดเจน)
+  3. Metadata แถวล่าง: Category, Status (แสดงชัดถ้าเป็น `WAITING_INFO`), จำนวน Report, จำนวนผู้ได้รับผลกระทบ (`Affected`) และเวลาที่ยืนยัน
+- **ฟอร์มแจ้งปัญหา (Create Report):** ออกแบบให้ใช้งานมือเดียวบนมือถือได้ง่าย (ปุ่มถ่าย/เลือก 1–5 ภาพ, ปักหมุดบนแผนที่, Auto-save ชั่วคราวในเบราว์เซอร์ และปุ่ม `Submit` ชัดเจน)
 
 ### 4.2 Reviewer & Admin Workspace (Desktop-First, Operational)
 - **Incoming Review Workbench (Split Pane):**
   - **ฝั่งซ้าย (หลักฐานต้นทาง):** Report ID, Version badge (`v2`), Username ผู้แจ้ง, รายละเอียด, แกลเลอรีรูปภาพ (คลิกขยายได้), และตำแหน่งบนแผนที่
   - **ฝั่งขวา (การตัดสินใจ + AI Support):**
     - กล่อง **ข้อเสนอจาก AI** (`bg-surface-subtle`, กรอบ `1px solid`, ระบุ Confidence % และปุ่มคัดลอก/แก้ไขค่า Category, Severity, Title/Summary)
-    - รายการ **Candidate Ticket ที่ใกล้เคียง** เปรียบเทียบข้อมูลข้างกันให้เลือกผูก Ticket เดิม หรือยืนยันสร้าง Ticket ใหม่
+    - รายการ **Ticket เดิมที่ใกล้เคียง** เปรียบเทียบข้อมูลข้างกันให้เลือกผูก Ticket เดิม หรือยืนยันสร้าง Ticket ใหม่
     - แถบ Action ด้านล่างติดจอ: `Confirm Ticket` (สี accent) และ `Reject` (ต้องกรอกเหตุผล)
 - **Admin Dashboard:** เน้นตัวเลขที่แยกกันชัดเจนตาม BRD (`Tickets` / `Reports` / `Affected Users` / `Average Review Time`) ใช้กราฟเรียบสะอาด (Bar/Line ไม่มี 3D หรือ glow)
 

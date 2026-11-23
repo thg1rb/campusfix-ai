@@ -56,9 +56,9 @@
 | :--- | :--- | :--- |
 | **ใช้แทนอะไร** | การแจ้ง/มุมมองของผู้ใช้หนึ่งคน | เหตุการณ์หรือปัญหาหนึ่งเรื่องที่ผ่านการคัดกรองแล้ว |
 | **ข้อมูลสำคัญ** | ผู้รายงาน รายละเอียด ภาพ ตำแหน่ง และสถานะการตรวจ Report | หัวข้อ/สรุป, Category, Severity, สถานะการยืนยัน และข้อมูลพิกัดสถานที่ |
-| **การเกิดและการเชื่อมโยง** | เริ่มจาก Draft หรือส่งตรวจ เมื่อ Confirm แล้วผูกกับ Ticket ได้หนึ่งรายการ | เกิดเมื่อ Reviewer ยืนยัน Ticket ใหม่ และมี Report ที่ Confirm แล้วอย่างน้อยหนึ่งรายการ |
+| **การเกิดและการเชื่อมโยง** | เริ่มเมื่อ Reporter กดส่งตรวจ (`PENDING`) เมื่อ Confirm แล้วผูกกับ Ticket ได้หนึ่งรายการ | เกิดเมื่อ Reviewer ยืนยันสร้าง Ticket ใหม่ และมี Report ที่ Confirm แล้วอย่างน้อยหนึ่งรายการ |
 | **จำนวนและการรวม** | หลาย Report อาจกล่าวถึงปัญหาเดียวกัน และยังคงเก็บแยกเป็นรายรายการ | Ticket เดียวรวม Report ที่ยืนยันว่าเป็นเหตุการณ์เดียวกันได้หลายรายการ |
-| **ใครใช้ติดตาม** | Reporter ติดตาม Report ของตนและการยืนยันของ Ticket ที่เชื่อมอยู่ | Reviewer ใช้ตรวจสอบและจัดกลุ่ม ผู้ใช้สาธารณะติดตามรายการปัญหาที่ยืนยันแล้ว |
+| **ใครใช้ติดตาม** | Reporter ติดตาม Report ของตนและการยืนยันของ Ticket ที่เชื่อมอยู่ | Reviewer ใช้ตรวจสอบและจัดกลุ่ม; Reporter ติดตามรายการปัญหาที่ยืนยันแล้ว |
 
 > **ตัวอย่าง:** นักศึกษา 4 คนพบไฟทางเดินหน้าหอพักดับและส่ง Report คนละรายการ ภายหลัง Reviewer ยืนยันว่าเป็นเหตุการณ์เดียวกัน ระบบจึงเก็บ Report ทั้ง 4 รายการไว้และเชื่อมเข้ากับ Ticket เดียวเพื่อแสดงผลเป็นปัญหาเดียวกันบนหน้าสาธารณะ ดังนั้นจำนวน Report เป็น 4 ขณะที่จำนวน Ticket เป็น 1
 
@@ -122,21 +122,20 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 
 ## 4. ผู้มีส่วนได้ส่วนเสียและบทบาท
 
-ระบบมีผู้ใช้ 4 กลุ่มหลัก โดยแต่ละกลุ่มมีขอบเขตสิทธิ์ที่ชัดเจน
+ระบบมี 3 บทบาทหลัก โดยแต่ละบทบาทมีขอบเขตสิทธิ์ที่ชัดเจน
 
-| กลุ่ม | ความต้องการหลัก | สิทธิ์/ขอบเขตโดยสรุป |
+| บทบาท | ความต้องการหลัก | สิทธิ์/ขอบเขตโดยสรุป |
 | :--- | :--- | :--- |
-| **Reporter** | แจ้งง่าย บันทึกร่าง ติดตามสถานะการตรวจสอบและให้ข้อมูลเพิ่ม | สร้าง/แก้ Draft และ Pending Review, ติดตาม Ticket ของตน, ใช้ Thread เมื่อมี Confirmed Report, Mark Affected |
+| **Reporter** | ดูปัญหาที่ผ่านการยืนยันแล้ว, แจ้งง่าย, ติดตามสถานะการตรวจสอบ และให้ข้อมูลเพิ่ม | อ่าน Ticket ที่เผยแพร่แล้ว (`CONFIRMED` และ `WAITING_INFO`), Feed, Map, Timeline; สร้าง/แก้/ถอน Report ที่ยัง `PENDING`, ติดตาม Ticket ของตน, กด `Mark Affected` และใช้ Private Thread *(เฉพาะ Ticket ที่ตนมี Confirmed Report)* |
 | **Reviewer** | คัดกรอง ควบคุมคุณภาพข้อมูล จัดกลุ่ม และอนุมัติเผยแพร่ | ตรวจ Report, ปรับ AI Result, Confirm/Reject, เลือก Ticket หรือสร้าง Ticket ใหม่ และขอข้อมูลเพิ่มเติมบน Ticket ที่ยืนยันแล้ว |
 | **Administrator** | กำกับข้อมูลหลัก สิทธิ์ และภาพรวมระบบ | จัดการ User/Role/Permission, Category, Location, Configuration และ System Analytics |
-| **ผู้ใช้สาธารณะ** | ดูปัญหาที่ผ่านการตรวจสอบแล้วโดยไม่ต้องเข้าสู่ระบบ | อ่าน Ticket ที่เผยแพร่แล้ว (`CONFIRMED` และ `WAITING_INFORMATION`), Feed, Map, Timeline และข้อมูล Public ที่กำหนด |
 
 ### 4.1 หลักสิทธิ์ที่ใช้ร่วมกันทุกบทบาท
 
-* บัญชีหนึ่งมีได้หลาย Role แต่ Administrator เป็น Exclusive Role
+* บัญชีหนึ่งมีได้หลาย Role (เช่น `Reporter` + `Reviewer`) แต่ `Administrator` เป็น Exclusive Role
 * **Separation of Duties:** ห้ามผู้ใช้ที่เป็น Reporter ของ Report/Ticket ใช้ Role Reviewer เพื่อตรวจสอบ ยืนยัน หรือปฏิเสธรายการของตนเอง
 * Reviewer เป็นผู้ตรวจสอบและตัดสินใจขั้นสุดท้ายของระบบ
-* Public Read ไม่ต้อง Login; การเขียนหรือโต้ตอบต้อง Login
+* การอ่านข้อมูลที่เผยแพร่แล้วบนหน้าสาธารณะ (Public Read) ไม่ต้อง Login; การเขียนหรือโต้ตอบ (สร้าง/แก้/ถอน Report, กด `Mark Affected`, ตอบ Private Thread) ต้อง Login และผ่านการตรวจสิทธิ์ตามเจ้าของข้อมูล
 
 ---
 
@@ -147,7 +146,7 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 | ขอบเขต | ความสามารถ |
 | :--- | :--- |
 | **พื้นที่และการเข้าสู่ระบบ** | KU บางเขน; Google OAuth (ออกแบบรองรับ KU-ALL SSO ในระยะถัดไป); Username สาธารณะ; Public Read ไม่ต้อง Login |
-| **Reporter** | สร้าง/บันทึก/แก้/ยกเลิก Report, ภาพ, Map Point, Draft, Public Feed, Thread, Email แจ้งผลตรวจ, Mark Affected |
+| **Reporter** | สร้าง/แก้/ถอน Report ที่ยัง `PENDING`, ภาพ, Map Point, Public Feed, Thread, Email แจ้งผลตรวจ, Mark Affected |
 | **AI** | Classification, Severity (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`), Matching กับ Confirmed Ticket, Title/Summary, Confidence, Fallback |
 | **Reviewer** | Review, แก้ผล AI, ยืนยัน Ticket ใหม่/เดิม, Reject พร้อมเหตุผล, Request Information (เฉพาะบน Ticket ที่ยืนยันแล้ว) |
 | **Administrator** | จัดการ User/Role/Permission, Category, Location; System Dashboard และ Analytics |
@@ -163,7 +162,7 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 | :--- | :--- |
 | **ภาพต่อ Report** | 1–5 ภาพ; ภาพละไม่เกิน 10 MB; PNG/JPG/JPEG; ต้องลบ EXIF Metadata ก่อนจัดเก็บ/เผยแพร่ |
 | **Public Feed** | เรียงตาม Confirmed Time จากใหม่ไปเก่า; รองรับการแบ่งหน้า (25/50/100 รายการต่อหน้า) |
-| **Retention** | DRAFT ลบหลัง 30 วันจาก Created Time; CANCELLED ลบหลัง 30 วันจาก Cancellation Time |
+| **Retention** | Report ที่ถูกถอนก่อนตรวจจะถูกลบออกจากคิวตรวจโดยเก็บร่องรอยไว้ใน Audit Log; `CONFIRMED`/`REJECTED` ไม่มี Retention Rule ในระยะ MVP |
 | **พื้นที่** | วิทยาเขตบางเขนในระยะ MVP |
 
 ---
@@ -176,40 +175,39 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 
 | ขั้น | ผู้ดำเนินการ | ผลลัพธ์/การควบคุม |
 | :--- | :--- | :--- |
-| **1** | Reporter | สร้าง Report; เลือก Location และแนบภาพ; บันทึก DRAFT หรือ Submit |
-| **2** | ระบบ + AI | ตั้ง PENDING_REVIEW; วิเคราะห์ข้อความ/ภาพ/ตำแหน่ง; ค้นหา Confirmed Ticket; สร้าง Candidate เมื่อไม่พบ |
+| **1** | Reporter | สร้าง Report; เลือก Location และแนบภาพ; กด Submit เพื่อส่งตรวจ |
+| **2** | ระบบ + AI | ตั้งสถานะ `PENDING`; วิเคราะห์ข้อความ/ภาพ/ตำแหน่ง; ค้นหา Confirmed Ticket ที่ใกล้เคียง และแนบข้อเสนอ AI ไว้บน Report |
 | **3** | Reviewer | ตรวจเวอร์ชันล่าสุด; แก้ข้อเสนอ AI; เลือกผูก Ticket เดิม/สร้าง Ticket ใหม่ หรือ Reject พร้อมเหตุผล |
-| **4** | ระบบ | Confirm: Report ผูก Ticket หนึ่งรายการ; Ticket กลายเป็น `CONFIRMED` และเปิดเผยบน Public Feed/Map; ส่งอีเมลแจ้ง Reporter |
-| **5** | Reviewer / Reporter / ผู้ได้รับผลกระทบ | ติดตาม Ticket ที่เผยแพร่แล้ว, กด Mark Affected, และหากผู้มีอำนาจหรือ Reviewer ต้องการข้อมูลเพิ่มบน Ticket นั้น สามารถเปลี่ยนเป็น `WAITING_INFORMATION` เพื่อสื่อสารผ่าน Private Thread |
+| **4** | ระบบ | Confirm: Report ผูก Ticket หนึ่งรายการ; หากสร้างใหม่ Ticket จะเกิดขึ้นในสถานะ `CONFIRMED` และเปิดเผยบน Public Feed/Map ทันที; ส่งอีเมลแจ้ง Reporter |
+| **5** | Reviewer / Reporter / ผู้ได้รับผลกระทบ | ติดตาม Ticket ที่เผยแพร่แล้ว, กด Mark Affected, และหากผู้มีอำนาจหรือ Reviewer ต้องการข้อมูลเพิ่มบน Ticket นั้น สามารถเปลี่ยนเป็น `WAITING_INFO` เพื่อสื่อสารผ่าน Private Thread |
 | **6** | Administrator | วิเคราะห์สถิติข้อมูลการแจ้งปัญหาและประสิทธิภาพการคัดกรองผ่าน Dashboard |
 
 ### 6.2 ขั้นที่ 1: Reporter สร้าง Report
 
-เส้นทางเริ่มที่ผู้ใช้ Login ผ่าน Google OAuth แล้วกรอกรายละเอียด แนบภาพ และระบุตำแหน่ง ผู้ใช้เลือกบันทึกเป็น DRAFT เพื่อกลับมาแก้ภายหลัง หรือ Submit เพื่อส่งตรวจ
+เส้นทางเริ่มที่ผู้ใช้ Login ผ่าน Google OAuth แล้วกรอกรายละเอียด แนบภาพ และระบุตำแหน่ง จากนั้นกด Submit เพื่อส่งตรวจเข้าสู่สถานะ `PENDING`
 
 | ข้อกำหนด | เกณฑ์การยอมรับโดยสรุป |
 | :--- | :--- |
 | **บัญชีและตัวตน** | Login ผ่าน Google OAuth (ออกแบบรองรับ KU-ALL SSO ในระยะถัดไป); ตั้ง/เปลี่ยน Username ที่ไม่ซ้ำ; Public Identity แสดง Username ปัจจุบันแม้เป็น Report เก่า |
 | **สร้าง Report** | Description, รูปภาพ 1–5 ภาพ ภาพละ ≤10MB PNG/JPG/JPEG (ลบ EXIF Metadata ก่อนจัดเก็บ/เผยแพร่) และ Map Point เป็นข้อมูลที่ต้องมี |
 | **ระบุตำแหน่ง** | เลือกชื่อสถานที่ภายในมหาวิทยาลัยหรือปัก Map Pin; ทุก Report ต้องมี Map Point |
-| **Draft** | บันทึกและกลับมาแก้ต่อได้; Draft ครบ 30 วันจาก Created Time ถูก Purge/Delete |
-| **แก้/ยกเลิกก่อน Review จบ** | แก้ PENDING_REVIEW ได้จนกว่า Reviewer จะ Confirm; เมื่อเปลี่ยนข้อมูลจะวิเคราะห์ AI ใหม่; Cancel ได้ และเก็บข้อมูล 30 วันจากวันที่ยกเลิก |
+| **แก้/ถอนก่อน Review จบ** | แก้ Report ในสถานะ `PENDING` ได้จนกว่า Reviewer จะ Confirm/Reject (การแก้จะเพิ่ม Version และวิเคราะห์ AI ใหม่); ถอน/ยกเลิกก่อนตรวจได้ โดยระบบจะลบออกจากคิวตรวจและบันทึก Audit Log |
 | **ดูผล AI เบื้องต้น** | เห็นผล AI เบื้องต้นเมื่อมี; AI Failure ไม่ขัดขวางการ Submit/Review |
 | **เพิ่ม Report ใน Ticket** | จากหน้า Ticket ที่เผยแพร่แล้ว ระบบเสนอ Target Ticket; Reviewer ยังคงเลือก Ticket อื่น/ใหม่ หรือ Reject ได้ |
 
-#### วงจรสถานะของ Report
+#### วงจรสถานะและ Transition ของ Report (`PENDING`, `CONFIRMED`, `REJECTED`)
 
-| สถานะ | ความหมาย/สิทธิ์ | ปลายทาง |
-| :--- | :--- | :--- |
-| **DRAFT** | บันทึกค้างเพื่อกลับมาทำต่อ; Reporter แก้ได้ | Submit → PENDING_REVIEW; ลบเมื่ออายุครบ 30 วัน |
-| **PENDING_REVIEW** | ส่งแล้ว รอ Reviewer; Reporter แก้ได้ก่อน Confirm; การแก้เรียก AI ใหม่ | CONFIRMED / REJECTED / CANCELLED |
-| **CONFIRMED** | Reviewer ยืนยัน; ผูก Ticket เดียว | Final |
-| **REJECTED** | Reviewer ปฏิเสธพร้อมเหตุผล; ไม่ผูก Ticket และไม่ Public | Final |
-| **CANCELLED** | Reporter ยกเลิก Pending; เก็บ Audit ชั่วคราว | Purge/Delete 30 วันหลัง Cancel |
+| จากสถานะ | ไปสถานะ | ผู้กระทำ | เงื่อนไข / ผลที่เกิดขึ้น |
+| :--- | :--- | :--- | :--- |
+| *(ใหม่)* | **PENDING** | Reporter | ส่ง Report พร้อมข้อมูลบังคับ → ลบ EXIF, ตั้ง `version = 1`, ส่งวิเคราะห์ AI |
+| **PENDING** | **PENDING** *(แก้ไข)* | Reporter *(เจ้าของ)* | แก้ไขข้อมูลก่อนตรวจเสร็จ → เพิ่ม `version + 1` และวิเคราะห์ AI ใหม่ |
+| **PENDING** | *(ลบ / ถอนเรื่อง)* | Reporter *(เจ้าของ)* | ถอนเรื่องก่อนตรวจ → ลบ Report ออกจากคิวตรวจ และบันทึก Audit Log |
+| **PENDING** | **CONFIRMED** | Reviewer *(ไม่ใช่เจ้าของ)* | ตรวจบนเวอร์ชันล่าสุด + เลือกผูก Ticket เดิมหรือสร้าง Ticket ใหม่ → ผูก Report เข้า Ticket 1 รายการ, ส่งอีเมลแจ้ง Reporter, บันทึก Audit Log *(Final)* |
+| **PENDING** | **REJECTED** | Reviewer *(ไม่ใช่เจ้าของ)* | ตรวจบนเวอร์ชันล่าสุด + ระบุเหตุผล → ไม่ผูก Ticket, ไม่ Public, บันทึก Audit Log *(Final)* |
 
 ### 6.3 ขั้นที่ 2: AI วิเคราะห์เบื้องต้น
 
-เมื่อ Submit ระบบตั้งสถานะ PENDING_REVIEW แล้วส่ง Report ให้ AI วิเคราะห์ AI ทำหน้าที่เป็น Decision Support System กล่าวคือผลวิเคราะห์ต้องแสดงให้ผู้ตรวจสอบประเมินได้ และต้องมีทางทำงานต่อด้วยคนเมื่อระบบ AI ขัดข้อง
+เมื่อ Submit ระบบตั้งสถานะ `PENDING` แล้วส่ง Report ให้ AI วิเคราะห์ AI ทำหน้าที่เป็น Decision Support System กล่าวคือผลวิเคราะห์ต้องแสดงให้ผู้ตรวจสอบประเมินได้ และต้องมีทางทำงานต่อด้วยคนเมื่อระบบ AI ขัดข้อง
 
 | ความสามารถ | เกณฑ์การยอมรับโดยสรุป |
 | :--- | :--- |
@@ -217,15 +215,15 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 | **จำแนกปัญหา** | แนะนำ Category, Confidence และ Alternative Category เมื่อเหมาะสม; Category จัดการโดย Administrator |
 | **ประเมิน Severity** | ประเมินระดับของ Report และช่วยประเมิน Ticket จาก Reports ที่อยู่ภายใต้ Ticket; Reviewer กำหนดค่า Final |
 | **ไม่อนุมานความรุนแรงจากจำนวนล้วน** | จำนวน Report ที่มากไม่ทำให้ Severity สูงขึ้นโดยอัตโนมัติ |
-| **ค้นหาเหตุการณ์ซ้ำ** | จับคู่กับ Confirmed Ticket เท่านั้น โดยใช้ภาพ+ข้อความ+ตำแหน่ง แสดง Candidate และ Confidence/Similarity |
-| **สร้างหัวข้อ/สรุป** | สร้าง Report Title ต่อ Report และ Ticket Title/Summary จาก Reports ใน Ticket; Reviewer ตรวจ/แก้ก่อน Confirm |
-| **ไม่เปลี่ยนข้อมูล Final เอง** | เมื่อมี Report เพิ่ม อาจคำนวณ Ticket Title/Summary ใหม่ได้ แต่ห้ามเปลี่ยน Final Ticket Data โดยไม่มี Reviewer ตรวจ |
+| **ค้นหาเหตุการณ์ซ้ำ** | จับคู่กับ Confirmed Ticket เท่านั้น โดยใช้ภาพ+ข้อความ+ตำแหน่ง แสดงรายการ Ticket ที่ใกล้เคียงพร้อม Confidence/Similarity |
+| **สร้างหัวข้อ/สรุป** | สร้างข้อเสนอ Report Title และ Ticket Title/Summary แนบไว้บน Report; Reviewer ตรวจ/แก้ก่อน Confirm |
+| **ไม่เปลี่ยนข้อมูล Final เอง** | เมื่อมี Report เพิ่ม อาจคำนวณข้อเสนอ Ticket Title/Summary ใหม่ได้ แต่ห้ามเปลี่ยน Final Ticket Data โดยไม่มี Reviewer ตรวจ |
 | **ความทนทานเมื่อ AI ขัดข้อง** | Timeout/Error/Unavailable/วิเคราะห์ไม่ได้ ต้องบันทึก Report ได้; Reviewer ทำ Classification, Severity, Title/Summary และ Duplicate Review เองได้ |
-| **ไม่มีอำนาจปฏิบัติการ** | AI ไม่ Confirm, Reject, Delete, ซ่อน Report/Ticket หรือสร้าง Final Ticket ด้วยตนเอง |
+| **ไม่มีอำนาจปฏิบัติการ** | AI ไม่ Confirm, Reject, Delete, ซ่อน Report/Ticket หรือสร้าง Ticket ด้วยตนเอง |
 | **Retry** | รองรับการ Retry ตามกลไกระบบ; ไม่เป็นเงื่อนไขบังคับก่อน Reviewer ทำงาน |
 
-* **กรณี AI ล้มเหลว:** ระบบยังบันทึก Submit สำเร็จและคง Report ใน PENDING_REVIEW ได้ Reviewer กำหนดข้อมูลที่จำเป็นและตรวจจับซ้ำด้วยตนเองได้
-* **กรณีไม่พบ Ticket ที่ใกล้เคียง:** เมื่อ No Match ระบบสร้าง Ticket Candidate ซึ่งยังไม่เป็น Public จนกว่า Reviewer จะ Confirm หาก Report ต้นทางถูก Reject, Cancel หรือถูก Confirm ผูกเข้ากับ Ticket เดิมแทน ระบบจะทำ **Soft Delete** กับ Ticket Candidate ที่ไม่ได้ใช้งานและบันทึก Audit Log
+* **กรณี AI ล้มเหลว:** ระบบยังบันทึก Submit สำเร็จและคง Report ใน `PENDING` ได้ Reviewer กำหนดข้อมูลที่จำเป็นและตรวจจับซ้ำด้วยตนเองได้
+* **กรณีไม่พบ Ticket ที่ใกล้เคียง:** ระบบเก็บข้อเสนอ Title/Summary, Category และ Severity ของ AI ไว้กับ Report เพื่อให้ Reviewer ตรวจสอบและสร้าง Ticket ใหม่เมื่อ Confirm
 
 #### ระดับความรุนแรงของปัญหา (Severity Scale)
 
@@ -244,36 +242,37 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 
 | ข้อกำหนด | เกณฑ์การยอมรับโดยสรุป |
 | :--- | :--- |
-| **Incoming Review** | เห็น Report ID, Username, รายละเอียด, ภาพ, Location, Version/Last Updated, AI Result/Confidence, Candidate Ticket และสถานะการวิเคราะห์ |
+| **Incoming Review** | เห็น Report ID, Username, รายละเอียด, ภาพ, Location, Version/Last Updated, AI Result/Confidence, รายการ Ticket เดิมที่ใกล้เคียง และสถานะการวิเคราะห์ |
 | **ตรวจเวอร์ชันล่าสุด** | Confirm/Reject ได้จากข้อมูลเวอร์ชันล่าสุดเท่านั้น; หาก Report ถูกแก้หลังเปิด Review ต้องตรวจใหม่ |
 | **แก้ AI Result** | กำหนด Category, Severity, Title/Summary และ Ticket Matching ใหม่ได้ |
-| **ยืนยันการจับคู่** | เลือก Ticket เดิมที่ AI แนะนำหรือรายการอื่น หรือยืนยัน Ticket Candidate เป็น Ticket ใหม่ (หากไม่ใช้ Candidate เดิม ระบบ Soft Delete พร้อมเก็บ Audit Log) |
-| **Reject** | Reject PENDING_REVIEW พร้อม Reason; Report เป็น Final, ไม่ผูก Ticket, ไม่ Public และ Soft Delete Ticket Candidate ที่ผูกอยู่ (ถ้ามี) พร้อมเก็บ Audit Log |
+| **ยืนยันการจับคู่** | เลือกผูกกับ Ticket เดิมที่ AI แนะนำหรือรายการอื่น หรือยืนยันสร้าง Ticket ใหม่จากข้อมูลที่ตรวจแล้ว |
+| **Reject** | Reject Report สถานะ `PENDING` พร้อม Reason; Report เป็น Final, ไม่ผูก Ticket, ไม่ Public และบันทึก Audit Log |
 | **ข้อมูลก่อน Confirm Ticket ใหม่** | ต้องมี Category, Severity, Matching Decision และ Title/Summary ครบถ้วน |
-| **ขอข้อมูลเพิ่มเติม** | เกิดขึ้นได้เฉพาะบน **Ticket ที่ `CONFIRMED` แล้วเท่านั้น** (ไม่เกิดกับ Report ในสถานะ `PENDING_REVIEW`) เพื่อรองรับกรณีแจ้งเรื่องต่อผู้มีอำนาจแล้วต้องการรายละเอียดเพิ่มเติมจาก Reporter |
+| **ขอข้อมูลเพิ่มเติม** | เกิดขึ้นได้เฉพาะบน **Ticket ที่ `CONFIRMED` แล้วเท่านั้น** (ไม่เกิดกับ Report ในสถานะ `PENDING`) เพื่อรองรับกรณีแจ้งเรื่องต่อผู้มีอำนาจแล้วต้องการรายละเอียดเพิ่มเติมจาก Reporter |
 | **ข้อจำกัดตนเอง** | ห้าม Review/Confirm/Reject Report ที่ตนเป็น Reporter; ห้ามดำเนินการกับรายการของตนเอง |
 
 > **กรณี Report ซ้ำ:** การตรวจซ้ำเป็นการจัดกลุ่ม ไม่ใช่การลบ Report ใหม่ยังคงเป็นข้อมูลแยกและมี Reporter/รายละเอียด/ภาพของตนเอง เมื่อ Reviewer ยืนยันว่าเป็นเหตุการณ์เดียวกัน Report นั้นจึงผูกกับ Ticket เดิม
 
 ### 6.5 ขั้นที่ 4–5: หลังการยืนยัน ผู้ใช้ติดตามและมีส่วนร่วม
 
-เมื่อ Reviewer Confirm แล้ว Report ผูกกับ Ticket หนึ่งรายการ และ Ticket ใหม่กลายเป็น `CONFIRMED` และเปิดเป็น Public (และยังคงแสดงเป็น Ticket ที่เปิดอยู่ในระบบสาธารณะแม้เปลี่ยนเป็น `WAITING_INFORMATION`) ผู้ใช้สามารถติดตามและมีส่วนร่วมได้ดังนี้
+เมื่อ Reviewer Confirm แล้ว Report ผูกกับ Ticket หนึ่งรายการ และหากเป็นการสร้างใหม่ Ticket จะเกิดขึ้นในสถานะ `CONFIRMED` และเปิดเป็น Public ทันที (และยังคงแสดงเป็น Ticket ที่เปิดอยู่ในระบบสาธารณะแม้เปลี่ยนเป็น `WAITING_INFO`) ผู้ใช้สามารถติดตามและมีส่วนร่วมได้ดังนี้
 
 | ข้อกำหนด | เกณฑ์การยอมรับโดยสรุป |
 | :--- | :--- |
-| **ติดตาม/ข้อมูลเพิ่ม** | ติดตาม Ticket ที่เผยแพร่แล้ว (`CONFIRMED` และ `WAITING_INFORMATION`) และเข้าร่วม Private Thread เมื่อ Reviewer เปิด Request Additional Information บน Ticket นั้น (เฉพาะ Reporter ที่มี Confirmed Report ใน Ticket; ดูหัวข้อ 8.2) |
-| **Mark Affected** | ต้อง Login; หนึ่ง User ต่อ Ticket; สามารถกดยืนยันหรือยกเลิก (Unmark) ได้บน Ticket ที่เผยแพร่แล้ว (`CONFIRMED` และ `WAITING_INFORMATION`) |
+| **ติดตาม/ข้อมูลเพิ่ม** | ติดตาม Ticket ที่เผยแพร่แล้ว (`CONFIRMED` และ `WAITING_INFO`) และเข้าร่วม Private Thread เมื่อ Reviewer เปิด Request Additional Information บน Ticket นั้น (เฉพาะ Reporter ที่มี Confirmed Report ใน Ticket; ดูหัวข้อ 8.2) |
+| **Mark Affected** | ต้อง Login; หนึ่ง User ต่อ Ticket; สามารถกดยืนยันหรือยกเลิก (Unmark) ได้บน Ticket ที่เผยแพร่แล้ว (`CONFIRMED` และ `WAITING_INFO`) |
 
-### 6.6 วงจรสถานะของ Ticket
+### 6.6 วงจรสถานะและ Transition ของ Ticket (`CONFIRMED`, `WAITING_INFO`)
 
-การเปลี่ยนสถานะของ Ticket สิ้นสุดที่การยืนยันข้อมูลโดย Reviewer และ Ticket ที่มีสถานะตั้งแต่ `CONFIRMED` เป็นต้นไปจะแสดงในระบบสาธารณะในส่วนของ Ticket ที่เปิดอยู่
+Ticket จะถูกสร้างขึ้นเมื่อ Reviewer ยืนยันสร้าง Ticket ใหม่เท่านั้น ดังนั้น Ticket ทุกรายการในระบบคือปัญหาที่ผ่านการยืนยันแล้วและแสดงบนระบบสาธารณะ
 
 | จากสถานะ | ไปสถานะ | ผู้เปลี่ยน/เงื่อนไข |
 | :--- | :--- | :--- |
-| **Candidate** | **CONFIRMED** | Reviewer ยืนยัน New Ticket พร้อมข้อมูลบังคับ; กลายเป็น Public และสิ้นสุดกระบวนการคัดกรอง |
-| **Candidate** | **Soft Deleted** | Report ต้นทางถูก Reject, Cancel หรือถูก Confirm ผูกเข้า Ticket เดิมแทน; ไม่แสดงเป็น Public และบันทึก Audit Log |
-| **CONFIRMED** | **WAITING_INFORMATION** | Reviewer ขอข้อมูลเพิ่มเติมจาก Reporter บน Ticket (เช่น กรณีผู้มีอำนาจต้องการรายละเอียดเพิ่ม); Ticket ยังคงแสดงใน Public Feed/Map โดยระบุสถานะ `WAITING_INFORMATION` |
-| **WAITING_INFORMATION** | **CONFIRMED** | Reviewer ได้รับข้อมูลครบถ้วนและยืนยันข้อมูลล่าสุด |
+| *(สร้างใหม่)* | **CONFIRMED** | Reviewer ยืนยันสร้าง Ticket ใหม่พร้อมข้อมูลบังคับ (Category, Severity, Title/Summary) → กลายเป็น Public ทันที และบันทึก Audit Log |
+| **CONFIRMED** | **WAITING_INFO** | Reviewer ขอข้อมูลเพิ่มเติมจาก Reporter บน Ticket (เช่น กรณีผู้มีอำนาจต้องการรายละเอียดเพิ่ม) → เปิด Private Thread และส่งอีเมลแจ้ง Reporter; Ticket ยังคงแสดงใน Public Feed/Map โดยระบุสถานะ `WAITING_INFO` |
+| **WAITING_INFO** | **CONFIRMED** | Reviewer ได้รับข้อมูลครบถ้วนและยืนยันข้อมูลล่าสุด → ปิดสถานะรอข้อมูลและบันทึก Audit Log |
+
+*(หมายเหตุ: กรณี Reviewer ยืนยัน Report ใหม่ให้ผูกเข้ากับ Ticket เดิม สถานะของ Ticket เดิมจะไม่เปลี่ยนโดยอัตโนมัติ)*
 
 ---
 
@@ -286,11 +285,11 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 | **ไม่ทิ้งข้อมูลซ้ำ** | รายงานหลายรายการที่เกี่ยวข้องรวมใน Ticket โดยไม่ลบหรือแทนที่ Report แต่ละรายการ |
 | **มนุษย์ตัดสินใจ** | AI ให้คำแนะนำ; Reviewer ยืนยัน/ปฏิเสธ/แก้ไขก่อนเผยแพร่ข้อมูล |
 | **AI ไม่ขวางการแจ้ง** | Timeout/Error/Unavailable/วิเคราะห์ภาพไม่ได้ ต้องไม่ทำให้การบันทึก Report ล้มเหลว |
-| **Ticket Candidate ไม่เปิดสาธารณะ** | No Match สร้าง Candidate ที่ไม่ Public จนกว่า Reviewer จะ Confirm; หากไม่ได้ใช้งาน (Reject/Cancel/Merge เข้า Ticket เดิม) ให้ Soft Delete พร้อม Audit Log |
+| **สร้าง Ticket เมื่อยืนยันเท่านั้น** | ข้อเสนอของ AI เก็บไว้บน Report และระบบจะสร้าง Ticket จริงเมื่อ Reviewer กด Confirm เท่านั้น |
 | **แยกตัวชี้วัด** | Ticket Count, Report Count และ Affected User Count เป็นคนละ Metric |
-| **Public เฉพาะข้อมูลที่ยืนยัน** | Ticket ที่มีสถานะตั้งแต่ `CONFIRMED` เป็นต้นไป (`CONFIRMED` และ `WAITING_INFORMATION`) เป็น Public; Candidate, Soft Deleted Candidate, Rejected Report และ Additional Information Thread ไม่เป็น Public |
+| **Public เฉพาะข้อมูลที่ยืนยัน** | Ticket ทุกรายการ (`CONFIRMED` และ `WAITING_INFO`) เป็น Public; Report ที่ยังไม่ Confirm (`PENDING`), `REJECTED` และ Additional Information Thread ไม่เป็น Public |
 | **ควบคุมสิทธิ์ตามหน้าที่** | Google OAuth สำหรับการใช้งานที่ต้อง Login (ออกแบบรองรับ KU-ALL SSO ในระยะถัดไป); Public Read เปิดได้; Separation of Duties บังคับใช้ |
-| **เก็บร่องรอย** | การเปลี่ยนข้อมูล/สถานะ/ผล AI/การตัดสินใจ/การ Soft Delete ต้องระบุผู้กระทำและเวลา |
+| **เก็บร่องรอย** | การเปลี่ยนข้อมูล/สถานะ/ผล AI/การตัดสินใจ/การถอน Report ต้องระบุผู้กระทำและเวลา |
 
 ---
 
@@ -300,7 +299,7 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 
 | ส่วน | พฤติกรรมที่กำหนด |
 | :--- | :--- |
-| **Feed** | ไม่ต้อง Login; แสดง Ticket ที่เปิดอยู่และผ่านการยืนยันแล้ว (`CONFIRMED` และ `WAITING_INFORMATION`); เรียง Confirmed Time ล่าสุดก่อน |
+| **Feed** | ไม่ต้อง Login; แสดง Ticket ที่เปิดอยู่และผ่านการยืนยันแล้ว (`CONFIRMED` และ `WAITING_INFO`); เรียง Confirmed Time ล่าสุดก่อน |
 | **ค้นหา** | Ticket ID, Title, Description, Location, Category |
 | **ตัวกรอง** | Severity, Category, Date, Location |
 | **Pagination** | รองรับการแบ่งหน้า 25, 50 หรือ 100 รายการต่อหน้า |
@@ -318,7 +317,7 @@ MVP ใช้ Email เฉพาะเหตุการณ์สำคัญข
 
 * Report Confirmed กับ Ticket ใหม่
 * Report Confirmed เข้าสู่ Ticket เดิม
-* WAITING_INFORMATION (Reviewer ขอข้อมูลเพิ่มเติม)
+* WAITING_INFO (Reviewer ขอข้อมูลเพิ่มเติม)
 
 ผู้รับคือ Reporter ของ Ticket เท่านั้น ผู้ที่กด Mark Affected อย่างเดียวไม่ได้รับอีเมล
 
@@ -355,9 +354,9 @@ MVP ใช้ Email เฉพาะเหตุการณ์สำคัญข
 | **ข้อมูลที่ไม่เปิดเผย** | ไม่เปิดเผยชื่อจริง, Email, รหัสนิสิต หรือภาควิชา; รูปภาพที่อัปโหลดต้องถูกลบ EXIF Metadata ก่อนจัดเก็บ/เผยแพร่ |
 | **Separation of Duties** | Reporter ของ Report/Ticket ห้าม Review/Confirm/Reject รายการเดียวกัน |
 | **Thread** | Private สำหรับผู้เกี่ยวข้องตามสิทธิ์เท่านั้น (เปิดใช้งานเฉพาะบน Ticket ที่ยืนยันแล้ว) |
-| **สถานะข้อมูล** | Ticket Candidate (รวมถึงที่ Soft Delete แล้ว) และ Rejected Report ไม่ Public; Ticket ตั้งแต่สถานะ `CONFIRMED` เป็นต้นไป (`CONFIRMED` และ `WAITING_INFORMATION`) เป็น Public |
-| **Retention** | DRAFT ลบหลัง 30 วันนับจาก Created; CANCELLED ลบหลัง 30 วันนับจากวันที่ Cancel; Ticket Candidate ที่ไม่ถูกใช้ให้ Soft Delete พร้อม Audit Log; CONFIRMED/REJECTED ไม่มี Retention Rule ในข้อกำหนดปัจจุบัน |
-| **Audit** | Actor, Role, Timestamp และประวัติการเปลี่ยนแปลงสำคัญรวมถึงการ Soft Delete ตรวจสอบย้อนหลังได้ |
+| **สถานะข้อมูล** | Report สถานะ `PENDING`, `REJECTED` และ Additional Information Thread ไม่ Public; Ticket ทุกรายการ (`CONFIRMED` และ `WAITING_INFO`) เป็น Public |
+| **Retention** | Report ที่ถูกถอนก่อนตรวจจะถูกลบออกจากคิวตรวจโดยเก็บ Audit Log ไว้ตรวจสอบย้อนหลัง; Report สถานะ `CONFIRMED`/`REJECTED` และ Ticket ไม่มี Retention Rule ในข้อกำหนดปัจจุบัน |
+| **Audit** | Actor, Role, Timestamp และประวัติการเปลี่ยนแปลงสำคัญรวมถึงการถอน Report ตรวจสอบย้อนหลังได้ |
 
 ---
 

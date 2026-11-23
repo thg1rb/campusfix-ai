@@ -1,6 +1,6 @@
 # CampusFix AI
 
-CampusFix AI is a university issue-reporting and management system. This bootstrap runs a Web application, a Go API, a Python AI Gateway, and PostgreSQL.
+CampusFix AI is a university physical-issue reporting, AI-assisted triage, human review, and public publishing platform. This bootstrap runs a Web application, a Go API, a Python AI Gateway, and PostgreSQL.
 
 ## Quick start
 
@@ -66,7 +66,7 @@ The migrations directory starts empty. Use `make migration-create NAME=describe_
 - `apps/web/src/app` holds the App Router and technical route. `features/` and `components/ui/` are reserved.
 - `apps/api/cmd/server` owns lifecycle. `internal/bootstrap` wires constructors, `internal/platform` holds the server and database infrastructure, and `internal/adapters` holds external integration boundaries.
 - `apps/ai/src/campusfix_ai` is the installed gateway package. Provider, application, scoring and prompt directories are reserved. Evaluation cases live outside the installed package.
-- `contracts/` is reserved for shared service contracts. `scripts/` holds smoke checks, and `docs/` holds decisions and verification.
+- `contracts/` is reserved for shared service contracts. `scripts/` holds smoke checks, and `docs/` holds the BRD, design system, decisions, and verification.
 
 Start feature branches from `develop` and return changes to `develop` through review. Promote reviewed integration work to `main` in a separate release step.
 
