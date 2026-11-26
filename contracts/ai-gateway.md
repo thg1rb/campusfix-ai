@@ -84,7 +84,7 @@ Invoked when a Report is submitted (`PENDING_REVIEW`, `version = 1`) or edited w
 }
 ```
 
-> **Invariant (`BR-AI-002`):** `apps/api` MUST ONLY include Active Tickets (`CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`) in `activeTicketShortlist`. Final Tickets (`RESOLVED`, `CANNOT_RESOLVE`) must never be sent as candidates.
+> **Invariant (`BR-AI-002`):** `apps/api` MUST ONLY include Active Tickets (`CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`) in `activeTicketShortlist`. Final Tickets (`RESOLVED`) must never be sent as candidates.
 
 #### Success Response (`200 OK`)
 ```json

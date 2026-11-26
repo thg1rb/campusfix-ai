@@ -10,7 +10,7 @@ Record significant architectural, protocol, security, and schema decisions here 
 
 ## Planned ADRs (Create When Implementing)
 
-* `0002-auth-and-session-strategy.md` — Pluggable Auth Provider boundary (KU-ALL SSO vs. Google OAuth `@ku.th`), session cookies/JWT, and RBAC enforcement.
+* `0002-auth-and-session-strategy.md` — Pluggable Auth Provider boundary (starting with Google OAuth 2.0 `@ku.th`, extensible to future providers like KU-ALL SSO), session cookies/JWT, and RBAC enforcement.
 * `0003-media-storage-and-exif.md` — Object storage choice, upload flow, EXIF stripping library, and 30-day purge media cleanup.
 * `0004-ai-triage-and-similarity.md` — JEV provider protocol, multimodal prompt strategy, candidate shortlist query, similarity weighting, and retry policy.
 * `0005-web-api-integration.md` — Replacing the in-browser `PrototypeStore` and `mockAiService` in `apps/web` with live Go API integration.

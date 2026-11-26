@@ -53,8 +53,7 @@ Never rely on color alone to convey severity; always pair color with an explicit
 | Ticket `CONFIRMED` | Confirmed & Published | Emerald (`#065F46` / `#ECFDF5` / `#A7F3D0`) |
 | Ticket `IN_PROGRESS` | Department Working | Blue (`#1D4ED8` / `#EFF6FF` / `#BFDBFE`) |
 | Ticket `WAITING_INFORMATION` | Waiting for Reporter Info | Amber (`#92400E` / `#FFFBEB` / `#FDE68A`) |
-| Ticket `RESOLVED` | Resolved (Final) | Neutral-Teal (`#115E59` / `#F0FDFA` / `#99F6E4`) |
-| Ticket `CANNOT_RESOLVE` | Cannot Resolve (Final) | Crimson (`#991B1B` / `#FEF2F2` / `#FECACA`) |
+| Ticket `RESOLVED` | Resolved (Sole Final State) | Neutral-Teal (`#115E59` / `#F0FDFA` / `#99F6E4`) |
 | Report `DRAFT` | Saved Draft | Neutral (`#475569` / `#F8FAFC` / `#CBD5E1`) |
 | Report `PENDING_REVIEW` | Pending Reviewer Triage | Slate-Blue (`#1E40AF` / `#EFF6FF` / `#BFDBFE`) |
 | Report `CONFIRMED` | Confirmed into Ticket | Emerald (`#065F46` / `#ECFDF5` / `#A7F3D0`) |
@@ -134,7 +133,7 @@ Separate interface density by primary workflow context:
 ### 4.3 Department Work Dashboard (Desktop-First, Operational)
 
 * Lists Active Tickets assigned to the staff member's single Department with filters by Status, Severity, Category, and Aging.
-* Ticket operational screen provides state-valid actions only: `Start Work` (`CONFIRMED → IN_PROGRESS`), `Request Information` (`WAITING_INFORMATION`), `Resume Work` (`WAITING_INFORMATION → IN_PROGRESS`), `Record Operational Action + Evidence`, `Confirm Department Completion` (with live indicator of other assigned departments' completion status), and `Cannot Resolve` (strictly hidden/disabled when `IN_PROGRESS` per `BR-STA-008`, requiring a mandatory reason when allowed).
+* Ticket operational screen provides state-valid actions only: `Start Work` (`CONFIRMED → IN_PROGRESS`), `Request Information` (`WAITING_INFORMATION`), `Resume Work` (`WAITING_INFORMATION → IN_PROGRESS`), `Record Operational Action + Evidence`, and `Confirm Department Completion` (with live indicator of other assigned departments' completion status).
 * Includes Department-scoped Analytics view (`UC-DEP-004`).
 
 ### 4.4 Administrator Dashboard (Desktop-First, Analytical)
@@ -154,7 +153,7 @@ Every screen must implement all non-happy-path states:
 3. **AI Unavailable / Fallback Banner:** Non-blocking neutral/amber banner explaining that AI analysis is currently unavailable while allowing submission and manual review to proceed (`BR-GEN-008`, `BR-AI-020`).
 4. **Version Conflict (`409 STALE_REPORT_VERSION`):** On Reviewer screens, if a Reporter edits a `PENDING_REVIEW` report while open, disable confirmation actions and show a clear banner with a **"Load Latest Version"** action (`BR-RPT-012`).
 5. **Separation of Duties Guard:** When a Reviewer or Department Staff views a Report/Ticket they reported themselves, disable/hide operational decision controls and explain the Separation of Duties restriction clearly (`BR-ROLE-004`, `BR-ROLE-005`).
-6. **Final Ticket Lock:** On `RESOLVED` and `CANNOT_RESOLVE` tickets, disable adding reports, toggling `Mark Affected`, and modifying departments, while clearly displaying resolution summary or cannot-resolve explanation.
+6. **Final Ticket Lock:** On `RESOLVED` tickets, disable adding reports, toggling `Mark Affected`, and modifying departments, while clearly displaying the resolution summary and Multi-Dimensional Feedback panel (for Ticket Reporters).
 
 ---
 

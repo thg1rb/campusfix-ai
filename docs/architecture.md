@@ -13,7 +13,7 @@ flowchart LR
   API -->|SQL via GORM + Goose| DB[("PostgreSQL 18.7")]
   API -->|HTTP JSON /v1/* bounded timeout| AI["apps/ai (FastAPI / Python 3.14)"]
   AI -->|JEV Provider Boundary| LLM["External Multimodal LLM / Vision API"]
-  API -->|Auth Provider Boundary| Auth["KU-ALL SSO / Google OAuth (@ku.th)"]
+  API -->|Auth Provider Boundary| Auth["Google OAuth 2.0 (@ku.th) / Future Providers"]
   API -->|Storage Adapter| Storage["Object Storage (EXIF-stripped Images)"]
   API -->|Email Adapter| Mail["SMTP / Email Delivery Provider"]
 ```
@@ -50,7 +50,7 @@ internal/modules/<module-name>/
 | `media` | Upload validation (`.png`/`.jpg`/`.jpeg`, ≤10 MB, 1–5/report), EXIF stripping, object storage adapter, signed/public serving, purge cleanup. | `report_images`, `activity_evidence_images` |
 | `reports` | Draft save/resume, Report submission, Pending edit (`version++`), Cancel, AI analysis orchestration & storage (`UC-RPT-001`..`005`, `UC-AI-001`..`002`). | `reports`, `ai_analysis_runs`, `ticket_candidates` |
 | `review` | Incoming queue, optimistic-lock Confirm (Existing/New Ticket), Reject with reason, Confirmed Report correction, Ticket AI re-evaluation approval (`UC-REV-001`..`005`, `UC-AI-003`). | Coordinates `reports` + `tickets` |
-| `tickets` | Public Feed/Search/Filter/Map, Ticket Detail, Status transitions (`Start`, `Resume`, `Cannot Resolve`), Multi-Department management & completion, Auto-`RESOLVED`, Public Activity Timeline, `Mark Affected` (`UC-PUB-*`, `UC-MAP-001`, `UC-DEP-001`..`003`, `UC-TKT-001`..`005`, `UC-REV-006`, `UC-AFF-001`). | `tickets`, `ticket_department_assignments`, `ticket_ai_reevaluations`, `ticket_affected_users`, `public_activity_events` |
+| `tickets` | Public Feed/Search/Filter/Map, Ticket Detail, Status transitions (`Start`, `Resume`), Multi-Department management & completion, Auto-`RESOLVED`, Public Activity Timeline, `Mark Affected` (`UC-PUB-*`, `UC-MAP-001`, `UC-DEP-001`..`003`, `UC-TKT-001`..`004`, `UC-REV-006`, `UC-AFF-001`). | `tickets`, `ticket_department_assignments`, `ticket_ai_reevaluations`, `ticket_affected_users`, `public_activity_events` |
 | `threads` | Private Additional Information Thread (`UC-THR-001`, `UC-THR-002`) with strict participant authorization. | `thread_messages` |
 | `feedback` | Multi-dimensional Feedback submission, editing, and aggregate calculation (`UC-FBK-001`, `UC-FBK-002`). | `feedback_submissions` |
 | `analytics` | System-wide and Department-scoped KPI & time-metric read models (`UC-ADM-005`, `UC-DEP-004`). | Read-only SQL queries across core tables |
@@ -68,9 +68,8 @@ internal/modules/<module-name>/
 ## 3. Authentication, Sessions & Authorization
 
 * **Pluggable Provider Boundary (`BR-AUTH-001`, `BR-AUTH-004`):** Define an `AuthProvider` interface in `internal/adapters/auth/` returning normalized external identity claims (`provider`, `provider_subject_id`, `email`, `email_verified`, `hosted_domain`, `real_name`, `avatar_url`).
-  * Primary Freeze 1 target: **KU-ALL (SSO)**.
-  * Transitional / MVP OAuth provider (`UC-AUTH-001` & web prototype): **Google OAuth 2.0** restricted to `@ku.th` (`hosted_domain == "ku.th"`).
-  * Switching or enabling both providers must require zero changes to `domain/` or business modules.
+  * **Initial MVP Provider:** **Google OAuth 2.0** restricted to `@ku.th` (`hosted_domain == "ku.th"`).
+  * **Future Extensibility:** Designed behind the `AuthProvider` port so additional providers (such as KU-ALL SSO or another OIDC/SAML provider) can be plugged in with zero changes to `domain/` or business modules.
 * **Session Transport:** HTTP-only, `Secure` (in production), `SameSite=Lax` signed session cookie managed by `apps/api` (proxied or same-site with `apps/web`). Public read routes ignore missing cookies; write/private routes require a valid active session.
 * **Defense-in-Depth RBAC & Separation of Duties:**
   1. HTTP middleware enforces authentication and coarse role membership.
@@ -112,7 +111,7 @@ internal/modules/<module-name>/
   * `reports` where `status = 'CANCELLED' AND cancelled_at <= NOW() - INTERVAL '30 days'`
   * Writes a `RETENTION` audit log summary and cleans up associated storage objects.
 * **Major Event Email Dispatch (`UC-NOT-001`, `BR-NOT-001`..`005`):**
-  * Triggered on `CONFIRMED_NEW_TICKET`, `CONFIRMED_EXISTING_TICKET`, `WAITING_INFORMATION`, `RESOLVED`, and `CANNOT_RESOLVE`.
+  * Triggered on `CONFIRMED_NEW_TICKET`, `CONFIRMED_EXISTING_TICKET`, `WAITING_INFORMATION`, and `RESOLVED`.
   * Recipients are resolved strictly from distinct `reporter_id`s with a `CONFIRMED` Report on the Ticket (never Affected-only users).
   * Subject prefixed with `[KU Spot] `. Logged in `email_notification_logs` with `SENT` / `FAILED` status; email delivery failures must never roll back already-committed operational transitions.
 
@@ -142,6 +141,6 @@ All `apps/api` error responses use one consistent JSON structure:
 | `401` | `UNAUTHENTICATED` | Missing or expired session on write/private endpoint |
 | `403` | `FORBIDDEN`, `SEPARATION_OF_DUTIES_VIOLATION`, `ADMIN_NON_OPERATIONAL`, `THREAD_ACCESS_DENIED` | Role check failed, self-review/self-operate attempt, Admin trying operational action, non-participant accessing Thread |
 | `404` | `NOT_FOUND` | Unknown entity ID or unauthorized private record hidden as not found |
-| `409` | `STALE_REPORT_VERSION`, `TRANSITION_FORBIDDEN`, `TICKET_IS_FINAL`, `USERNAME_TAKEN`, `ALREADY_COMPLETED` | Optimistic lock mismatch (`BR-RPT-012`), `IN_PROGRESS → CANNOT_RESOLVE` (`BR-STA-008`), mutating Final Ticket, duplicate username |
-| `422` | `VALIDATION_ERROR`, `REJECTION_REASON_REQUIRED`, `CANNOT_RESOLVE_REASON_REQUIRED`, `DEPARTMENT_REQUIRED`, `EXCLUSIVE_ADMIN_CONFLICT`, `SINGLE_DEPARTMENT_LIMIT` | Missing mandatory domain fields or role/department constraint violation |
+| `409` | `STALE_REPORT_VERSION`, `TRANSITION_FORBIDDEN`, `TICKET_IS_FINAL`, `USERNAME_TAKEN`, `ALREADY_COMPLETED` | Optimistic lock mismatch (`BR-RPT-012`), invalid state transition, mutating Final (`RESOLVED`) Ticket, duplicate username |
+| `422` | `VALIDATION_ERROR`, `REJECTION_REASON_REQUIRED`, `DEPARTMENT_REQUIRED`, `EXCLUSIVE_ADMIN_CONFLICT`, `SINGLE_DEPARTMENT_LIMIT` | Missing mandatory domain fields or role/department constraint violation |
 | `503` | `DEPENDENCY_UNAVAILABLE` | `/readyz` when PostgreSQL or AI Gateway health check fails |

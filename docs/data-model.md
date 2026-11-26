@@ -10,14 +10,14 @@ This document is the single source of truth for **Enums**, **Record Numbering**,
 | --- | --- | --- |
 | `Role` | `REPORTER`, `REVIEWER`, `DEPARTMENT_STAFF`, `ADMINISTRATOR` | `ADMINISTRATOR` is exclusive (`BR-ROLE-002`) |
 | `ReportStatus` | `DRAFT`, `PENDING_REVIEW`, `CONFIRMED`, `REJECTED`, `CANCELLED` | `CONFIRMED`, `REJECTED`, `CANCELLED` are final workflow states |
-| `TicketStatus` | `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`, `CANNOT_RESOLVE` | Active: first 3; Final: last 2 |
+| `TicketStatus` | `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED` | Active: first 3; Sole Final: `RESOLVED` |
 | `Severity` | `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` | Report count never auto-escalates (`BR-AI-013`) |
 | `AIAnalysisStatus` | `PENDING`, `COMPLETED`, `FAILED` | `FAILED` never blocks submission/review (`BR-AI-020`) |
 | `AIMatchDecision` | `MATCHED`, `NO_MATCH` | `NO_MATCH` produces unpublished `Ticket Candidate` |
 | `CampusLocationType` | `BUILDING`, `COMMON_AREA`, `ROAD`, `ACTIVITY_PLAZA`, `SERVICE_POINT`, `LANDMARK` | KU Bangkhen master data |
-| `PublicActivityType` | `TICKET_CONFIRMED`, `REPORT_ATTACHED`, `STATUS_CHANGED`, `DEPARTMENT_ADDED`, `DEPARTMENT_REMOVED`, `DEPARTMENT_ACTION`, `DEPARTMENT_COMPLETED`, `AUTO_RESOLVED`, `MARKED_CANNOT_RESOLVE` | Public timeline events only (never private thread text) |
-| `MajorEmailEventType` | `CONFIRMED_NEW_TICKET`, `CONFIRMED_EXISTING_TICKET`, `WAITING_INFORMATION`, `RESOLVED`, `CANNOT_RESOLVE` | Sent to Ticket Reporters only (`BR-NOT-003`..`005`) |
-| `AuthProvider` | `KU_ALL`, `GOOGLE` | Pluggable boundary (`BR-AUTH-001`, `BR-AUTH-004`) |
+| `PublicActivityType` | `TICKET_CONFIRMED`, `REPORT_ATTACHED`, `STATUS_CHANGED`, `DEPARTMENT_ADDED`, `DEPARTMENT_REMOVED`, `DEPARTMENT_ACTION`, `DEPARTMENT_COMPLETED`, `AUTO_RESOLVED` | Public timeline events only (never private thread text) |
+| `MajorEmailEventType` | `CONFIRMED_NEW_TICKET`, `CONFIRMED_EXISTING_TICKET`, `WAITING_INFORMATION`, `RESOLVED` | Sent to Ticket Reporters only (`BR-NOT-003`..`005`) |
+| `AuthProvider` | `GOOGLE` *(extensible via `AuthProvider` boundary, e.g., future `KU_ALL`)* | Initial MVP provider is Google OAuth 2.0 (`@ku.th`) (`BR-AUTH-001`, `BR-AUTH-004`) |
 
 ---
 
@@ -67,7 +67,7 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
 
 * **`users`**
   * `id` UUID PK
-  * `auth_provider` TEXT NOT NULL (`KU_ALL` | `GOOGLE`)
+  * `auth_provider` TEXT NOT NULL *(initial MVP value: `GOOGLE`; stored as extensible string to support future providers such as `KU_ALL`)*
   * `provider_subject_id` TEXT NOT NULL *(private, immutable; `UNIQUE(auth_provider, provider_subject_id)`)*
   * `username` TEXT NOT NULL UNIQUE *(public identity; mutable; case-insensitive unique index on `LOWER(username)`)*
   * `real_name` TEXT NOT NULL *(private)*
@@ -150,7 +150,6 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
   * `location_id` UUID NULL REFERENCES `campus_locations(id)`, `location_name` TEXT NOT NULL, `location_detail_note` TEXT NULL, `lat` DOUBLE PRECISION NOT NULL, `lng` DOUBLE PRECISION NOT NULL
   * `confirmed_by` UUID NOT NULL REFERENCES `users(id)`, `confirmed_at` TIMESTAMPTZ NOT NULL
   * `resolved_at` TIMESTAMPTZ NULL, `resolution_summary` TEXT NULL
-  * `cannot_resolve_reason` TEXT NULL, `cannot_resolve_by` UUID NULL REFERENCES `users(id)`, `cannot_resolve_at` TIMESTAMPTZ NULL
   * `created_at` TIMESTAMPTZ NOT NULL, `updated_at` TIMESTAMPTZ NOT NULL
   * *Indexes:* `(status, confirmed_at DESC)` for Public Feed; `(category_id)`, `(severity)`, `(confirmed_at DESC)`.
 * **`ticket_department_assignments`**
@@ -224,12 +223,9 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
 | *(Ticket Candidate)* | `CONFIRMED` | Reviewer (≠ Reporter) | ≥1 Responsible Dept, Category, Severity, Title/Summary; assign `ticket_number`; publish; email Reporter |
 | `CONFIRMED` | `IN_PROGRESS` | Assigned Dept Staff (≠ Reporter) | `UC-TKT-001`; audit + public activity |
 | `CONFIRMED` | `WAITING_INFORMATION` | Reviewer or Assigned Dept Staff (≠ Reporter) | Post private thread question (`UC-THR-001`); email Reporters |
-| `CONFIRMED` | `CANNOT_RESOLVE` | Reviewer or Assigned Dept Staff (≠ Reporter) | Mandatory `reason` (`BR-STA-010`); Final immediately (`BR-DEP-008`); email Reporters |
 | `IN_PROGRESS` | `WAITING_INFORMATION` | Reviewer or Assigned Dept Staff (≠ Reporter) | Post private thread question (`UC-TKT-002`); email Reporters |
-| `IN_PROGRESS` | `RESOLVED` | **System** (`UC-TKT-004`) | All assigned departments complete (`UC-DEP-003` or `UC-REV-006` removal); set `resolved_at`; Final; email Reporters; open Feedback |
+| `IN_PROGRESS` | `RESOLVED` | **System** (`UC-TKT-004`) | All assigned departments complete (`UC-DEP-003` or `UC-REV-006` removal); set `resolved_at`; sole Final State; email Reporters; open Feedback |
 | `WAITING_INFORMATION` | `IN_PROGRESS` | Assigned Dept Staff (≠ Reporter) | `UC-TKT-003`; audit + public activity |
-| `WAITING_INFORMATION` | `CANNOT_RESOLVE` | Reviewer or Assigned Dept Staff (≠ Reporter) | Mandatory `reason`; Final immediately; email Reporters |
-| **`IN_PROGRESS`** | **`CANNOT_RESOLVE`** | **ANY** | **FORBIDDEN (`BR-STA-008`) — return `409 TRANSITION_FORBIDDEN`** |
 
 ---
 

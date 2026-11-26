@@ -24,7 +24,7 @@ Read only the relevant source-of-truth docs before implementing a slice:
 | Architectural decisions (ADRs) | `docs/decisions/` (start with `0001-bootstrap.md`) |
 | Service-specific agent rules | `apps/web/AGENTS.md`, `apps/api/AGENTS.md`, `apps/ai/AGENTS.md` |
 
-**Explicitly Out of MVP (do not build unless scope changes):** Video upload/analysis, Voice-to-Text, LINE OA/LIFF, AI Chat Assistant, Detailed Heatmap, Predictive Maintenance, `recurrence_of` links, SLA/Escalation, Individual Staff Assignment, Transfer Workflows, Internal Notes, General Public Comments, Ticket Reopen, `CLOSED` state, and Multi-campus/Multi-tenant support.
+**Explicitly Out of MVP (do not build unless scope changes):** Video upload/analysis, Voice-to-Text, LINE OA/LIFF, AI Chat Assistant, Detailed Heatmap, Predictive Maintenance, `recurrence_of` links, SLA/Escalation, Individual Staff Assignment, Transfer Workflows, Internal Notes, General Public Comments, Ticket Reopen, `CANNOT_RESOLVE` / `CLOSED` states, and Multi-campus/Multi-tenant support.
 
 ---
 
@@ -33,7 +33,7 @@ Read only the relevant source-of-truth docs before implementing a slice:
 Never violate these rules (see `docs/business-rules.md` for full IDs):
 
 1. **`Report` vs. `Ticket` separation (`BR-GEN-004`..`006`):** A `Report` is one user's submission; a `Ticket` is one verified campus incident (`Ticket 1 ── 1..* Confirmed Report`). Deduplication groups Reports into a Ticket — never deletes or overwrites original Reports.
-2. **Human-in-the-loop AI & fallback (`BR-GEN-007`..`008`, `BR-AI-016`..`020`):** AI is strictly Decision Support. AI must **never** confirm, reject, resolve, mark cannot-resolve, delete, hide, or mutate final operational Ticket data. AI errors/timeouts/outages must **never** block Report submission or manual Reviewer work.
+2. **Human-in-the-loop AI & fallback (`BR-GEN-007`..`008`, `BR-AI-016`..`020`):** AI is strictly Decision Support. AI must **never** confirm, reject, resolve, delete, hide, or mutate final operational Ticket data. AI errors/timeouts/outages must **never** block Report submission or manual Reviewer work.
 3. **Roles & Separation of Duties (`BR-ROLE-001`..`007`):**
    - 4 roles: `REPORTER`, `REVIEWER`, `DEPARTMENT_STAFF`, `ADMINISTRATOR`.
    - `ADMINISTRATOR` is **exclusive** (cannot combine with any other role, cannot belong to a department, cannot operate on tickets).
@@ -44,14 +44,13 @@ Never violate these rules (see `docs/business-rules.md` for full IDs):
    - Editing a `PENDING_REVIEW` report increments `version`, marks prior AI output outdated, and triggers AI re-analysis.
    - Reviewers may confirm/reject **only against the latest `version`**; stale review actions must fail safely with `409 STALE_REPORT_VERSION`.
    - Purge `DRAFT` 30 days after `created_at` and `CANCELLED` 30 days after `cancelled_at` (`BR-RET-001`..`002`).
-5. **Ticket lifecycle & forbidden transition (`BR-TKT-001`..`013`, `BR-STA-001`..`011`):**
+5. **Ticket lifecycle (`BR-TKT-001`..`013`, `BR-STA-001`..`011`):**
    - **Active:** `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`.
-   - **Final:** `RESOLVED`, `CANNOT_RESOLVE` (immutable; no reopen, no new reports, no new `Mark Affected`, no department edits).
-   - **`IN_PROGRESS → CANNOT_RESOLVE` is strictly forbidden (`BR-STA-008`).**
-   - `CANNOT_RESOLVE` is allowed only from `CONFIRMED` or `WAITING_INFORMATION` (by Reviewer or Responsible Department Staff) with a mandatory description, and immediately finalizes the entire Ticket.
+   - **Final:** `RESOLVED` only (immutable; every Ticket terminates at `RESOLVED`; no `CANNOT_RESOLVE`, no reopen, no new reports, no new `Mark Affected`, no department edits).
    - Unpublished `Ticket Candidate` created on AI `NO_MATCH` is never public and has no operational status until Reviewer confirms.
-6. **Multi-Department resolution (`BR-DEP-001`..`008`):** Multiple departments may own a Ticket with **no Primary Department** and **no Individual Staff Assignment**. Completion is tracked per department; once all assigned departments are complete (including when removing an incomplete department leaves all remaining departments complete), the system **auto-transitions the Ticket to `RESOLVED` immediately**.
-7. **Visibility, Privacy & EXIF (`BR-AUTH-002`..`010`, `BR-THR-001`..`006`):**
+6. **Multi-Department resolution (`BR-DEP-001`..`007`):** Multiple departments may own a Ticket with **no Primary Department** and **no Individual Staff Assignment**. Completion is tracked per department; once all assigned departments are complete (including when removing an incomplete department leaves all remaining departments complete), the system **auto-transitions the Ticket to `RESOLVED` immediately**.
+7. **Authentication, Visibility, Privacy & EXIF (`BR-AUTH-001`..`010`, `BR-THR-001`..`006`):**
+   - MVP authentication uses **Google OAuth 2.0 (`@ku.th`)** behind a **pluggable Auth Provider boundary** so additional providers (e.g., KU-ALL SSO) can be added without changing domain code.
    - Public Read requires no login; all write/interactive actions require authentication.
    - Public identity is a unique, mutable `Username` (reflected retroactively on old reports). Never expose real name, email, student ID, or academic department publicly.
    - Strip all **EXIF metadata** from uploaded images (1–5 images, ≤10 MB, `.png`/`.jpg`/`.jpeg`) before storage/serving.

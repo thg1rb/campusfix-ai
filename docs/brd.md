@@ -78,15 +78,15 @@ The platform defines **4 roles**:
 | Role | Responsibilities & Capabilities | Key Constraints |
 | --- | --- | --- |
 | **Reporter** | Save/resume `DRAFT` reports, submit `PENDING_REVIEW` reports, edit/cancel while `PENDING_REVIEW`, add a report from an Active Ticket, track tickets, participate in private Additional Information Thread (only on tickets where they have a Confirmed Report), toggle `Mark Affected` on Active Tickets, and submit/edit multi-dimensional Feedback after `RESOLVED`. | Cannot edit/cancel after `CONFIRMED` or `REJECTED`. Does not manually choose Category, Severity, or Department on submission. |
-| **Reviewer** | Central triage authority. Inspect `PENDING_REVIEW` reports (latest version only), override AI results (Category, Severity, Departments, Title/Summary, Matching), confirm into an Existing Active Ticket or confirm a Ticket Candidate as a New Ticket, reject with mandatory reason, correct Confirmed Reports (triggering ticket re-evaluation), add/remove Responsible Departments on Active Tickets, request additional information (`WAITING_INFORMATION`), and mark `CANNOT_RESOLVE` per transition rules. | **Separation of Duties (`BR-ROLE-004`):** Cannot review, confirm, reject, or manage any Report/Ticket where they are a Reporter. |
-| **Department Staff** | View Department Work Dashboard for their department's Active Tickets, start work (`CONFIRMED → IN_PROGRESS`), request additional information (`WAITING_INFORMATION`), resume work (`WAITING_INFORMATION → IN_PROGRESS`), record operational actions and evidence on Public Activity Timeline, confirm their department's completion, mark `CANNOT_RESOLVE` (only from `CONFIRMED` or `WAITING_INFORMATION`, with mandatory description), and view department-scoped analytics. | Belongs to **at most 1 Department** (`BR-ROLE-003`). **No individual staff assignment** (`BR-TKT-012`). **Separation of Duties (`BR-ROLE-005`):** Cannot perform operational actions on Tickets where they are a Reporter. |
+| **Reviewer** | Central triage authority. Inspect `PENDING_REVIEW` reports (latest version only), override AI results (Category, Severity, Departments, Title/Summary, Matching), confirm into an Existing Active Ticket or confirm a Ticket Candidate as a New Ticket, reject with mandatory reason, correct Confirmed Reports (triggering ticket re-evaluation), add/remove Responsible Departments on Active Tickets, and request additional information (`WAITING_INFORMATION`). | **Separation of Duties (`BR-ROLE-004`):** Cannot review, confirm, reject, or manage any Report/Ticket where they are a Reporter. |
+| **Department Staff** | View Department Work Dashboard for their department's Active Tickets, start work (`CONFIRMED → IN_PROGRESS`), request additional information (`WAITING_INFORMATION`), resume work (`WAITING_INFORMATION → IN_PROGRESS`), record operational actions and evidence on Public Activity Timeline, confirm their department's completion, and view department-scoped analytics. | Belongs to **at most 1 Department** (`BR-ROLE-003`). **No individual staff assignment** (`BR-TKT-012`). **Separation of Duties (`BR-ROLE-005`):** Cannot perform operational actions on Tickets where they are a Reporter. |
 | **Administrator** | Manage Users, Account Status, Roles, Permissions, Username policy, Categories, Departments, Campus Locations, System Configuration, and System-wide Analytics. | **Exclusive Role (`BR-ROLE-002`):** Cannot hold `REPORTER`, `REVIEWER`, or `DEPARTMENT_STAFF` on the same account. Cannot operate on Tickets (`BR-ROLE-007`). |
 
 ### 3.1 Cross-Cutting Access & Privacy Principles
 
 * **Multi-Role Accounts:** A single non-admin account may hold multiple operational roles (e.g., `REPORTER` + `REVIEWER`, or `REPORTER` + `DEPARTMENT_STAFF`), subject to Separation of Duties (`BR-ROLE-001`, `BR-ROLE-004`..`006`).
 * **Public Read vs. Authenticated Write:** Public Feed, Ticket Detail, Public Report Detail, Campus Map, Public Activity Timeline, and Public Reporter Profile are readable **without login** (`BR-AUTH-003`). All write/interactive actions require authentication (`BR-AUTH-002`).
-* **Authentication Provider:** Requirement Freeze 1 specifies **KU-ALL (SSO)** as the default MVP provider (`BR-AUTH-001`) behind a pluggable authentication provider boundary (`BR-AUTH-004`). *(Note: `UC-AUTH-001` catalog and the current web prototype also reference Google OAuth 2.0 for `@ku.th`; see [docs/status.md](status.md) for the active integration plan.)*
+* **Authentication Provider:** MVP uses **Google OAuth 2.0 (`@ku.th`)** as the initial authentication provider (`BR-AUTH-001`), implemented behind a **pluggable Auth Provider boundary** (`BR-AUTH-004`) so other providers (such as KU-ALL SSO) can be added in the future without modifying domain logic.
 * **Public Identity & Privacy:** Every user has a unique, mutable `Username` displayed on public reports and profiles; changing a username updates display retroactively across historical reports (`BR-AUTH-005`..`009`). Real name, email, student ID, and academic department must never be exposed publicly (`BR-AUTH-010`). Uploaded images must have EXIF metadata stripped prior to storage/publication.
 
 ---
@@ -111,29 +111,27 @@ DRAFT ──(Submit)──▶ PENDING_REVIEW
 ### 4.2 Ticket Lifecycle (`BR-TKT-001`..`013`, `BR-STA-001`..`011`)
 
 * **Active Tickets:** `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`
-* **Final Tickets:** `RESOLVED`, `CANNOT_RESOLVE`
+* **Final Ticket:** `RESOLVED` *(every Ticket terminates at `RESOLVED`; there is no `CANNOT_RESOLVE` state)*
 
 ```text
 Ticket Candidate (Unpublished)
   └──(Reviewer Confirm)──▶ CONFIRMED
                               ├──(Department Start)──────────────▶ IN_PROGRESS
-                              ├──(Reviewer/Dept Request Info)────▶ WAITING_INFORMATION
-                              └──(Reviewer/Dept + Description)───▶ CANNOT_RESOLVE [Final]
+                              └──(Reviewer/Dept Request Info)────▶ WAITING_INFORMATION
 
 IN_PROGRESS
   ├──(Reviewer/Dept Request Info)────────────────────────────────▶ WAITING_INFORMATION
   └──(System: All Responsible Departments Complete)──────────────▶ RESOLVED       [Final]
 
 WAITING_INFORMATION
-  ├──(Department Resume)─────────────────────────────────────────▶ IN_PROGRESS
-  └──(Reviewer/Dept + Description)───────────────────────────────▶ CANNOT_RESOLVE [Final]
+  └──(Department Resume)─────────────────────────────────────────▶ IN_PROGRESS
 ```
 
 **Critical Ticket Invariants:**
-1. **`IN_PROGRESS → CANNOT_RESOLVE` is strictly forbidden** (`BR-STA-008`).
+1. **`RESOLVED` is the sole Final Ticket status** (`BR-STA-009`). Every Ticket ends at `RESOLVED` via multi-department completion; `CANNOT_RESOLVE` is not part of the platform.
 2. Only **Active Tickets** can accept additional Reports, serve as AI Matching candidates, accept `Mark Affected` toggles, or have Responsible Departments modified (`BR-TKT-001`..`004`).
 3. **Final Tickets** never reopen and cannot be modified operationally (`BR-TKT-005`..`007`, `BR-STA-009`).
-4. **Multi-Department Resolution (`BR-DEP-001`..`008`):** A Ticket may have 1 or more Responsible Departments with **no Primary Department**. Completion is recorded per department. When all assigned departments complete (or when an incomplete department is removed by a Reviewer leaving all remaining departments complete), the System **immediately auto-transitions the Ticket to `RESOLVED`** with no additional Reviewer approval. Conversely, if any assigned Department (or Reviewer) marks `CANNOT_RESOLVE` from an allowed state, the entire Ticket becomes `CANNOT_RESOLVE` immediately.
+4. **Multi-Department Resolution (`BR-DEP-001`..`007`):** A Ticket may have 1 or more Responsible Departments with **no Primary Department**. Completion is recorded per department. When all assigned departments complete (or when an incomplete department is removed by a Reviewer leaving all remaining departments complete), the System **immediately auto-transitions the Ticket to `RESOLVED`** with no additional Reviewer approval.
 
 ---
 
@@ -148,7 +146,7 @@ AI operates strictly as a **Decision Support System**:
   4. **Multi-Department Recommendation** based on Category, Description, Location, Images, and Department responsibility scopes.
   5. **Report Title** generation (short summary of each Report for Ticket Detail) and **Ticket Title / Summary** generation.
   6. **Ticket Re-evaluation (`UC-AI-003`):** Triggered when a Confirmed Report is added to or corrected on a Ticket. Produces recommendations only; never mutates final Ticket fields without Reviewer approval (`BR-AI-014`, `BR-AI-015`).
-* **Hard Guardrails:** AI must **never** confirm, reject, resolve, cannot-resolve, delete, hide, or mutate final operational Tickets (`BR-AI-016`..`019`).
+* **Hard Guardrails:** AI must **never** confirm, reject, resolve, delete, hide, or mutate final operational Tickets (`BR-AI-016`..`019`).
 * **Failure Resilience:** AI timeouts, errors, or outages must **never** block Report submission or manual Reviewer operations (`BR-GEN-008`, `BR-AI-020`).
 
 ### 5.1 Severity Scale
@@ -199,7 +197,6 @@ AI operates strictly as a **Decision Support System**:
   2. Report Confirmed → Attached to Existing Ticket
   3. Ticket transitioned to `WAITING_INFORMATION`
   4. Ticket transitioned to `RESOLVED`
-  5. Ticket transitioned to `CANNOT_RESOLVE`
 
 ---
 
@@ -238,7 +235,7 @@ Every Report save/submit/edit/cancel/confirm/reject, AI analysis run, Reviewer d
 * Individual Staff Assignment and Transfer Workflows
 * Internal staff-only notes
 * General Public Comment discussions
-* Ticket Reopen and `CLOSED` state
+* Ticket Reopen, `CANNOT_RESOLVE`, and `CLOSED` states
 * LINE OA / LIFF integration
 * Multi-campus / Multi-university / Multi-tenant support
 

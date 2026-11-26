@@ -45,10 +45,10 @@ BR-<DOMAIN>-<NUMBER>
 
 | Rule ID | Business Rule |
 | --- | --- |
-| `BR-AUTH-001` | MVP specifies **KU-ALL (SSO)** as the default Authentication Provider. *(See [docs/status.md](status.md) regarding the pluggable boundary and `UC-AUTH-001` Google OAuth 2.0 `@ku.th` alignment.)* |
+| `BR-AUTH-001` | MVP uses **Google OAuth 2.0 (`@ku.th`)** as the initial Authentication Provider (`hosted_domain == "ku.th"`). |
 | `BR-AUTH-002` | All write and interactive actions require authentication. |
 | `BR-AUTH-003` | Public Feed, Ticket Detail, Public Report Detail, Campus Map, Public Activity Timeline, and Public Profile are readable without login. |
-| `BR-AUTH-004` | The authentication boundary must be pluggable to support additional providers in the future. |
+| `BR-AUTH-004` | The authentication boundary must be pluggable so additional providers (e.g., KU-ALL SSO) can be added in the future without changing domain logic. |
 | `BR-AUTH-005` | Every user must have a `Username` as their public identity. |
 | `BR-AUTH-006` | `Username` must be unique across the system. |
 | `BR-AUTH-007` | Users can change their `Username`. |
@@ -130,7 +130,7 @@ Canonical states: `DRAFT`, `PENDING_REVIEW`, `CONFIRMED`, `REJECTED`, `CANCELLED
 ## 9. Active Ticket & Final Ticket Rules
 
 * **Active Ticket States:** `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`
-* **Final Ticket States:** `RESOLVED`, `CANNOT_RESOLVE`
+* **Final Ticket State:** `RESOLVED` *(sole Final Ticket state; `CANNOT_RESOLVE` is retired)*
 
 | Rule ID | Business Rule |
 | --- | --- |
@@ -171,7 +171,7 @@ Canonical states: `DRAFT`, `PENDING_REVIEW`, `CONFIRMED`, `REJECTED`, `CANCELLED
 | `BR-AI-015` | Ticket Re-evaluation output is strictly a recommendation; Reviewers must approve any change to final Ticket data. |
 | `BR-AI-016` | AI must never confirm or reject a Report. |
 | `BR-AI-017` | AI must never create a final operational Ticket autonomously. |
-| `BR-AI-018` | AI must never resolve or mark a Ticket `CANNOT_RESOLVE`. |
+| `BR-AI-018` | AI must never resolve a Ticket autonomously. |
 | `BR-AI-019` | AI must never delete a Report or hide a Report/Ticket from Reviewers. |
 | `BR-AI-020` | On AI failure, the Report remains `PENDING_REVIEW` and Reviewers can complete triage manually. |
 
@@ -179,21 +179,19 @@ Canonical states: `DRAFT`, `PENDING_REVIEW`, `CONFIRMED`, `REJECTED`, `CANCELLED
 
 ## 11. Ticket Status Transition Rules
 
-Canonical states: `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`, `CANNOT_RESOLVE`.
+Canonical states: `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`. *(Every Ticket always terminates at `RESOLVED`; `CANNOT_RESOLVE` is retired.)*
 
 | Rule ID | Transition / Rule |
 | --- | --- |
 | `BR-STA-001` | `CONFIRMED → IN_PROGRESS` by Responsible Department Staff. |
 | `BR-STA-002` | `CONFIRMED → WAITING_INFORMATION` by Reviewer or Responsible Department Staff. |
-| `BR-STA-003` | `CONFIRMED → CANNOT_RESOLVE` by Reviewer or Responsible Department Staff. |
 | `BR-STA-004` | `IN_PROGRESS → WAITING_INFORMATION` by Reviewer or Responsible Department Staff. |
 | `BR-STA-005` | `IN_PROGRESS → RESOLVED` by **System** automatically when all Responsible Departments complete. |
 | `BR-STA-006` | `WAITING_INFORMATION → IN_PROGRESS` by Responsible Department Staff. |
-| `BR-STA-007` | `WAITING_INFORMATION → CANNOT_RESOLVE` by Reviewer or Responsible Department Staff. |
-| `BR-STA-008` | **`IN_PROGRESS → CANNOT_RESOLVE` is FORBIDDEN.** |
-| `BR-STA-009` | `RESOLVED` and `CANNOT_RESOLVE` are Final States. |
-| `BR-STA-010` | `CANNOT_RESOLVE` requires a non-empty explanation/description. |
+| `BR-STA-009` | `RESOLVED` is the sole Final State of a Ticket (immutable; no reopen). |
 | `BR-STA-011` | Every Ticket status transition must record Actor, Role/Department, and Timestamp. |
+
+*(Retired Freeze 1 IDs: `BR-STA-003`, `BR-STA-007`, `BR-STA-008`, `BR-STA-010`, and `BR-DEP-008` applied to the removed `CANNOT_RESOLVE` state and are no longer in effect.)*
 
 ---
 
@@ -208,7 +206,6 @@ Canonical states: `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`,
 | `BR-DEP-005` | When Departments are edited, any already-completed Department that remains assigned preserves its completed state. |
 | `BR-DEP-006` | Adding a new Department before the Ticket is Final requires that new Department to complete before auto-resolution. |
 | `BR-DEP-007` | Removing an incomplete Department so that all remaining assigned Departments are complete immediately triggers Auto-`RESOLVED`. |
-| `BR-DEP-008` | If any single Responsible Department marks an eligible Ticket `CANNOT_RESOLVE`, the entire Ticket transitions to `CANNOT_RESOLVE` immediately. |
 | `BR-DEP-009` | Department Staff who are a Reporter of the Ticket must never perform operational actions on that Ticket. |
 
 ---
@@ -279,7 +276,7 @@ Canonical states: `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`,
 | --- | --- |
 | `BR-NOT-001` | MVP delivers notifications via Email. |
 | `BR-NOT-002` | Emails are sent only for Major Events. |
-| `BR-NOT-003` | Major Events include at minimum: `CONFIRMED_NEW_TICKET`, `CONFIRMED_EXISTING_TICKET`, `WAITING_INFORMATION`, `RESOLVED`, and `CANNOT_RESOLVE`. |
+| `BR-NOT-003` | Major Events include: `CONFIRMED_NEW_TICKET`, `CONFIRMED_EXISTING_TICKET`, `WAITING_INFORMATION`, and `RESOLVED`. |
 | `BR-NOT-004` | Email recipients are strictly the Reporters of the Ticket. |
 | `BR-NOT-005` | Affected-only users do not receive Major Event Emails. |
 
@@ -330,7 +327,6 @@ Canonical states: `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`,
 | Add / Remove Responsible Departments on Active Ticket | No | No | Yes | No | No | Active Ticket + **Not Reporter of Ticket** |
 | Start Work / Resume Work / Record Action / Confirm Dept Completion | No | No | No | Yes | No | Assigned Dept + **Not Reporter of Ticket** (`BR-ROLE-005`) |
 | Request Additional Info (`WAITING_INFORMATION`) | No | No | Yes | Yes | No | Active Ticket + Assigned Dept (if Staff) + **Not Reporter** |
-| Mark `CANNOT_RESOLVE` | No | No | Yes | Yes | No | Only from `CONFIRMED`/`WAITING_INFORMATION` (**never `IN_PROGRESS`**) + mandatory description + **Not Reporter** |
 | Read / Post in Additional Information Thread | No | Own Ticket | Yes | Assigned Dept | No | Reporter must have Confirmed Report in Ticket (`BR-THR-004`) |
 | Mark / Unmark Affected | No | Yes | Yes* | Yes* | No | Active Ticket only; Admin excluded (`BR-ROLE-007`) |
 | Submit / Edit Feedback | No | Own Ticket | — | — | No | `RESOLVED` Ticket + Reporter with Confirmed Report (`BR-FBK-001`..`002`) |

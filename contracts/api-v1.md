@@ -33,7 +33,7 @@ This document defines the HTTP contract between `apps/web` and `apps/api`. All t
 
 | Method & Path | Auth | Behavior |
 | --- | --- | --- |
-| `GET /api/v1/auth/login` | Public | Redirects to configured Authentication Provider (`KU_ALL` or `GOOGLE` `@ku.th`). |
+| `GET /api/v1/auth/login` | Public | Redirects to the configured Authentication Provider (initial MVP: Google OAuth 2.0 `@ku.th` via pluggable `AuthProvider` boundary). |
 | `GET /api/v1/auth/callback` | Public | Validates provider callback, provisions/loads user + roles + department, sets session cookie. |
 | `POST /api/v1/auth/logout` | Auth | Invalidates current session cookie. |
 | `GET /api/v1/me` | Auth | Returns current authenticated user profile (`id`, `username`, `roles`, `departmentId`, `isActive`; never exposed publicly). |
@@ -49,7 +49,7 @@ This document defines the HTTP contract between `apps/web` and `apps/api`. All t
 | --- | --- |
 | `GET /api/v1/public/tickets` | Public Feed (`UC-PUB-001`, `UC-PUB-002`). Defaults: Active Tickets (`CONFIRMED,IN_PROGRESS,WAITING_INFORMATION`), sort `confirmed_at DESC`, `pageSize=25`. Params: `q` (search Ticket Number, Title, Description, Location, Category, Department), `status` (comma-separated), `severity`, `categoryId`, `departmentId`, `locationId`, `dateFrom`, `dateTo`, `page`, `pageSize` (`25|50|100`). |
 | `GET /api/v1/public/tickets/map` | Lightweight markers for `UC-MAP-001` (`ticketNumber`, `title`, `status`, `severity`, `lat`, `lng`, `locationName`, `categoryId`). Accepts same filters as Feed. |
-| `GET /api/v1/public/tickets/:ticketNumber` | Ticket Detail (`UC-PUB-003`): core fields, `departments` (with per-dept completion status), linked `CONFIRMED` reports (`reportNumber`, `aiGeneratedTitle`, `thumbnailUrl`, `reporterUsername`, `submittedAt`), `reportCount`, `affectedCount`, `viewerHasMarkedAffected` (if logged in), `publicActivities`, `resolutionSummary` / `cannotResolveReason`, and `feedbackAggregate`. |
+| `GET /api/v1/public/tickets/:ticketNumber` | Ticket Detail (`UC-PUB-003`): core fields, `departments` (with per-dept completion status), linked `CONFIRMED` reports (`reportNumber`, `aiGeneratedTitle`, `thumbnailUrl`, `reporterUsername`, `submittedAt`), `reportCount`, `affectedCount`, `viewerHasMarkedAffected` (if logged in), `publicActivities`, `resolutionSummary`, and `feedbackAggregate`. |
 | `GET /api/v1/public/reports/:reportNumber` | Public Report Detail (`UC-PUB-004`). Returns `404` unless `status == 'CONFIRMED'`. Fields: `reportNumber`, `ticketNumber`, `reporterUsername` (current), `description`, `images` (EXIF-stripped), `location`, `submittedAt`. |
 | `GET /api/v1/public/users/:username` | Public Reporter Profile (`UC-PUB-005`): `username` + paginated list of their `CONFIRMED` public reports. |
 | `GET /api/v1/public/master-data` | Active Categories, Departments, and Campus Locations for search filters and map pickers. |
@@ -100,7 +100,6 @@ All require `DEPARTMENT_STAFF` (for assigned Department) or `REVIEWER` where not
 | `POST /api/v1/tickets/:ticketId/resume` | Assigned Dept Staff | `UC-TKT-003`. `WAITING_INFORMATION → IN_PROGRESS`. |
 | `POST /api/v1/tickets/:ticketId/actions` | Assigned Dept Staff | `UC-DEP-002`. Records operational update + optional EXIF-stripped evidence images onto Public Activity Timeline. |
 | `POST /api/v1/tickets/:ticketId/departments/complete` | Assigned Dept Staff | `UC-DEP-003`. Ticket must be `IN_PROGRESS`. Marks caller's Department `isCompleted = true` with optional `note`. If all assigned departments complete, auto-transitions Ticket to `RESOLVED` immediately (`UC-TKT-004`) + sends `RESOLVED` Email. |
-| `POST /api/v1/tickets/:ticketId/cannot-resolve` | Reviewer or Assigned Dept Staff | `UC-TKT-005`. Body: `{ "description": "..." }` (mandatory). Allowed ONLY from `CONFIRMED` or `WAITING_INFORMATION`. **Returns `409 TRANSITION_FORBIDDEN` if Ticket is `IN_PROGRESS` (`BR-STA-008`).** Finalizes entire Ticket immediately + sends `CANNOT_RESOLVE` Email. |
 | `GET /api/v1/department/analytics` | Dept Staff | `UC-DEP-004`. Scoped strictly to caller's single Department. |
 
 ---

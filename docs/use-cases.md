@@ -1,6 +1,6 @@
 # KU Spot — Use Case Specification (Requirement Freeze 1)
 
-> **Source of Truth:** Derived from **Requirement Freeze 1 (V4)** and linked to [docs/business-rules.md](business-rules.md) (`BR-*`). All 42 Use Cases below define the expected end-to-end behavior across Web, Go API, and Python AI Gateway.
+> **Source of Truth:** Derived from **Requirement Freeze 1 (V4)** and linked to [docs/business-rules.md](business-rules.md) (`BR-*`). All 41 active Use Cases below define the expected end-to-end behavior across Web, Go API, and Python AI Gateway (`UC-TKT-005` was retired with the removal of `CANNOT_RESOLVE`).
 
 ---
 
@@ -8,11 +8,11 @@
 
 * **Public Visitor** — Unauthenticated reader browsing Public Feed, Ticket Detail, Public Report Detail, Campus Map, Public Activity Timeline, and Public Reporter Profiles.
 * **Reporter** — Authenticated campus user who creates/edits/cancels Reports, participates in private Threads for their confirmed Tickets, toggles Mark Affected, and submits/edits Feedback.
-* **Reviewer** — Central triage officer who verifies Reports, overrides AI recommendations, controls Ticket matching and Responsible Department assignments, corrects Confirmed Reports, requests additional information, and marks `CANNOT_RESOLVE` when allowed.
-* **Department Staff** — Staff belonging to at most one Department who operates on assigned Active Tickets, records actions/evidence, confirms department completion, marks `CANNOT_RESOLVE` when allowed, and views Department Analytics.
+* **Reviewer** — Central triage officer who verifies Reports, overrides AI recommendations, controls Ticket matching and Responsible Department assignments, corrects Confirmed Reports, and requests additional information.
+* **Department Staff** — Staff belonging to at most one Department who operates on assigned Active Tickets, records actions/evidence, confirms department completion, and views Department Analytics.
 * **Administrator** — Exclusive system administration role managing Users, Roles, Permissions, Categories, Departments, Locations, and System-wide Analytics (never operates on Tickets).
 * **AI Service** — Stateless multimodal Decision Support service (`apps/ai`) analyzing Images + Description + Location.
-* **Authentication Provider** — Primary Freeze 1 provider is **KU-ALL (SSO)** behind a pluggable provider boundary (`BR-AUTH-001`, `BR-AUTH-004`); `UC-AUTH-001` also supports Google OAuth 2.0 (`@ku.th`) during MVP/prototype transition.
+* **Authentication Provider** — Initial MVP provider is **Google OAuth 2.0 (`@ku.th`)** (`BR-AUTH-001`), abstracted behind a pluggable provider boundary (`BR-AUTH-004`) to support future providers (e.g., KU-ALL SSO).
 * **Email Service** — Outbound notification provider delivering Major Event Emails to Ticket Reporters.
 * **System** — Automated backend orchestration (e.g., Auto-`RESOLVED` on multi-department completion, 30-day retention purge).
 
@@ -22,7 +22,7 @@
 
 | ID | Use Case | Primary Actor | Rule Group |
 | --- | --- | --- | --- |
-| `UC-AUTH-001` | Login via Authentication Provider (KU-ALL SSO / Google OAuth `@ku.th`) | Authenticated User | `BR-AUTH-001`..`004`, `BR-ROLE-001`..`003` |
+| `UC-AUTH-001` | Login with Google OAuth 2.0 (`@ku.th`) via Pluggable Auth Provider | Authenticated User | `BR-AUTH-001`..`004`, `BR-ROLE-001`..`003` |
 | `UC-USR-001` | Set or Change Username | Authenticated User | `BR-AUTH-005`..`010` |
 | `UC-RPT-001` | Save / Resume Draft Report | Reporter | `BR-RLC-001`, `BR-RET-001`, `BR-RET-003` |
 | `UC-RPT-002` | Submit Report | Reporter | `BR-RPT-001`..`007`, `BR-AI-001`..`020` |
@@ -53,7 +53,6 @@
 | `UC-DEP-002` | Record Department Action | Department Staff | `BR-AUD-001`, `BR-ROLE-005` |
 | `UC-DEP-003` | Confirm Department Completion | Department Staff | `BR-DEP-001`..`003`, `BR-DEP-009` |
 | `UC-TKT-004` | Auto Resolve Ticket | System | `BR-STA-005`, `BR-STA-009`, `BR-DEP-003`, `BR-DEP-007` |
-| `UC-TKT-005` | Mark Ticket Cannot Resolve | Reviewer / Department | `BR-STA-003`, `BR-STA-007`..`011`, `BR-DEP-008` |
 | `UC-AFF-001` | Mark / Unmark Affected | Authenticated User | `BR-AFF-001`..`007` |
 | `UC-FBK-001` | Submit Multi-dimensional Feedback | Reporter | `BR-FBK-001`..`009` |
 | `UC-FBK-002` | Edit Feedback | Reporter | `BR-FBK-003`..`008` |
@@ -69,15 +68,15 @@
 
 ## 3. Authentication & Identity
 
-### `UC-AUTH-001` — Login via Authentication Provider
+### `UC-AUTH-001` — Login with Google OAuth 2.0 (`@ku.th`)
 * **Preconditions:** User is unauthenticated.
 * **Main Flow:**
   1. User initiates login.
-  2. System redirects to the configured Authentication Provider (KU-ALL SSO per `BR-AUTH-001`, or Google OAuth 2.0 `@ku.th` via the pluggable provider boundary `BR-AUTH-004`).
-  3. Provider authenticates the identity and returns claims (`provider_subject_id`, verified email, real name).
+  2. System redirects to the configured Authentication Provider (**Google OAuth 2.0** restricted to `@ku.th` in MVP per `BR-AUTH-001`, behind the pluggable `AuthProvider` boundary per `BR-AUTH-004`).
+  3. Provider authenticates the identity and returns verified claims (`provider_subject_id`, verified `@ku.th` email, hosted domain, real name).
   4. System loads or provisions the user account, roles, and single department membership.
   5. System grants actions according to active roles.
-* **Alternative:** Authentication failure denies write/interactive actions while Public Read remains accessible.
+* **Alternative:** Authentication failure or disallowed domain denies write/interactive actions while Public Read remains accessible.
 
 ### `UC-USR-001` — Set or Change Username
 * **Main Flow:** User submits a new `username` → System validates uniqueness (`BR-AUTH-006`) → Saves change → All historical public Reports immediately reflect the updated `username` (`BR-AUTH-008`).
@@ -212,17 +211,16 @@
 * **`UC-TKT-003` — Resume Work:** Ticket is `WAITING_INFORMATION`; Responsible Department Staff (not Reporter) resumes work → Ticket transitions to `IN_PROGRESS` → Public Activity + Audit recorded.
 * **`UC-DEP-002` — Record Department Action:** Responsible Department Staff (not Reporter) records operational updates, notes, and permitted evidence images → recorded on Public Activity Timeline + Audit Log.
 * **`UC-DEP-003` — Confirm Department Completion:** Ticket is `IN_PROGRESS`; Responsible Department Staff (not Reporter) confirms their Department's completion (with optional note) → System marks that department `is_completed = true` → Logs `DEPARTMENT_COMPLETED` → Checks all Responsible Departments: if incomplete remain, Ticket stays `IN_PROGRESS`; if all complete, immediately invokes `UC-TKT-004`.
-* **`UC-TKT-004` — Auto Resolve Ticket (System):** Triggered when all Responsible Departments complete (`UC-DEP-003`) OR an incomplete department is removed leaving all remaining departments complete (`UC-REV-006`) → Transitions Ticket immediately to `RESOLVED` (Final) → Records `resolved_at` and `AUTO_RESOLVED` activity → Locks new Reports, Mark Affected, and Department edits → Sends `RESOLVED` Major Event Email to Reporters → Opens Feedback (`UC-FBK-001`).
-* **`UC-TKT-005` — Mark Ticket Cannot Resolve:** Reviewer or Responsible Department Staff (not Reporter) on a Ticket in **`CONFIRMED` or `WAITING_INFORMATION` ONLY** (**forbidden from `IN_PROGRESS`**, `BR-STA-008`) provides mandatory `description` → Entire Ticket transitions immediately to `CANNOT_RESOLVE` (Final; a single Department suffices, `BR-DEP-008`) → Records Public Activity & Audit Log → Sends `CANNOT_RESOLVE` Major Event Email to Reporters → Locks Ticket permanently.
+* **`UC-TKT-004` — Auto Resolve Ticket (System):** Triggered when all Responsible Departments complete (`UC-DEP-003`) OR an incomplete department is removed leaving all remaining departments complete (`UC-REV-006`) → Transitions Ticket immediately to `RESOLVED` (sole Final State) → Records `resolved_at` and `AUTO_RESOLVED` activity → Locks new Reports, Mark Affected, and Department edits → Sends `RESOLVED` Major Event Email to Reporters → Opens Feedback (`UC-FBK-001`).
 
 ---
 
 ## 10. Affected User, Feedback & Notification Use Cases
 
-* **`UC-AFF-001` — Mark / Unmark Affected:** Authenticated non-Admin user toggles affected status on an **Active Ticket** (unique per `(ticket_id, user_id)`). Final Tickets freeze historical count. Affected-only users do not receive Major Event Emails.
+* **`UC-AFF-001` — Mark / Unmark Affected:** Authenticated non-Admin user toggles affected status on an **Active Ticket** (unique per `(ticket_id, user_id)`). Final Tickets (`RESOLVED`) freeze historical count. Affected-only users do not receive Major Event Emails.
 * **`UC-FBK-001` — Submit Multi-dimensional Feedback:** Reporter with a `CONFIRMED` Report in a **`RESOLVED`** Ticket submits 1–5 star ratings per dimension (one Feedback Set per Reporter per Ticket) → System recalculates per-dimension averages and overall Ticket aggregate average.
 * **`UC-FBK-002` — Edit Feedback:** Reporter updates their existing Feedback Set → System saves and recalculates averages.
-* **`UC-NOT-001` — Send Major Event Email (System):** Dispatches email notifications strictly to Reporters of the Ticket for `CONFIRMED_NEW_TICKET`, `CONFIRMED_EXISTING_TICKET`, `WAITING_INFORMATION`, `RESOLVED`, and `CANNOT_RESOLVE` (`BR-NOT-001`..`005`).
+* **`UC-NOT-001` — Send Major Event Email (System):** Dispatches email notifications strictly to Reporters of the Ticket for `CONFIRMED_NEW_TICKET`, `CONFIRMED_EXISTING_TICKET`, `WAITING_INFORMATION`, and `RESOLVED` (`BR-NOT-001`..`005`).
 
 ---
 
@@ -258,16 +256,13 @@ Ticket Candidate (Unpublished)
       │ UC-REV-003 (Confirm New Ticket)
       ▼
   CONFIRMED ───────(UC-TKT-001 Start)────────▶ IN_PROGRESS
-    │   │                                        │      │
-    │   └──(UC-THR-001 / UC-TKT-002)──▶ WAITING_INFORMATION ◀──┘ (UC-TKT-002)
-    │                                     │      │
-    │                                     │      └──(UC-TKT-003 Resume)──▶ IN_PROGRESS
-    │                                     │                                     │
-    └──(UC-TKT-005 Cannot Resolve)────────┴──(UC-TKT-005)──▶ CANNOT_RESOLVE     │
-                                                                 [Final]        │
-                                                                                ▼
-                                          (UC-DEP-003 / UC-REV-006 → UC-TKT-004)
-                                                                            RESOLVED
-                                                                             [Final]
+        │                                        │      │
+        └──(UC-THR-001 / UC-TKT-002)──▶ WAITING_INFORMATION ◀──┘ (UC-TKT-002)
+                                                 │                     │
+                                                 └──(UC-TKT-003 Resume)┘
+                                                                       │
+                                           (UC-DEP-003 / UC-REV-006 → UC-TKT-004)
+                                                                       ▼
+                                                                   RESOLVED
+                                                                [Sole Final]
 ```
-*(Forbidden: `IN_PROGRESS → CANNOT_RESOLVE` per `BR-STA-008`.)*

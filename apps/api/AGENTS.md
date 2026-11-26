@@ -39,7 +39,7 @@ Read root `AGENTS.md`, `docs/architecture.md`, `docs/data-model.md`, `docs/busin
 * Enforce **Separation of Duties** (`BR-ROLE-004`, `BR-ROLE-005`) server-side on every review, department assignment, thread request, and department operational action — never trust client-side guards alone.
 * Enforce **Exclusive Administrator** (`BR-ROLE-002`, `BR-ROLE-007`) and **max 1 Department per Staff** (`BR-ROLE-003`).
 * Enforce **Optimistic Locking** on Reviewer Confirm/Reject (`report.version == expected_version`, returning `409 STALE_REPORT_VERSION`).
-* Enforce **Forbidden Transition** `IN_PROGRESS → CANNOT_RESOLVE` (`BR-STA-008`).
+* Enforce **Pluggable Auth Boundary** (`BR-AUTH-004`) starting with **Google OAuth 2.0 (`@ku.th`)** (`BR-AUTH-001`), and ensure `RESOLVED` is the sole Final Ticket status (auto-triggered when all Responsible Departments complete).
 * Strip **EXIF metadata** from all uploaded images before writing to object storage; validate MIME/magic bytes (`.png`, `.jpg`, `.jpeg`), ≤10 MB each, 1–5 per submitted report.
 * Enforce **Public DTO Projection**: never serialize `email`, `real_name`, `provider_subject_id`, `student_id`, or private thread messages in public endpoints.
 * Treat AI Gateway errors/timeouts as degraded recommendations (`AIAnalysisStatus = FAILED`) — never fail `POST /reports/:id/submit` or `PATCH /reports/:id` because AI is unavailable.

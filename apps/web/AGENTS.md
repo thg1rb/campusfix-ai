@@ -32,7 +32,7 @@ Read root `AGENTS.md`, `docs/design-system.md`, `contracts/api-v1.md`, and `docs
 
 * `apps/web` currently runs against an in-browser prototype store (`src/lib/store/PrototypeStore.tsx`) and mock AI (`src/lib/ai/mockAiService.ts`).
 * Do **not** silently mix mock store mutations with live Go API calls in the same flow; follow the phased integration plan in `docs/status.md`.
-* Keep every screen faithful to Freeze 1 interactive states: loading skeletons, empty states, non-blocking AI fallback banners, `409 STALE_REPORT_VERSION` reload prompts, Separation of Duties guards, and final-ticket locks (`RESOLVED` and `CANNOT_RESOLVE`).
+* Keep every screen faithful to Freeze 1 interactive states: loading skeletons, empty states, non-blocking AI fallback banners, `409 STALE_REPORT_VERSION` reload prompts, Separation of Duties guards, and final-ticket locks (`RESOLVED`).
 * Respect `BR-PUB-007` (5 Ticket cards per row on desktop Public Feed) and `BR-PUB-006` (page sizes `25`, `50`, `100`).
 * Never render private PII (`realName`, `email`, student ID, department) or Additional Information Thread messages on public routes.
 
