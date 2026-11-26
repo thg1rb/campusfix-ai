@@ -54,7 +54,7 @@ Never violate these rules (see `docs/business-rules.md` for full IDs):
    - Public Read requires no login; all write/interactive actions require authentication.
    - Public identity is a unique, mutable `Username` (reflected retroactively on old reports). Never expose real name, email, student ID, or academic department publicly.
    - Strip all **EXIF metadata** from uploaded images (1–5 images, ≤10 MB, `.png`/`.jpg`/`.jpeg`) before storage/serving.
-   - Additional Information Thread is **strictly private** to involved Reviewers, Responsible Department Staff, and Reporters with a Confirmed Report in that Ticket — never exposed on Public Feed or Public Activity Timeline.
+   - Additional Information Thread is **strictly private** to active `REVIEWER`s, assigned `DEPARTMENT_STAFF`, and Reporters with a Confirmed Report in that Ticket (posting only in `WAITING_INFORMATION`; read-only history in `IN_PROGRESS` when messages exist) — never exposed on Public Feed or Public Activity Timeline.
 8. **Metrics & Notifications (`BR-AI-013`, `BR-AFF-006`..`007`, `BR-NOT-001`..`005`, `BR-ANL-001`):**
    - Report count alone must **never** auto-upgrade Severity (`CRITICAL`/`HIGH`/`MEDIUM`/`LOW`).
    - Keep `Ticket Count`, `Report Count`, and `Affected User Count` strictly distinct.

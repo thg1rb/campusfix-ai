@@ -155,21 +155,21 @@
 * **Alternatives:** Self-review blocked (`403`); Report updated concurrently forces refresh (`409 STALE_REPORT_VERSION`).
 
 ### `UC-REV-002` — Confirm Report into Existing Ticket
-* **Preconditions:** Report is `PENDING_REVIEW` at expected `version`; target Ticket is **Active**; Reviewer is not Reporter of the Report.
-* **Main Flow:** Verify Ticket is still Active → Transition Report to `CONFIRMED` and set `report.ticket_id` → Append `REPORT_ATTACHED` Public Activity Event → Trigger `UC-AI-003` Ticket Re-evaluation → Write Audit Log → Dispatch `CONFIRMED_EXISTING_TICKET` Major Event Email to Reporter (`UC-NOT-001`).
-* **Alternative:** If target Ticket became Final before confirm, fail and prompt Reviewer to pick another Active Ticket or confirm a New Ticket.
+* **Preconditions:** Report is `PENDING_REVIEW` at expected `version`; target Ticket is **Active**; Reviewer is **neither** the Reporter of the pending Report **nor** a Confirmed Reporter of the target Ticket (`BR-ROLE-004` two-level Separation of Duties); Reviewer provides verified `reportTitle`, active `categoryId`, `severity`, and `≥ 1` active `departmentIds`.
+* **Main Flow:** Verify target Ticket is Active and passes two-level Separation of Duties → Transition Report to `CONFIRMED`, set `report.ticket_id`, and save `reportTitle` (without overwriting the existing Ticket's canonical `categoryId`, `severity`, `departments`, `title`, or `summary`) → Append `REPORT_ATTACHED` Public Activity Event → Record `CONFIRM` Audit Log including verified `categoryId`, `severity`, `departmentIds`, and AI `overrides` flags (`BR-AUD-005`) → Trigger `UC-AI-003` Ticket Re-evaluation (failures are isolated to `ticket_ai_reevaluations` and never roll back confirmation) → Dispatch `CONFIRMED_EXISTING_TICKET` Major Event Email to Reporter (`UC-NOT-001`).
+* **Alternative:** If target Ticket became Final before confirm (`409 TICKET_IS_FINAL`), prompt Reviewer to pick another Active Ticket or confirm a New Ticket.
 
 ### `UC-REV-003` — Confirm New Ticket
-* **Preconditions:** Report is `PENDING_REVIEW` at expected `version`; Reviewer provides Final Category, Final Severity, Final Ticket Title/Summary, and **≥ 1 Responsible Department**; Reviewer is not Reporter.
-* **Main Flow:** Assign `ticket_number` → Create operational Ticket in status `CONFIRMED` (immediately public) → Transition Report to `CONFIRMED` linked to new Ticket → Create `TICKET_CONFIRMED` Public Activity Event → Write Audit Log → Dispatch `CONFIRMED_NEW_TICKET` Major Event Email to Reporter.
+* **Preconditions:** Report is `PENDING_REVIEW` at expected `version`; Reviewer provides Final Category, Final Severity, Final Report Title, Final Ticket Title/Summary, and **≥ 1 Responsible Department**; Reviewer is not Reporter of the Report.
+* **Main Flow:** Assign `ticket_number` → Create operational Ticket in status `CONFIRMED` (immediately public) → Transition Report to `CONFIRMED` linked to new Ticket → Create `TICKET_CONFIRMED` Public Activity Event → Write `CONFIRM` Audit Log with AI `overrides` flags → Dispatch `CONFIRMED_NEW_TICKET` Major Event Email to Reporter.
 
 ### `UC-REV-004` — Reject Pending Report
-* **Preconditions:** Report is `PENDING_REVIEW` at expected `version`; Reviewer is not Reporter; non-empty `rejection_reason` provided (e.g., Out of Scope, Non-actionable, Sensitive Information, Reviewer discretion).
+* **Preconditions:** Report is `PENDING_REVIEW` at expected `version`; Reviewer is not Reporter of the Report; non-empty `rejection_reason` provided (e.g., Out of Scope, Non-actionable, Sensitive Information, Reviewer discretion).
 * **Main Flow:** Transition Report to `REJECTED` (Final State) → Do not link to any Ticket; never publish → Write Audit Log.
 
 ### `UC-REV-005` — Correct Confirmed Report
-* **Preconditions:** Report is `CONFIRMED`; Actor is `REVIEWER` and not Reporter of that Report.
-* **Main Flow:** Reviewer updates erroneous Report metadata/fields → Write Audit Log → Trigger `UC-AI-003` Ticket Re-evaluation → Reviewer inspects any new Ticket recommendations.
+* **Preconditions:** Report is `CONFIRMED`; parent Ticket is **Active** (`CONFIRMED`, `IN_PROGRESS`, or `WAITING_INFORMATION` — `409 TICKET_IS_FINAL` if `RESOLVED`); Actor is `REVIEWER` and is **neither** the Reporter of that Report **nor** a Confirmed Reporter of the parent Ticket (`BR-ROLE-004`).
+* **Main Flow:** Reviewer updates erroneous Report fields/title → Increment `report.version` → Write `CORRECT_CONFIRMED` Audit Log → Trigger `UC-AI-003` Ticket Re-evaluation (isolated from commit; AI failure records `ticket_ai_reevaluations(status='FAILED')`) → Reviewer inspects any new Ticket recommendations.
 
 ### `UC-REV-006` — Change Responsible Departments
 * **Preconditions:** Ticket is **Active**; Actor is `REVIEWER` and not a Reporter of the Ticket; resulting department list has `≥ 1` department.
@@ -198,8 +198,9 @@
 * **Main Flow:** Actor posts a question in the private Thread → If not already `WAITING_INFORMATION`, Ticket transitions to `WAITING_INFORMATION` → System writes Audit Log & Public Status Change Activity (without leaking thread text) → System sends `WAITING_INFORMATION` Major Event Email to all Reporters of the Ticket.
 
 ### `UC-THR-002` — Respond in Ticket Thread
-* **Primary Actor:** Reporter (must have a `CONFIRMED` Report in the Ticket).
-* **Main Flow:** Reporter reads private Thread → posts follow-up response → Message saved privately → Involved Reviewers and Responsible Department Staff can read and reply. Unrelated users and public visitors are strictly blocked (`403`).
+* **Primary Actor:** Authorized Thread Participant (Confirmed Reporter of the Ticket, any active `REVIEWER`, or assigned `DEPARTMENT_STAFF`; never `ADMINISTRATOR`, inactive users, or outsiders).
+* **Preconditions:** Ticket status MUST be **`WAITING_INFORMATION`** to post new messages (`409 THREAD_READ_ONLY` in any other state). In `IN_PROGRESS`, authorized participants have read-only access to prior messages when message history exists; in `CONFIRMED` and `RESOLVED`, the Thread is hidden/closed.
+* **Main Flow:** Participant reads private Thread → posts follow-up message (if author has a Confirmed Report on the Ticket, `authorRole` is recorded as `REPORTER`) → Message saved privately → Other authorized participants can read and reply while Ticket remains `WAITING_INFORMATION`. Unrelated users, `ADMINISTRATOR`, and public visitors are strictly blocked (`403 THREAD_ACCESS_DENIED`).
 
 ---
 
@@ -258,11 +259,10 @@ Ticket Candidate (Unpublished)
   CONFIRMED ───────(UC-TKT-001 Start)────────▶ IN_PROGRESS
         │                                        │      │
         └──(UC-THR-001 / UC-TKT-002)──▶ WAITING_INFORMATION ◀──┘ (UC-TKT-002)
-                                                 │                     │
-                                                 └──(UC-TKT-003 Resume)┘
-                                                                       │
-                                           (UC-DEP-003 / UC-REV-006 → UC-TKT-004)
-                                                                       ▼
-                                                                   RESOLVED
-                                                                [Sole Final]
+                                          │      │                     │
+                                          │      └──(UC-TKT-003 Resume)┘
+                                          │                            │
+                (UC-REV-006 → UC-TKT-004) │                            │ (UC-DEP-003 / UC-REV-006 → UC-TKT-004)
+                                          └──────────▶ RESOLVED ◀──────┘
+                                                     [Sole Final]
 ```

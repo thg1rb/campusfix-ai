@@ -96,7 +96,7 @@ internal/modules/<module-name>/
    * `POST /reports/:id/submit` persists `PENDING_REVIEW` first in PostgreSQL, then triggers AI analysis (asynchronously via worker/goroutine with bounded context timeout, e.g., `15–25s`, or fast-fail retryable job).
    * If `apps/ai` times out, returns `5xx`, or is unreachable, `apps/api` records `ai_analysis_runs(status = 'FAILED', error_message = ...)` and writes an audit entry. The Report stays `PENDING_REVIEW` and Reviewers can triage manually immediately.
 3. **Edit Re-analysis (`UC-AI-002`):** Editing a `PENDING_REVIEW` Report marks all prior `ai_analysis_runs` for that Report `is_outdated = true`, increments `report.version`, and triggers a fresh AI run tagged with the new `report_version`.
-4. **Ticket Re-evaluation (`UC-AI-003`):** Attaching a Confirmed Report or correcting a Confirmed Report triggers `POST /v1/tickets/reevaluate` on `apps/ai` with all Confirmed Reports in that Ticket. The result is stored in `ticket_ai_reevaluations(is_reviewed = false)` and **never** overwrites final Ticket fields until a Reviewer explicitly applies it (`BR-AI-015`).
+4. **Ticket Re-evaluation (`UC-AI-003`):** Attaching a Confirmed Report (`UC-REV-002`) or correcting a Confirmed Report (`UC-REV-005`) commits the Report/Ticket update first, then triggers `POST /v1/tickets/reevaluate` on `apps/ai` with all Confirmed Reports in that Ticket. On success, the result is stored in `ticket_ai_reevaluations(status = 'COMPLETED', is_reviewed = false)` and **never** overwrites final Ticket fields until a Reviewer explicitly applies it (`BR-AI-015`). On timeout/error/outage, `apps/api` records `ticket_ai_reevaluations(status = 'FAILED', error_message = ...)` and writes an audit entry while **preserving** the already-confirmed Report and existing Ticket data intact (never rolling back confirmation or correction).
 5. **Duplicate Similarity Guidance (from Overview + Freeze 1):**
    * Primary signals (`BR-AI-001`): Multimodal image similarity, text/description semantic similarity, and geographic proximity.
    * Auxiliary signals (`BR-AI-003`): Category overlap, recency, and existing linked Reports.
@@ -119,7 +119,7 @@ internal/modules/<module-name>/
 
 ## 7. HTTP Error Envelope & Status Code Convention
 
-All `apps/api` error responses use one consistent JSON structure:
+All `/api/v1/*` business API error responses use one consistent JSON structure (operational probes `/healthz` and `/readyz` use their dedicated probe payloads documented in [contracts/api-v1.md](../contracts/api-v1.md#2-health--readiness-implemented-in-bootstrap)):
 
 ```json
 {
@@ -135,12 +135,12 @@ All `apps/api` error responses use one consistent JSON structure:
 }
 ```
 
-| HTTP Status | Standard Error Codes | Typical Trigger |
+| HTTP Status | Standard Error Codes (`/api/v1/*`) | Typical Trigger |
 | --- | --- | --- |
 | `400` | `INVALID_REQUEST`, `INVALID_MEDIA_FORMAT`, `MEDIA_TOO_LARGE` | Malformed JSON, unsupported file type, >10 MB image |
 | `401` | `UNAUTHENTICATED` | Missing or expired session on write/private endpoint |
 | `403` | `FORBIDDEN`, `SEPARATION_OF_DUTIES_VIOLATION`, `ADMIN_NON_OPERATIONAL`, `THREAD_ACCESS_DENIED` | Role check failed, self-review/self-operate attempt, Admin trying operational action, non-participant accessing Thread |
 | `404` | `NOT_FOUND` | Unknown entity ID or unauthorized private record hidden as not found |
-| `409` | `STALE_REPORT_VERSION`, `TRANSITION_FORBIDDEN`, `TICKET_IS_FINAL`, `USERNAME_TAKEN`, `ALREADY_COMPLETED` | Optimistic lock mismatch (`BR-RPT-012`), invalid state transition, mutating Final (`RESOLVED`) Ticket, duplicate username |
+| `409` | `STALE_REPORT_VERSION`, `TRANSITION_FORBIDDEN`, `TICKET_IS_FINAL`, `THREAD_READ_ONLY`, `USERNAME_TAKEN`, `ALREADY_COMPLETED` | Optimistic lock mismatch (`BR-RPT-012`), invalid state transition, mutating Final (`RESOLVED`) Ticket, posting to Thread outside `WAITING_INFORMATION`, duplicate username |
 | `422` | `VALIDATION_ERROR`, `REJECTION_REASON_REQUIRED`, `DEPARTMENT_REQUIRED`, `EXCLUSIVE_ADMIN_CONFLICT`, `SINGLE_DEPARTMENT_LIMIT` | Missing mandatory domain fields or role/department constraint violation |
-| `503` | `DEPENDENCY_UNAVAILABLE` | `/readyz` when PostgreSQL or AI Gateway health check fails |
+| `503` | `SERVICE_UNAVAILABLE` | Unexpected downstream outage on `/api/v1/*` business routes (not used by `/readyz`, which returns `{ "status": "unavailable", "checks": { ... } }`) |

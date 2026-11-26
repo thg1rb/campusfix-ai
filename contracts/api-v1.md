@@ -22,10 +22,12 @@ This document defines the HTTP contract between `apps/web` and `apps/api`. All t
 
 ## 2. Health & Readiness (Implemented in Bootstrap)
 
-| Method & Path | Auth | Behavior |
-| --- | --- | --- |
-| `GET /healthz` | Public | Liveness probe (`200 {"status":"ok"}`). |
-| `GET /readyz` | Public | Dependency probe checking PostgreSQL (`SELECT 1`) and AI Gateway (`/healthz`); returns `200` if both ok, `503` otherwise. |
+> **Operational Probe Contract:** `/healthz` and `/readyz` intentionally use lightweight probe JSON rather than the `/api/v1/*` error envelope. `apps/web/src/app/api/health/route.ts` and `scripts/smoke.sh` parse `status`, `checks.db`, and `checks.ai` directly — keep both `200` and `503` payloads synchronized if ever changed.
+
+| Method & Path | Auth | Headers | Response Payloads |
+| --- | --- | --- | --- |
+| `GET /healthz` | Public | — | `200`: `{"status":"ok"}` |
+| `GET /readyz` | Public | `Cache-Control: no-store` | Checks PostgreSQL (`SELECT 1`) and AI Gateway (`/healthz`) under a `2s` timeout.<br>`200`: `{"status":"ok","checks":{"db":"ok","ai":"ok"}}`<br>`503`: `{"status":"unavailable","checks":{"db":"ok\|unavailable","ai":"ok\|unavailable"}}` |
 
 ---
 
@@ -80,11 +82,11 @@ All require `REVIEWER` (never `ADMINISTRATOR`) and enforce **Separation of Dutie
 | Method & Path | Request Body / Rules |
 | --- | --- |
 | `GET /api/v1/reviewer/queue` | Paginated `PENDING_REVIEW` reports with latest AI status, version, and `isSelfReported` indicator. |
-| `POST /api/v1/reviewer/reports/:id/confirm-existing` | `UC-REV-002`. Body: `{ "expectedVersion": 2, "targetTicketId": "...", "reportTitleOverride": "..." }`. Enforces `expectedVersion == report.version` (`409 STALE_REPORT_VERSION`) and Active target Ticket (`409 TICKET_IS_FINAL`). Triggers `UC-AI-003` + Email. |
-| `POST /api/v1/reviewer/reports/:id/confirm-new` | `UC-REV-003`. Body: `{ "expectedVersion": 2, "title": "...", "summary": "...", "categoryId": "...", "severity": "HIGH", "departmentIds": ["..."], "reportTitleOverride": "..." }`. Requires `≥ 1` active department. Creates `CONFIRMED` Ticket + `CONFIRMED` Report + Activity + Email. |
-| `POST /api/v1/reviewer/reports/:id/reject` | `UC-REV-004`. Body: `{ "expectedVersion": 2, "reason": "..." }`. Mandatory `reason` (`422 REJECTION_REASON_REQUIRED`). |
-| `PATCH /api/v1/reviewer/reports/:id/correction` | `UC-REV-005`. Corrects fields on a `CONFIRMED` Report; writes audit log; triggers `UC-AI-003`. |
-| `PUT /api/v1/reviewer/tickets/:ticketId/departments` | `UC-REV-006`. Body: `{ "departmentIds": ["..."] }`. Active Ticket only; `≥ 1` department; preserves completed flags on retained departments; triggers Auto-`RESOLVED` immediately if all remaining departments are complete (`BR-DEP-007`). |
+| `POST /api/v1/reviewer/reports/:id/confirm-existing` | `UC-REV-002`. Body: `{ "expectedVersion": 2, "targetTicketId": "...", "reportTitle": "...", "categoryId": "...", "severity": "HIGH", "departmentIds": ["..."] }`. Enforces two-level Separation of Duties (caller is neither Reporter of the pending Report nor a Confirmed Reporter of `targetTicketId`, `403 SEPARATION_OF_DUTIES_VIOLATION`), `expectedVersion == report.version` (`409 STALE_REPORT_VERSION`), Active target Ticket (`409 TICKET_IS_FINAL`), and active `categoryId` / `departmentIds` (`≥ 1`). **Does not overwrite** the target Ticket's existing `categoryId`, `severity`, `departments`, `title`, or `summary`; records verified values + AI `overrides` flags in `audit_logs` (`BR-AUD-005`), triggers `UC-AI-003` (isolated failure), and sends Email. |
+| `POST /api/v1/reviewer/reports/:id/confirm-new` | `UC-REV-003`. Body: `{ "expectedVersion": 2, "title": "...", "summary": "...", "categoryId": "...", "severity": "HIGH", "departmentIds": ["..."], "reportTitle": "..." }`. Requires `≥ 1` active department and caller ≠ Reporter of the Report. Creates `CONFIRMED` Ticket + `CONFIRMED` Report + Activity + Audit (`overrides`) + Email. |
+| `POST /api/v1/reviewer/reports/:id/reject` | `UC-REV-004`. Body: `{ "expectedVersion": 2, "reason": "..." }`. Mandatory `reason` (`422 REJECTION_REASON_REQUIRED`); caller ≠ Reporter of the Report. |
+| `PATCH /api/v1/reviewer/reports/:id/correction` | `UC-REV-005`. Corrects fields/`reportTitle` on a `CONFIRMED` Report whose parent Ticket is **Active** (`409 TICKET_IS_FINAL` if `RESOLVED`). Enforces two-level Separation of Duties (caller is neither Reporter of that Report nor a Confirmed Reporter of the parent Ticket). Increments `report.version`, writes audit log, and triggers `UC-AI-003` (isolated failure). |
+| `PUT /api/v1/reviewer/tickets/:ticketId/departments` | `UC-REV-006`. Body: `{ "departmentIds": ["..."] }`. Active Ticket only; caller is not a Confirmed Reporter of the Ticket; `≥ 1` active department; preserves completed flags on retained departments; triggers Auto-`RESOLVED` immediately from `IN_PROGRESS` or `WAITING_INFORMATION` if all remaining departments are complete (`BR-DEP-007`). |
 | `POST /api/v1/reviewer/tickets/:ticketId/reevaluations/:reevalId/apply` | Reviewer reviews/applies or dismisses pending `TicketAIReevaluation` (`BR-AI-015`). |
 
 ---
@@ -106,11 +108,14 @@ All require `DEPARTMENT_STAFF` (for assigned Department) or `REVIEWER` where not
 
 ## 8. Private Thread, Affected & Feedback Endpoints
 
+> **Thread Participant Eligibility (`BR-THR-001`..`005`):** Active non-Admin user who is (a) a Confirmed Reporter of the Ticket, (b) **any active `REVIEWER`** (shared central pool), or (c) an assigned `DEPARTMENT_STAFF` member of the Ticket's Responsible Department(s). All other callers (including public visitors, `ADMINISTRATOR`, unrelated Reporters, unassigned Department Staff, and inactive users) receive `403 THREAD_ACCESS_DENIED`.
+> **Thread Status Lifecycle:** Posting is allowed **only** in `WAITING_INFORMATION` (`409 THREAD_READ_ONLY` in all other states). `IN_PROGRESS` allows read-only access to history **only when messages already exist**. `CONFIRMED` and `RESOLVED` keep the Thread hidden/closed (`canView: false`, `canPost: false`).
+
 | Method & Path | Auth / Role | Behavior & Rules |
 | --- | --- | --- |
-| `GET /api/v1/tickets/:ticketId/thread` | Involved Reviewer, Assigned Dept Staff, or Confirmed Reporter of Ticket | Reads private Additional Information Thread (`BR-THR-001`..`005`). Returns `403 THREAD_ACCESS_DENIED` to all others (including Admin). |
-| `POST /api/v1/tickets/:ticketId/thread/request-info` | Reviewer or Assigned Dept Staff (≠ Reporter) | `UC-THR-001` / `UC-TKT-002`. Posts question, transitions Active Ticket (`CONFIRMED`/`IN_PROGRESS`) → `WAITING_INFORMATION`, emails all Ticket Reporters. |
-| `POST /api/v1/tickets/:ticketId/thread/messages` | Authorized Thread Participant | `UC-THR-002`. Appends private message (active follow-up conversation). |
+| `GET /api/v1/tickets/:ticketId/thread` | Authorized Thread Participant | Returns `{ "ticketStatus": "...", "canView": true, "canPost": true, "messages": [...] }` according to the status lifecycle above (`canView: true` in `WAITING_INFORMATION`, or in `IN_PROGRESS` when `messages.length > 0`; `canPost: true` only in `WAITING_INFORMATION`). Returns `403 THREAD_ACCESS_DENIED` to unauthorized callers. |
+| `POST /api/v1/tickets/:ticketId/thread/request-info` | Any active `REVIEWER` or Assigned `DEPARTMENT_STAFF` (**Not** a Confirmed Reporter of Ticket) | `UC-THR-001` / `UC-TKT-002`. Posts initial/follow-up question, transitions Active Ticket (`CONFIRMED`/`IN_PROGRESS`) → `WAITING_INFORMATION`, writes public `STATUS_CHANGED` activity (without thread body), and emails all Ticket Reporters. |
+| `POST /api/v1/tickets/:ticketId/thread/messages` | Authorized Thread Participant | `UC-THR-002`. Allowed **only when Ticket status is `WAITING_INFORMATION`** (returns `409 THREAD_READ_ONLY` otherwise). Appends private message; records `authorRole = "REPORTER"` if caller has a Confirmed Report on the Ticket, else `"REVIEWER"` or `"DEPARTMENT_STAFF"`. |
 | `PUT /api/v1/tickets/:ticketId/affected` | Auth non-Admin | `UC-AFF-001`. Marks caller affected on an **Active Ticket** (idempotent). Returns `409 TICKET_IS_FINAL` on Final Tickets. |
 | `DELETE /api/v1/tickets/:ticketId/affected` | Auth non-Admin | `UC-AFF-001`. Unmarks caller affected while Ticket is Active. |
 | `PUT /api/v1/tickets/:ticketId/feedback` | Confirmed Reporter of Ticket | `UC-FBK-001` / `UC-FBK-002`. Upserts caller's multi-dimensional feedback (`1..5` per dimension) on a **`RESOLVED` Ticket only**. Recalculates aggregates. |

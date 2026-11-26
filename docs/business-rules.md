@@ -186,7 +186,7 @@ Canonical states: `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`.
 | `BR-STA-001` | `CONFIRMED → IN_PROGRESS` by Responsible Department Staff. |
 | `BR-STA-002` | `CONFIRMED → WAITING_INFORMATION` by Reviewer or Responsible Department Staff. |
 | `BR-STA-004` | `IN_PROGRESS → WAITING_INFORMATION` by Reviewer or Responsible Department Staff. |
-| `BR-STA-005` | `IN_PROGRESS → RESOLVED` by **System** automatically when all Responsible Departments complete. |
+| `BR-STA-005` | `IN_PROGRESS → RESOLVED` (and `WAITING_INFORMATION → RESOLVED` via `BR-DEP-007`) by **System** automatically whenever all remaining Responsible Departments are complete. |
 | `BR-STA-006` | `WAITING_INFORMATION → IN_PROGRESS` by Responsible Department Staff. |
 | `BR-STA-009` | `RESOLVED` is the sole Final State of a Ticket (immutable; no reopen). |
 | `BR-STA-011` | Every Ticket status transition must record Actor, Role/Department, and Timestamp. |
@@ -215,11 +215,16 @@ Canonical states: `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`.
 | Rule ID | Business Rule |
 | --- | --- |
 | `BR-THR-001` | The Additional Information Thread is **never public**. |
-| `BR-THR-002` | Involved Reviewers can read and post in the Thread (subject to Separation of Duties when requesting info). |
-| `BR-THR-003` | Responsible Department Staff can read and post in the Thread (subject to Separation of Duties). |
-| `BR-THR-004` | Every Reporter who has a `CONFIRMED` Report linked to the Ticket can read and post in the Thread. |
-| `BR-THR-005` | Unrelated users and public visitors cannot read or post in the Thread. |
+| `BR-THR-002` | Any active non-Admin user with the `REVIEWER` role can read and participate in the Thread (the Reviewer role operates as a shared central pool without individual assignment; if a Reviewer is also a Reporter of the Ticket, they participate in their `REPORTER` capacity and remain blocked by Separation of Duties from invoking `request-info`). |
+| `BR-THR-003` | Any active non-Admin `DEPARTMENT_STAFF` user belonging to a Responsible Department assigned to the Ticket can read and participate in the Thread (subject to Separation of Duties for `request-info`). |
+| `BR-THR-004` | Every active Reporter who has a `CONFIRMED` Report linked to the Ticket can read and participate in the Thread. |
+| `BR-THR-005` | Unrelated users, unassigned Department Staff, `ADMINISTRATOR`, inactive users, and public visitors cannot read or post in the Thread (`403 THREAD_ACCESS_DENIED`). |
 | `BR-THR-006` | There is no General Public Comment discussion feature in MVP. |
+
+### Thread Lifecycle by Ticket Status
+* **`WAITING_INFORMATION`:** Authorized participants can read the Thread (even when empty) and **post new messages**.
+* **`IN_PROGRESS`:** Authorized participants can **read existing history (read-only)** only when the Thread already has messages; posting new messages is rejected (`409 THREAD_READ_ONLY`).
+* **`CONFIRMED` and `RESOLVED`:** Thread is hidden/inactive and posting is forbidden (`409 THREAD_READ_ONLY`).
 
 ---
 
@@ -322,12 +327,12 @@ Canonical states: `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`.
 | Read Public Feed / Map / Ticket / Confirmed Report / Public Profile | Yes | Yes | Yes | Yes | Yes | Public DTO only (`BR-AUTH-010`) |
 | Set / Change own Username | No | Yes | Yes | Yes | Yes | Unique check (`BR-AUTH-006`) |
 | Save/Edit/Submit/Cancel own Draft or Pending Report | No | Yes | — | — | No | Owner only; before Confirm/Reject |
-| Review / Confirm / Reject Pending Report | No | No | Yes | No | No | **Not Reporter of Report** (`BR-ROLE-004`) + latest `version` |
-| Correct Confirmed Report / Review Ticket AI Re-evaluation | No | No | Yes | No | No | **Not Reporter of Report/Ticket** |
+| Review / Confirm / Reject Pending Report | No | No | Yes | No | No | **Not Reporter of Report** (`BR-ROLE-004`) + latest `version`; for `confirm-existing`, also **Not Reporter of Target Ticket** |
+| Correct Confirmed Report / Review Ticket AI Re-evaluation | No | No | Yes | No | No | **Active Parent Ticket** + **Not Reporter of Report OR Parent Ticket** |
 | Add / Remove Responsible Departments on Active Ticket | No | No | Yes | No | No | Active Ticket + **Not Reporter of Ticket** |
 | Start Work / Resume Work / Record Action / Confirm Dept Completion | No | No | No | Yes | No | Assigned Dept + **Not Reporter of Ticket** (`BR-ROLE-005`) |
-| Request Additional Info (`WAITING_INFORMATION`) | No | No | Yes | Yes | No | Active Ticket + Assigned Dept (if Staff) + **Not Reporter** |
-| Read / Post in Additional Information Thread | No | Own Ticket | Yes | Assigned Dept | No | Reporter must have Confirmed Report in Ticket (`BR-THR-004`) |
+| Request Additional Info (`WAITING_INFORMATION`) | No | No | Yes | Yes | No | Active Ticket + Assigned Dept (if Staff) + **Not Reporter of Ticket** |
+| Read / Post in Additional Information Thread | No | Own Ticket | Any active Reviewer | Assigned Dept | No | Active non-Admin participant (`BR-THR-002`..`005`); **post only in `WAITING_INFORMATION`**, read-only history in `IN_PROGRESS` when messages exist |
 | Mark / Unmark Affected | No | Yes | Yes* | Yes* | No | Active Ticket only; Admin excluded (`BR-ROLE-007`) |
 | Submit / Edit Feedback | No | Own Ticket | — | — | No | `RESOLVED` Ticket + Reporter with Confirmed Report (`BR-FBK-001`..`002`) |
 | View Department Analytics | No | No | No | Own Dept | Yes | Scoped to user's single Department |

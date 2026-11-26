@@ -124,7 +124,8 @@ IN_PROGRESS
   └──(System: All Responsible Departments Complete)──────────────▶ RESOLVED       [Final]
 
 WAITING_INFORMATION
-  └──(Department Resume)─────────────────────────────────────────▶ IN_PROGRESS
+  ├──(Department Resume)─────────────────────────────────────────▶ IN_PROGRESS
+  └──(System: Remaining Departments Complete after Dept Removal)─▶ RESOLVED       [Final]
 ```
 
 **Critical Ticket Invariants:**
@@ -175,7 +176,7 @@ AI operates strictly as a **Decision Support System**:
 ### 6.2 Additional Information Thread (`BR-THR-001`..`006`)
 
 * Strictly **private** — never shown in Public Feed, Public Ticket Detail, or Public Activity Timeline.
-* Accessible (read/write) only by involved Reviewers, Responsible Department Staff, and Reporters who have a Confirmed Report in that Ticket.
+* Accessible only by active `REVIEWER`s (central pool), Responsible Department Staff, and Reporters who have a Confirmed Report in that Ticket (`403` for all others, including `ADMINISTRATOR`). Posting is allowed only in `WAITING_INFORMATION`; `IN_PROGRESS` allows read-only history when messages exist; `CONFIRMED` and `RESOLVED` keep the Thread closed/hidden.
 * No general public comments in MVP.
 
 ### 6.3 Mark Affected (`BR-AFF-001`..`007`)

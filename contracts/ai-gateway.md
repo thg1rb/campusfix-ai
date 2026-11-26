@@ -11,7 +11,9 @@ This document defines the internal HTTP contract between `apps/api` and `apps/ai
   * `GET /healthz`: `2s` timeout (readiness check).
   * `POST /v1/triage/analyze`: `20s` client timeout in Go API (provider call timeout `≤ 15s`).
   * `POST /v1/tickets/reevaluate`: `20s` client timeout in Go API.
-* **Failure Fallback (`BR-GEN-008`, `BR-AI-020`):** Any non-200 response, malformed JSON, schema validation error, or timeout causes `apps/api` to record `ai_analysis_runs.status = 'FAILED'` and leave the Report in `PENDING_REVIEW` for manual Reviewer triage.
+* **Failure Fallback (`BR-GEN-008`, `BR-AI-020`):** Any non-200 response, malformed JSON, schema validation error, or timeout is handled per workflow without blocking or rolling back human operations:
+  * **Report Triage (`POST /v1/triage/analyze`):** `apps/api` records `ai_analysis_runs(status = 'FAILED', error_message = ...)` and leaves the Report in `PENDING_REVIEW` so Reviewers can triage manually.
+  * **Ticket Re-evaluation (`POST /v1/tickets/reevaluate`):** `apps/api` records `ticket_ai_reevaluations(status = 'FAILED', error_message = ...)` while preserving the already-`CONFIRMED` Report and existing Ticket data untouched (never rolling back confirmation or correction).
 * **Canonical Enums:** `severity` MUST be one of `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`. Confidence and similarity scores MUST be integers `0..100`.
 
 ---
@@ -183,7 +185,7 @@ Invoked when a new Confirmed Report is attached to an Active Ticket (`UC-REV-002
 }
 ```
 
-> **Invariants (`BR-AI-013`, `BR-AI-015`):** Severity recommendations MUST be justified by physical hazard/impact content — never by report count alone. `apps/api` stores this payload as a pending recommendation (`is_reviewed = false`) and never mutates live Ticket fields without Reviewer confirmation.
+> **Invariants (`BR-AI-013`, `BR-AI-015`):** Severity recommendations MUST be justified by physical hazard/impact content — never by report count alone. `apps/api` stores this payload in `ticket_ai_reevaluations` as a pending recommendation (`status = 'COMPLETED'`, `is_reviewed = false`) and never mutates live Ticket fields without Reviewer confirmation. If this call fails or times out, `apps/api` records `ticket_ai_reevaluations(status = 'FAILED', error_message = ...)` and keeps the confirmed Report and existing Ticket data intact.
 
 ---
 

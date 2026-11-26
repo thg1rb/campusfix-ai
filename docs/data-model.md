@@ -165,6 +165,7 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
   * `triggered_by_report_id` UUID NOT NULL REFERENCES `reports(id)`
   * `status` TEXT NOT NULL (`PENDING` | `COMPLETED` | `FAILED`)
   * `suggested_title` TEXT NULL, `suggested_summary` TEXT NULL, `suggested_severity` TEXT NULL, `recommended_department_ids` JSONB NOT NULL DEFAULT `'[]'`, `rationale` TEXT NULL
+  * `model_version` TEXT NULL, `error_message` TEXT NULL *(populated when `status = 'FAILED'`)*
   * `is_reviewed` BOOLEAN NOT NULL DEFAULT FALSE, `reviewed_by` UUID NULL REFERENCES `users(id)`, `reviewed_at` TIMESTAMPTZ NULL
   * `created_at` TIMESTAMPTZ NOT NULL
 * **`ticket_affected_users`**
@@ -224,8 +225,11 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
 | `CONFIRMED` | `IN_PROGRESS` | Assigned Dept Staff (≠ Reporter) | `UC-TKT-001`; audit + public activity |
 | `CONFIRMED` | `WAITING_INFORMATION` | Reviewer or Assigned Dept Staff (≠ Reporter) | Post private thread question (`UC-THR-001`); email Reporters |
 | `IN_PROGRESS` | `WAITING_INFORMATION` | Reviewer or Assigned Dept Staff (≠ Reporter) | Post private thread question (`UC-TKT-002`); email Reporters |
-| `IN_PROGRESS` | `RESOLVED` | **System** (`UC-TKT-004`) | All assigned departments complete (`UC-DEP-003` or `UC-REV-006` removal); set `resolved_at`; sole Final State; email Reporters; open Feedback |
+| `IN_PROGRESS` | `RESOLVED` | **System** (`UC-TKT-004`) | All assigned departments complete (`UC-DEP-003` completion or `UC-REV-006` removal); set `resolved_at`; sole Final State; email Reporters; open Feedback |
 | `WAITING_INFORMATION` | `IN_PROGRESS` | Assigned Dept Staff (≠ Reporter) | `UC-TKT-003`; audit + public activity |
+| `WAITING_INFORMATION` | `RESOLVED` | **System** (`UC-TKT-004`) | Reviewer removes incomplete department(s) via `UC-REV-006` leaving all remaining assigned departments already complete (`BR-DEP-007`); set `resolved_at`; sole Final State; email Reporters; open Feedback |
+
+> **Auto-Resolve Invariant (`BR-DEP-007`):** Direct department completion (`UC-DEP-003`) requires `status == 'IN_PROGRESS'`. However, removing an incomplete department (`UC-REV-006`) is allowed on any Active Ticket; whenever all remaining assigned departments are already complete after department replacement, the System immediately auto-transitions the Ticket to `RESOLVED` (including `WAITING_INFORMATION → RESOLVED`, or any active state in pure domain helpers).
 
 ---
 
