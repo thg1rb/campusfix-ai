@@ -30,7 +30,7 @@
 ### Verification & Mandatory Tests
 - [ ] Added automated test file(s) for every newly developed feature (`apps/web/tests/`, `apps/api/**/*_test.go`, `apps/ai/tests/`)
 - [ ] `make check` passed
-- [ ] Relevant unit / integration tests passing (`bun run test`, `go test -race ./...`, `uv run --locked pytest`)
+- [ ] Relevant unit / integration tests passing (`bun run test`, `go test -race ./...`, and `uv run --locked pytest` once AI test suite is added)
 - [ ] `make smoke` (and `make smoke-outage` if touching Compose, readiness, or AI paths) verified
 
 ## Verification Output

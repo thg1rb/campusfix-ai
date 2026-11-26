@@ -208,6 +208,8 @@ Canonical states: `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`.
 | `BR-DEP-007` | Removing an incomplete Department so that all remaining assigned Departments are complete immediately triggers Auto-`RESOLVED`. |
 | `BR-DEP-009` | Department Staff who are a Reporter of the Ticket must never perform operational actions on that Ticket. |
 
+> **Concurrency Serialization Note:** Under PostgreSQL `READ COMMITTED`, concurrent Department completions (`BR-DEP-003`) or concurrent Department completion + removal (`BR-DEP-007`) MUST serialize on the parent Ticket row (`SELECT ... FROM tickets WHERE id = $1 FOR UPDATE`) before evaluating Auto-`RESOLVED` so Tickets never stall in `IN_PROGRESS` and emit `AUTO_RESOLVED` at most once.
+
 ---
 
 ## 13. Additional Information Thread Rules
@@ -331,7 +333,7 @@ Canonical states: `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`, `RESOLVED`.
 | Correct Confirmed Report / Review Ticket AI Re-evaluation | No | No | Yes | No | No | **Active Parent Ticket** + **Not Reporter of Report OR Parent Ticket** |
 | Add / Remove Responsible Departments on Active Ticket | No | No | Yes | No | No | Active Ticket + **Not Reporter of Ticket** |
 | Start Work / Resume Work / Record Action / Confirm Dept Completion | No | No | No | Yes | No | Assigned Dept + **Not Reporter of Ticket** (`BR-ROLE-005`) |
-| Request Additional Info (`WAITING_INFORMATION`) | No | No | Yes | Yes | No | Active Ticket + Assigned Dept (if Staff) + **Not Reporter of Ticket** |
+| Request Additional Info (`WAITING_INFORMATION`) | No | No | Yes | Yes | No | Ticket in `CONFIRMED` or `IN_PROGRESS` only + Assigned Dept (if Staff) + **Not Reporter of Ticket** (follow-up questions while already `WAITING_INFORMATION` use Thread messages without duplicate status/email events) |
 | Read / Post in Additional Information Thread | No | Own Ticket | Any active Reviewer | Assigned Dept | No | Active non-Admin participant (`BR-THR-002`..`005`); **post only in `WAITING_INFORMATION`**, read-only history in `IN_PROGRESS` when messages exist |
 | Mark / Unmark Affected | No | Yes | Yes* | Yes* | No | Active Ticket only; Admin excluded (`BR-ROLE-007`) |
 | Submit / Edit Feedback | No | Own Ticket | — | — | No | `RESOLVED` Ticket + Reporter with Confirmed Report (`BR-FBK-001`..`002`) |

@@ -62,6 +62,7 @@ internal/modules/<module-name>/
 * Wire all module constructors explicitly in `internal/bootstrap/`.
 * Modules communicate across boundaries via narrow Go interfaces (application ports) or shared transaction helpers — **never** by importing another module's `adapters/outbound/postgres/` GORM structs.
 * Multi-entity mutations (e.g., Confirm Report → Create/Attach Ticket → Append Public Activity → Append Audit Log) execute inside a single PostgreSQL transaction.
+* **Ticket-Level Row Locking (`SELECT ... FOR UPDATE`):** Because PostgreSQL defaults to `READ COMMITTED`, any transaction that modifies a Ticket's status, Responsible Departments (`UC-REV-006`, re-evaluation apply), department completion (`UC-DEP-003`), or `reevaluation_revision` (`UC-REV-002`, `UC-REV-005`) MUST first acquire a row lock on the target Ticket (`SELECT ... FROM tickets WHERE id = $1 FOR UPDATE`). This serializes concurrent requests on the same Ticket, guarantees that simultaneous department completions or removals always observe the prior committed update and trigger Auto-`RESOLVED` (`BR-DEP-003`, `BR-DEP-007`), and ensures `AUTO_RESOLVED` activity + `RESOLVED` email are emitted **at most once**.
 
 ---
 
@@ -84,8 +85,15 @@ internal/modules/<module-name>/
 
 * **Constraints (`BR-RPT-003`..`005`):** `1–5` images required at submission; each file `≤ 10 MB`; accept only verified PNG/JPEG magic bytes (`.png`, `.jpg`, `.jpeg`). No video files in MVP.
 * **EXIF Stripping:** `apps/api` decodes and re-encodes (or strips metadata segments from) every uploaded JPEG/PNG image **before** persisting to object storage so GPS, camera model, timestamps, and author metadata never reach storage or public responses.
+* **Staged Upload & Transactional Binding Lifecycle:**
+  1. `POST /api/v1/media/report-images` validates format/size, strips EXIF, writes the object to storage, and inserts a staged `report_images` row with `report_id = NULL`, `uploaded_by = actor.id`, and `expires_at = NOW() + 24 hours`.
+  2. While `report_id IS NULL`, only `uploaded_by` may read/preview the image (`GET /api/v1/media/report-images/:imageId`); all others receive `403`/`404`.
+  3. On Draft save/update (`POST/PATCH /reports/drafts`), direct submit (`POST /reports`), Draft submit (`POST /reports/:id/submit`), or Pending edit (`PATCH /reports/:id`), `apps/api` verifies inside the **same SQL transaction** that every referenced `imageId` belongs to `actor.id` AND is either staged (`report_id IS NULL` and not expired) or already attached to that same `report.id`, then binds `report_id = report.id`, sets `sort_order`, and clears `expires_at = NULL`.
+  4. Once attached, image read authorization inherits the parent Report's visibility (`DRAFT`/`CANCELLED`: owner only; `PENDING_REVIEW`/`REJECTED`: owner + active `REVIEWER`; `CONFIRMED`: Public).
 * **Storage Adapter (`internal/adapters/storage/`):** Abstract behind an `ObjectStore` port (local disk volume for dev/compose, S3-compatible / MinIO for staging/production).
-* **Purge Cleanup:** When the 30-day retention job purges `DRAFT` or `CANCELLED` Reports (`BR-RET-001`..`002`), delete orphaned media objects asynchronously after DB deletion commits.
+* **Purge Cleanup:**
+  * Daily (or hourly) cleanup deletes expired staged images (`report_id IS NULL AND expires_at <= NOW()`) and removes their storage objects.
+  * When the 30-day retention job purges `DRAFT` or `CANCELLED` Reports (`BR-RET-001`..`002`), delete orphaned media objects asynchronously after DB deletion commits.
 
 ---
 
@@ -96,7 +104,11 @@ internal/modules/<module-name>/
    * `POST /reports/:id/submit` persists `PENDING_REVIEW` first in PostgreSQL, then triggers AI analysis (asynchronously via worker/goroutine with bounded context timeout, e.g., `15–25s`, or fast-fail retryable job).
    * If `apps/ai` times out, returns `5xx`, or is unreachable, `apps/api` records `ai_analysis_runs(status = 'FAILED', error_message = ...)` and writes an audit entry. The Report stays `PENDING_REVIEW` and Reviewers can triage manually immediately.
 3. **Edit Re-analysis (`UC-AI-002`):** Editing a `PENDING_REVIEW` Report marks all prior `ai_analysis_runs` for that Report `is_outdated = true`, increments `report.version`, and triggers a fresh AI run tagged with the new `report_version`.
-4. **Ticket Re-evaluation (`UC-AI-003`):** Attaching a Confirmed Report (`UC-REV-002`) or correcting a Confirmed Report (`UC-REV-005`) commits the Report/Ticket update first, then triggers `POST /v1/tickets/reevaluate` on `apps/ai` with all Confirmed Reports in that Ticket. On success, the result is stored in `ticket_ai_reevaluations(status = 'COMPLETED', is_reviewed = false)` and **never** overwrites final Ticket fields until a Reviewer explicitly applies it (`BR-AI-015`). On timeout/error/outage, `apps/api` records `ticket_ai_reevaluations(status = 'FAILED', error_message = ...)` and writes an audit entry while **preserving** the already-confirmed Report and existing Ticket data intact (never rolling back confirmation or correction).
+4. **Ticket Re-evaluation & Revision Freshness (`UC-AI-003`):**
+   * Inside the locked transaction (`FOR UPDATE` on `tickets`) for `UC-REV-002` (attach Confirmed Report) or `UC-REV-005` (correct Confirmed Report), `apps/api` increments `tickets.reevaluation_revision`, marks prior unreviewed `ticket_ai_reevaluations` rows `is_outdated = true`, and inserts a new `ticket_ai_reevaluations(status = 'PENDING', ticket_revision = <new_revision>)` row before committing.
+   * After commit, `apps/api` invokes `POST /v1/tickets/reevaluate` on `apps/ai` with the snapshot of all Confirmed Reports for that revision. On success, that specific row transitions to `status = 'COMPLETED'`; on timeout/error/outage, it transitions to `status = 'FAILED'` with `error_message` while **preserving** the already-confirmed Report and existing Ticket data intact (never rolling back).
+   * Because out-of-order AI responses update only their own `reevalId` and older runs are bound to an older `ticket_revision` (`is_outdated = true`), a slower earlier run can never supersede a newer revision.
+   * Applying a re-evaluation (`POST /api/v1/reviewer/tickets/:ticketId/reevaluations/:reevalId/apply`) locks the Ticket row `FOR UPDATE`, verifies Active Ticket, Ticket-level Separation of Duties, `status == 'COMPLETED'`, `is_reviewed == false`, and **`is_outdated == false && ticket_revision == ticket.reevaluation_revision`** (returning `409 STALE_REEVALUATION` otherwise), and applies any department changes using the exact `UC-REV-006` completion-preservation + Auto-`RESOLVED` logic (`BR-DEP-005`..`007`).
 5. **Duplicate Similarity Guidance (from Overview + Freeze 1):**
    * Primary signals (`BR-AI-001`): Multimodal image similarity, text/description semantic similarity, and geographic proximity.
    * Auxiliary signals (`BR-AI-003`): Category overlap, recency, and existing linked Reports.
@@ -141,7 +153,7 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 | `401` | `UNAUTHENTICATED` | Missing or expired session on write/private endpoint |
 | `403` | `FORBIDDEN`, `SEPARATION_OF_DUTIES_VIOLATION`, `ADMIN_NON_OPERATIONAL`, `THREAD_ACCESS_DENIED` | Role check failed, self-review/self-operate attempt, Admin trying operational action, non-participant accessing Thread |
 | `404` | `NOT_FOUND` | Unknown entity ID or unauthorized private record hidden as not found |
-| `409` | `STALE_REPORT_VERSION`, `TRANSITION_FORBIDDEN`, `TICKET_IS_FINAL`, `THREAD_READ_ONLY`, `USERNAME_TAKEN`, `ALREADY_COMPLETED` | Optimistic lock mismatch (`BR-RPT-012`), invalid state transition, mutating Final (`RESOLVED`) Ticket, posting to Thread outside `WAITING_INFORMATION`, duplicate username |
+| `409` | `STALE_REPORT_VERSION`, `STALE_REEVALUATION`, `TRANSITION_FORBIDDEN`, `TICKET_IS_FINAL`, `THREAD_READ_ONLY`, `USERNAME_TAKEN`, `ALREADY_COMPLETED` | Optimistic lock mismatch (`BR-RPT-012`), stale/outdated AI re-evaluation apply, invalid state transition, mutating Final (`RESOLVED`) Ticket, posting to Thread outside `WAITING_INFORMATION`, duplicate username |
 | `422` | `VALIDATION_ERROR`, `REJECTION_REASON_REQUIRED`, `DEPARTMENT_REQUIRED`, `EXCLUSIVE_ADMIN_CONFLICT`, `SINGLE_DEPARTMENT_LIMIT` | Missing mandatory domain fields or role/department constraint violation |
 | `503` | `SERVICE_UNAVAILABLE` | Unexpected downstream outage on `/api/v1/*` business routes (not used by `/readyz`, which returns `{ "status": "unavailable", "checks": { ... } }`) |
 

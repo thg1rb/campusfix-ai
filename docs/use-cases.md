@@ -143,7 +143,10 @@
 
 ### `UC-AI-003` — Re-evaluate Ticket after Confirmed Report Change
 * **Trigger:** A new Confirmed Report is attached to an existing Ticket (`UC-REV-002`) OR a Reviewer corrects a Confirmed Report (`UC-REV-005`).
-* **Main Flow:** Read all Confirmed Reports in the Ticket → Re-evaluate suggested Ticket Severity (without auto-escalating purely on count, `BR-AI-013`), Ticket Title/Summary, and Responsible Department recommendations → Store pending `TicketAIReevaluation` → Reviewer reviews and explicitly decides whether to apply changes (`BR-AI-015`).
+* **Main Flow:**
+  1. Inside the triggering transaction (while holding `FOR UPDATE` on the Ticket row), increment `tickets.reevaluation_revision`, mark prior unreviewed `ticket_ai_reevaluations` rows `is_outdated = true`, and create a new `ticket_ai_reevaluations(status = 'PENDING', ticket_revision = <new_revision>)` row.
+  2. After commit, invoke AI Gateway with all Confirmed Reports for that revision snapshot → Re-evaluate suggested Ticket Severity (without auto-escalating purely on count, `BR-AI-013`), Ticket Title/Summary, and Responsible Department recommendations → Update that specific `reevalId` row to `COMPLETED` (or `FAILED` with `error_message` on outage, preserving the confirmed Report and Ticket intact).
+  3. When a Reviewer applies or dismisses `reevalId`, lock the Ticket row `FOR UPDATE` and verify Active Ticket, Ticket-level Separation of Duties, `status == 'COMPLETED'`, `is_reviewed == false`, and **`is_outdated == false && ticket_revision == ticket.reevaluation_revision`** (`409 STALE_REEVALUATION` if superseded). If department assignments change on apply, apply the exact `UC-REV-006` completion-preservation and Auto-`RESOLVED` rules (`BR-DEP-005`..`007`).
 
 ---
 
@@ -193,14 +196,14 @@
 ## 8. Additional Information Thread Use Cases
 
 ### `UC-THR-001` — Request Additional Information
-* **Primary Actor:** Reviewer or Responsible Department Staff (must not be a Reporter of the Ticket).
-* **Preconditions:** Ticket is `CONFIRMED`, `IN_PROGRESS`, or `WAITING_INFORMATION`.
-* **Main Flow:** Actor posts a question in the private Thread → If not already `WAITING_INFORMATION`, Ticket transitions to `WAITING_INFORMATION` → System writes Audit Log & Public Status Change Activity (without leaking thread text) → System sends `WAITING_INFORMATION` Major Event Email to all Reporters of the Ticket.
+* **Primary Actor:** Any active `REVIEWER` or Assigned `DEPARTMENT_STAFF` (must not be a Confirmed Reporter of the Ticket).
+* **Preconditions:** Ticket status MUST be **`CONFIRMED` or `IN_PROGRESS`** (`409 TRANSITION_FORBIDDEN` if already `WAITING_INFORMATION` or `RESOLVED`; follow-up questions while already `WAITING_INFORMATION` use `UC-THR-002` instead).
+* **Main Flow:** Actor posts the opening question into the private Thread → Ticket transitions to `WAITING_INFORMATION` → System writes Audit Log & ONE public `STATUS_CHANGED` Activity (without leaking thread text) → System sends ONE `WAITING_INFORMATION` Major Event Email to all Reporters of the Ticket.
 
-### `UC-THR-002` — Respond in Ticket Thread
+### `UC-THR-002` — Respond or Follow Up in Ticket Thread
 * **Primary Actor:** Authorized Thread Participant (Confirmed Reporter of the Ticket, any active `REVIEWER`, or assigned `DEPARTMENT_STAFF`; never `ADMINISTRATOR`, inactive users, or outsiders).
 * **Preconditions:** Ticket status MUST be **`WAITING_INFORMATION`** to post new messages (`409 THREAD_READ_ONLY` in any other state). In `IN_PROGRESS`, authorized participants have read-only access to prior messages when message history exists; in `CONFIRMED` and `RESOLVED`, the Thread is hidden/closed.
-* **Main Flow:** Participant reads private Thread → posts follow-up message (if author has a Confirmed Report on the Ticket, `authorRole` is recorded as `REPORTER`) → Message saved privately → Other authorized participants can read and reply while Ticket remains `WAITING_INFORMATION`. Unrelated users, `ADMINISTRATOR`, and public visitors are strictly blocked (`403 THREAD_ACCESS_DENIED`).
+* **Main Flow:** Participant reads private Thread → posts reply or additional follow-up question (if author has a Confirmed Report on the Ticket, `authorRole` is recorded as `REPORTER`) → Message saved privately + Audit Log written (no duplicate `STATUS_CHANGED` activity or duplicate `WAITING_INFORMATION` email) → Other authorized participants can read and reply while Ticket remains `WAITING_INFORMATION`. Unrelated users, `ADMINISTRATOR`, and public visitors are strictly blocked (`403 THREAD_ACCESS_DENIED`).
 
 ---
 

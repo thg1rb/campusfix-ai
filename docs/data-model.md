@@ -109,9 +109,15 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
   * `reviewed_by` UUID NULL REFERENCES `users(id)`, `reviewed_at` TIMESTAMPTZ NULL
   * `created_at` TIMESTAMPTZ NOT NULL, `submitted_at` TIMESTAMPTZ NULL, `updated_at` TIMESTAMPTZ NOT NULL, `cancelled_at` TIMESTAMPTZ NULL
   * *Indexes:* `(status, submitted_at DESC)` for Reviewer queue; `(reporter_id, created_at DESC)`; `(ticket_id)` where `ticket_id IS NOT NULL`; retention index on `(status, created_at)` and `(status, cancelled_at)`.
-* **`report_images`**
-  * `id` UUID PK, `report_id` UUID NOT NULL REFERENCES `reports(id)` ON DELETE CASCADE
-  * `storage_key` TEXT NOT NULL, `file_name` TEXT NOT NULL, `mime_type` TEXT NOT NULL (`image/png` | `image/jpeg`), `size_bytes` INTEGER NOT NULL CHECK (`size_bytes > 0 AND size_bytes <= 10485760`), `sort_order` SMALLINT NOT NULL DEFAULT 0, `exif_stripped` BOOLEAN NOT NULL DEFAULT TRUE, `created_at` TIMESTAMPTZ NOT NULL
+* **`report_images`** *(supports staged upload prior to Report creation + transactional binding)*
+  * `id` UUID PK
+  * `report_id` UUID NULL REFERENCES `reports(id)` ON DELETE CASCADE *(NULL while staged/unattached; set inside the same SQL transaction when creating/updating a Draft or submitting a Report)*
+  * `uploaded_by` UUID NOT NULL REFERENCES `users(id)` *(owner checked before previewing staged images or binding to a Report)*
+  * `storage_key` TEXT NOT NULL, `file_name` TEXT NOT NULL, `mime_type` TEXT NOT NULL (`image/png` | `image/jpeg`), `size_bytes` INTEGER NOT NULL CHECK (`size_bytes > 0 AND size_bytes <= 10485760`), `sort_order` SMALLINT NOT NULL DEFAULT 0, `exif_stripped` BOOLEAN NOT NULL DEFAULT TRUE
+  * `expires_at` TIMESTAMPTZ NULL *(set to `created_at + 24 hours` while `report_id IS NULL`; cleared to `NULL` once attached to a Report)*
+  * `created_at` TIMESTAMPTZ NOT NULL
+  * *Indexes:* `(report_id, sort_order)` where `report_id IS NOT NULL`; partial cleanup index `(expires_at)` where `report_id IS NULL`.
+  * *Access Control:* Staged images (`report_id IS NULL`) are readable ONLY by `uploaded_by`. Once attached, read visibility strictly inherits the parent Report's access rules (`DRAFT`/`CANCELLED`: owner only; `PENDING_REVIEW`/`REJECTED`: owner + active `REVIEWER`; `CONFIRMED`: Public).
 * **`ai_analysis_runs`**
   * `id` UUID PK, `report_id` UUID NOT NULL REFERENCES `reports(id)` ON DELETE CASCADE
   * `report_version` INTEGER NOT NULL
@@ -149,6 +155,7 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
   * `severity` TEXT NOT NULL (`Severity`)
   * `location_id` UUID NULL REFERENCES `campus_locations(id)`, `location_name` TEXT NOT NULL, `location_detail_note` TEXT NULL, `lat` DOUBLE PRECISION NOT NULL, `lng` DOUBLE PRECISION NOT NULL
   * `confirmed_by` UUID NOT NULL REFERENCES `users(id)`, `confirmed_at` TIMESTAMPTZ NOT NULL
+  * `reevaluation_revision` INTEGER NOT NULL DEFAULT 0 *(monotonically incremented whenever a Confirmed Report is attached via `UC-REV-002` or corrected via `UC-REV-005`, preventing out-of-order/stale AI re-evaluation applies)*
   * `resolved_at` TIMESTAMPTZ NULL, `resolution_summary` TEXT NULL
   * `created_at` TIMESTAMPTZ NOT NULL, `updated_at` TIMESTAMPTZ NOT NULL
   * *Indexes:* `(status, confirmed_at DESC)` for Public Feed; `(category_id)`, `(severity)`, `(confirmed_at DESC)`.
@@ -160,14 +167,18 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
   * `completed_by` UUID NULL REFERENCES `users(id)`, `completed_at` TIMESTAMPTZ NULL, `completion_note` TEXT NULL
   * `PRIMARY KEY (ticket_id, department_id)`
   * *Invariants:* No `is_primary` column (`BR-TKT-011`); no `assigned_staff_id` column (`BR-TKT-012`); every Ticket has `≥ 1` row (`BR-TKT-010`).
+  * *Concurrency Serialization:* Every transaction mutating Ticket status, assignments (`UC-REV-006`, re-evaluation apply), or department completion (`UC-DEP-003`) MUST acquire `SELECT ... FROM tickets WHERE id = $1 FOR UPDATE` before reading assignments/status and evaluating Auto-`RESOLVED` so concurrent completions/removals under PostgreSQL `READ COMMITTED` cannot miss the `RESOLVED` transition or emit duplicate `AUTO_RESOLVED` events.
 * **`ticket_ai_reevaluations`** (`UC-AI-003`)
   * `id` UUID PK, `ticket_id` UUID NOT NULL REFERENCES `tickets(id)` ON DELETE CASCADE
   * `triggered_by_report_id` UUID NOT NULL REFERENCES `reports(id)`
+  * `ticket_revision` INTEGER NOT NULL *(matches `tickets.reevaluation_revision` at trigger time)*
   * `status` TEXT NOT NULL (`PENDING` | `COMPLETED` | `FAILED`)
+  * `is_outdated` BOOLEAN NOT NULL DEFAULT FALSE *(set `true` for prior unreviewed runs whenever `tickets.reevaluation_revision` increments)*
   * `suggested_title` TEXT NULL, `suggested_summary` TEXT NULL, `suggested_severity` TEXT NULL, `recommended_department_ids` JSONB NOT NULL DEFAULT `'[]'`, `rationale` TEXT NULL
   * `model_version` TEXT NULL, `error_message` TEXT NULL *(populated when `status = 'FAILED'`)*
   * `is_reviewed` BOOLEAN NOT NULL DEFAULT FALSE, `reviewed_by` UUID NULL REFERENCES `users(id)`, `reviewed_at` TIMESTAMPTZ NULL
   * `created_at` TIMESTAMPTZ NOT NULL
+  * *Indexes:* `(ticket_id, ticket_revision DESC)` for latest re-evaluation lookup.
 * **`ticket_affected_users`**
   * `ticket_id` UUID NOT NULL REFERENCES `tickets(id)` ON DELETE CASCADE
   * `user_id` UUID NOT NULL REFERENCES `users(id)` ON DELETE CASCADE

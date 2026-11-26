@@ -26,10 +26,8 @@ Read root `AGENTS.md`, `docs/architecture.md`, `contracts/ai-gateway.md`, and `d
 ## Verification
 
 * Whenever a new Python library is installed via `uv add`, record it in `docs/architecture.md` (Section 8).
-* Every new feature or endpoint in `apps/ai` MUST include automated `pytest` test file(s) under `apps/ai/tests/`.
-
-Before finishing changes in `apps/ai`, run:
-
-```sh
-cd apps/ai && uv lock --check && uv sync --locked && uv run --locked pytest && uv run --locked python -c 'from ku_spot_ai.main import app_factory; app_factory()'
-```
+* **Current Bootstrap Baseline:** `apps/ai` does not yet install `pytest` or contain test files; current verification uses lockfile/import validation plus `make smoke` / `make smoke-outage`:
+  ```sh
+  cd apps/ai && uv lock --check && uv sync --locked && uv run --locked python -c 'from ku_spot_ai.main import app_factory; app_factory()'
+  ```
+* **First AI Feature PR Requirement:** The first PR implementing an AI feature or endpoint in `apps/ai` MUST add `pytest` as a locked dev dependency in `pyproject.toml` + `uv.lock`, record it in `docs/architecture.md` (Section 8), add initial automated tests in `apps/ai/tests/`, and enable `uv run --locked pytest` in `make check`. Every subsequent AI feature MUST include `pytest` test files under `apps/ai/tests/`.

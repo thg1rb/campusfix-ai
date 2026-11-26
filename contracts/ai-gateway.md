@@ -185,7 +185,7 @@ Invoked when a new Confirmed Report is attached to an Active Ticket (`UC-REV-002
 }
 ```
 
-> **Invariants (`BR-AI-013`, `BR-AI-015`):** Severity recommendations MUST be justified by physical hazard/impact content — never by report count alone. `apps/api` stores this payload in `ticket_ai_reevaluations` as a pending recommendation (`status = 'COMPLETED'`, `is_reviewed = false`) and never mutates live Ticket fields without Reviewer confirmation. If this call fails or times out, `apps/api` records `ticket_ai_reevaluations(status = 'FAILED', error_message = ...)` and keeps the confirmed Report and existing Ticket data intact.
+> **Invariants (`BR-AI-013`, `BR-AI-015`):** Severity recommendations MUST be justified by physical hazard/impact content — never by report count alone. Each re-evaluation run is pinned to a specific `tickets.reevaluation_revision` (`ticket_ai_reevaluations.ticket_revision`), and `apps/api` updates only that `reevalId` row (`status = 'COMPLETED'`, `is_reviewed = false`) without mutating live Ticket fields or letting slower earlier runs supersede newer revisions. If this call fails or times out, `apps/api` records `ticket_ai_reevaluations(status = 'FAILED', error_message = ...)` and keeps the confirmed Report and existing Ticket data intact.
 
 ---
 

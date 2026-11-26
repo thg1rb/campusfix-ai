@@ -33,14 +33,15 @@ Read root `AGENTS.md`, `docs/architecture.md`, `docs/data-model.md`, `docs/busin
 * **Goose owns all schema changes.** Create migrations via `make migration-create NAME=describe_change` with both `-- +goose Up` and `-- +goose Down` sections, and apply via `make migrate`.
 * **Never** call `gorm.AutoMigrate` and **never** run migrations automatically during server startup.
 * Always use parameterized queries; wrap multi-table state transitions (e.g., confirm report + create/attach ticket + activity event + audit log, or department completion + auto-resolve) in a single SQL transaction.
+* **Ticket Row Locking (`SELECT ... FOR UPDATE`):** Every transaction that modifies Ticket status, Responsible Departments (`UC-REV-006`, re-evaluation apply), department completion (`UC-DEP-003`), or `reevaluation_revision` MUST lock the parent `tickets` row with `SELECT ... FROM tickets WHERE id = $1 FOR UPDATE` before reading current status/assignments and checking Auto-`RESOLVED` (prevents lost Auto-Resolve and duplicate `AUTO_RESOLVED` events under `READ COMMITTED`).
 
 ## Non-Negotiable Backend Enforcement Checklist
 
-* Enforce **Separation of Duties** (`BR-ROLE-004`, `BR-ROLE-005`) server-side on every review, department assignment, thread request, and department operational action — never trust client-side guards alone.
+* Enforce **Separation of Duties** (`BR-ROLE-004`, `BR-ROLE-005`) server-side on every review, department assignment, thread request, re-evaluation apply, and department operational action — including **two-level SoD** (both pending Report and target/parent Ticket) on `confirm-existing` and `correctReport` — never trust client-side guards alone.
 * Enforce **Exclusive Administrator** (`BR-ROLE-002`, `BR-ROLE-007`) and **max 1 Department per Staff** (`BR-ROLE-003`).
-* Enforce **Optimistic Locking** on Reviewer Confirm/Reject (`report.version == expected_version`, returning `409 STALE_REPORT_VERSION`).
+* Enforce **Optimistic Locking** on Reviewer Confirm/Reject (`report.version == expected_version`, returning `409 STALE_REPORT_VERSION`) and **Revision Freshness** on AI Re-evaluation Apply (`is_outdated == false && ticket_revision == ticket.reevaluation_revision`, returning `409 STALE_REEVALUATION`).
 * Enforce **Pluggable Auth Boundary** (`BR-AUTH-004`) starting with **Google OAuth 2.0 (`@ku.th`)** (`BR-AUTH-001`), and ensure `RESOLVED` is the sole Final Ticket status (auto-triggered when all Responsible Departments complete).
-* Strip **EXIF metadata** from all uploaded images before writing to object storage; validate MIME/magic bytes (`.png`, `.jpg`, `.jpeg`), ≤10 MB each, 1–5 per submitted report.
+* Strip **EXIF metadata** from all uploaded images before writing to object storage; validate MIME/magic bytes (`.png`, `.jpg`, `.jpeg`), ≤10 MB each, 1–5 per submitted report; enforce staged-image ownership (`uploaded_by`), 24h expiry cleanup, transactional binding on Draft/Submit/Edit, and Report-aligned image read access.
 * Enforce **Public DTO Projection**: never serialize `email`, `real_name`, `provider_subject_id`, `student_id`, or private thread messages in public endpoints.
 * Treat AI Gateway errors/timeouts as degraded recommendations (`AIAnalysisStatus = FAILED`) — never fail `POST /reports/:id/submit` or `PATCH /reports/:id` because AI is unavailable.
 
