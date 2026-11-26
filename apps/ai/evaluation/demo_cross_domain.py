@@ -13,14 +13,14 @@ import asyncio
 import json
 import math
 
-from campusfix_ai.api.schemas import (
+from ku_spot_ai.api.schemas import (
     RephraseRequest,
     SummarizeTicketRequest,
     TriageAnalyzeRequest,
 )
-from campusfix_ai.application.triage_service import TriageService
-from campusfix_ai.config import Settings
-from campusfix_ai.providers.gemini import GeminiTriageProvider
+from ku_spot_ai.application.triage_service import TriageService
+from ku_spot_ai.config import Settings
+from ku_spot_ai.providers.gemini import GeminiTriageProvider
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:

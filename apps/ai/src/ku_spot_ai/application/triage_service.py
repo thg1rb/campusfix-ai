@@ -4,7 +4,7 @@ import asyncio
 import time
 import uuid
 
-from campusfix_ai.api.schemas import (
+from ku_spot_ai.api.schemas import (
     AlternativeCategory,
     CategoryOption,
     ClassificationResult,
@@ -23,25 +23,25 @@ from campusfix_ai.api.schemas import (
     TriageAnalyzeRequest,
     TriageAnalyzeResponse,
 )
-from campusfix_ai.prompts.triage import (
+from ku_spot_ai.prompts.triage import (
     build_analyze_prompts,
     build_rephrase_prompts,
     build_report_embedding_text,
     build_summarize_ticket_prompts,
     build_ticket_embedding_text,
 )
-from campusfix_ai.providers.base import (
+from ku_spot_ai.providers.base import (
     EmbeddingProviderResult,
     StructuredProviderResult,
     TriageProvider,
 )
-from campusfix_ai.scoring.severity import (
+from ku_spot_ai.scoring.severity import (
     SeverityFactors,
     SeverityThresholds,
     SeverityWeights,
     compute_severity,
 )
-from campusfix_ai.scoring.vectors import l2_normalize, weighted_blend
+from ku_spot_ai.scoring.vectors import l2_normalize, weighted_blend
 
 ANALYZE_LLM_TASKS = frozenset({"classify", "severity", "keywords"})
 

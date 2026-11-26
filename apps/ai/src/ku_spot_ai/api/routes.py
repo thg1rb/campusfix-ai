@@ -5,7 +5,7 @@ import hmac
 from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.responses import JSONResponse
 
-from campusfix_ai.api.schemas import (
+from ku_spot_ai.api.schemas import (
     EmbedTicketRequest,
     EmbedTicketResponse,
     ErrorDetail,
@@ -17,9 +17,9 @@ from campusfix_ai.api.schemas import (
     TriageAnalyzeRequest,
     TriageAnalyzeResponse,
 )
-from campusfix_ai.application.triage_service import TriageService
-from campusfix_ai.config import Settings
-from campusfix_ai.providers.base import ProviderError
+from ku_spot_ai.application.triage_service import TriageService
+from ku_spot_ai.config import Settings
+from ku_spot_ai.providers.base import ProviderError
 
 router = APIRouter(prefix="/v1/triage", tags=["triage"])
 

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from campusfix_ai.api.routes import register_error_handlers
-from campusfix_ai.api.routes import router as triage_router
-from campusfix_ai.application.triage_service import TriageService
-from campusfix_ai.config import Settings
-from campusfix_ai.providers.base import TriageProvider
-from campusfix_ai.providers.gemini import GeminiTriageProvider
+from ku_spot_ai.api.routes import register_error_handlers
+from ku_spot_ai.api.routes import router as triage_router
+from ku_spot_ai.application.triage_service import TriageService
+from ku_spot_ai.config import Settings
+from ku_spot_ai.providers.base import TriageProvider
+from ku_spot_ai.providers.gemini import GeminiTriageProvider
 
 
 def _build_default_provider(settings: Settings) -> TriageProvider:
@@ -28,7 +28,7 @@ def create_app(
     provider: TriageProvider | None = None,
 ) -> FastAPI:
     app = FastAPI(
-        title="CampusFix Pluggable AI Triage Gateway",
+        title="KU Spot Pluggable AI Triage Gateway",
         version="1.0.0",
         docs_url="/docs" if settings.enable_docs else None,
         redoc_url="/redoc" if settings.enable_docs else None,

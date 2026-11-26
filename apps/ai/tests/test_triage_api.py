@@ -8,7 +8,7 @@ from typing import TypeVar
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from campusfix_ai.api.schemas import (
+from ku_spot_ai.api.schemas import (
     ImageInput,
     ProviderAlternativeCategory,
     ProviderAnalyzeOutput,
@@ -17,22 +17,22 @@ from campusfix_ai.api.schemas import (
     ProviderSeverity,
     ProviderSummarizeTicketOutput,
 )
-from campusfix_ai.bootstrap import create_app
-from campusfix_ai.config import Settings
-from campusfix_ai.providers.base import (
+from ku_spot_ai.bootstrap import create_app
+from ku_spot_ai.config import Settings
+from ku_spot_ai.providers.base import (
     EmbeddingProviderResult,
     ProviderError,
     ProviderNotConfiguredError,
     ProviderTimeoutError,
     StructuredProviderResult,
 )
-from campusfix_ai.scoring.severity import (
+from ku_spot_ai.scoring.severity import (
     SeverityFactors,
     SeverityThresholds,
     SeverityWeights,
     compute_severity,
 )
-from campusfix_ai.scoring.vectors import l2_normalize, weighted_blend
+from ku_spot_ai.scoring.vectors import l2_normalize, weighted_blend
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:

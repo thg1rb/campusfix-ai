@@ -1,14 +1,14 @@
-# CampusFix AI
+# KU Spot
 
-CampusFix AI is a university physical-issue reporting, AI-assisted triage, human review, and public publishing platform. This bootstrap runs a Web application, a Go API, a Python AI Gateway, and PostgreSQL.
+KU Spot is a university physical-issue reporting, AI-assisted triage, human review, and public publishing platform. This bootstrap runs a Web application, a Go API, a Python AI Gateway, and PostgreSQL.
 
 ## Quick start
 
 Install Git, Docker Engine with Compose v2.32+ or v5, Make, curl, and jq. For standalone development and `make check`, install the toolchains listed below.
 
 ```sh
-git clone https://github.com/thg1rb/campusfix-ai.git
-cd campusfix-ai
+git clone https://github.com/thg1rb/ku-spot.git
+cd ku-spot
 # Use feature/project-bootstrap when reviewing the bootstrap branch.
 make env
 make up
@@ -17,7 +17,7 @@ make smoke
 
 | Service | Local address | Verification |
 | --- | --- | --- |
-| Web | http://localhost:3000 | `/` displays CampusFix AI. `/api/health` calls API readiness. |
+| Web | http://localhost:3000 | `/` displays KU Spot. `/api/health` calls API readiness. |
 | Go API | http://localhost:8080 | `/healthz` checks liveness. `/readyz` checks PostgreSQL and AI. |
 | AI Gateway | http://localhost:8000 | `/healthz` checks gateway availability. |
 | PostgreSQL | localhost:5432 | Compose uses `pg_isready`. API readiness runs `SELECT 1`. |
@@ -42,7 +42,7 @@ The development override starts services independently so a Watch rebuild can re
 Stop the base stack before starting standalone services on the same ports. Start just the database with `docker compose up -d --wait db`. Run these commands in separate terminals from the repository root, after `make env`.
 
 ```sh
-cd apps/ai && uv sync --locked && uv run --locked --env-file .env python -m campusfix_ai.main --reload
+cd apps/ai && uv sync --locked && uv run --locked --env-file .env python -m ku_spot_ai.main --reload
 ```
 
 ```sh
@@ -65,7 +65,7 @@ The migrations directory starts empty. Use `make migration-create NAME=describe_
 
 - `apps/web/src/app` holds the App Router and technical route. `features/` and `components/ui/` are reserved.
 - `apps/api/cmd/server` owns lifecycle. `internal/bootstrap` wires constructors, `internal/platform` holds the server and database infrastructure, and `internal/adapters` holds external integration boundaries.
-- `apps/ai/src/campusfix_ai` is the installed gateway package. Provider, application, scoring and prompt directories are reserved. Evaluation cases live outside the installed package.
+- `apps/ai/src/ku_spot_ai` is the installed gateway package. Provider, application, scoring and prompt directories are reserved. Evaluation cases live outside the installed package.
 - `contracts/` is reserved for shared service contracts. `scripts/` holds smoke checks, and `docs/` holds the BRD, design system, decisions, and verification.
 
 Start feature branches from `develop` and return changes to `develop` through review. Promote reviewed integration work to `main` in a separate release step.

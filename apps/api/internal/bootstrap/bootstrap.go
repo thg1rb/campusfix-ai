@@ -2,10 +2,10 @@ package bootstrap
 
 import (
 	"github.com/gofiber/fiber/v3"
-	"github.com/thg1rb/campusfix-ai/apps/api/internal/adapters/ai"
-	"github.com/thg1rb/campusfix-ai/apps/api/internal/config"
-	"github.com/thg1rb/campusfix-ai/apps/api/internal/platform/database"
-	"github.com/thg1rb/campusfix-ai/apps/api/internal/platform/http"
+	"github.com/thg1rb/ku-spot/apps/api/internal/adapters/ai"
+	"github.com/thg1rb/ku-spot/apps/api/internal/config"
+	"github.com/thg1rb/ku-spot/apps/api/internal/platform/database"
+	"github.com/thg1rb/ku-spot/apps/api/internal/platform/http"
 )
 
 type Application struct {

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from campusfix_ai.api.schemas import (
+from ku_spot_ai.api.schemas import (
     RephraseRequest,
     SeverityLevel,
     SummarizeTicketRequest,

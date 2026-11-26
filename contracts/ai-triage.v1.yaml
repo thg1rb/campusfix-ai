@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: CampusFix Pluggable AI Triage API
+  title: KU Spot Pluggable AI Triage API
   version: 1.1.0
   description: |
     Stateless, domain-agnostic multimodal incident AI API for CampusFix AI and

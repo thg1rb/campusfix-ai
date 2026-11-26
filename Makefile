@@ -27,7 +27,7 @@ check:
 	$(DEV) config --quiet
 	cd apps/web && bun install --frozen-lockfile && bun run lint && bun run typecheck && API_BASE_URL=http://127.0.0.1:8080 bun run build
 	cd apps/api && test -z "$$(gofmt -l cmd internal)" && go mod verify && go vet ./... && go test ./... && go build ./...
-	cd apps/ai && uv lock --check && uv sync --locked && uv run --locked pytest && uv run --locked python -c 'from campusfix_ai.main import app_factory; app_factory()'
+	cd apps/ai && uv lock --check && uv sync --locked && uv run --locked pytest && uv run --locked python -c 'from ku_spot_ai.main import app_factory; app_factory()'
 
 smoke:
 	@scripts/smoke.sh

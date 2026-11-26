@@ -8,8 +8,8 @@ from google.genai import errors as genai_errors
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
-from campusfix_ai.api.schemas import ImageInput
-from campusfix_ai.providers.base import (
+from ku_spot_ai.api.schemas import ImageInput
+from ku_spot_ai.providers.base import (
     EmbeddingProviderResult,
     ProviderNotConfiguredError,
     ProviderTimeoutError,

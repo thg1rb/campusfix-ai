@@ -5,7 +5,7 @@ from typing import Generic, Protocol, TypeVar
 
 from pydantic import BaseModel
 
-from campusfix_ai.api.schemas import ImageInput
+from ku_spot_ai.api.schemas import ImageInput
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
