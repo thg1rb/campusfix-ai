@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 import uuid
 
@@ -8,6 +9,7 @@ from ku_spot_ai.api.schemas import (
     AlternativeCategory,
     CategoryOption,
     ClassificationResult,
+    EmbeddingIdentity,
     EmbeddingResult,
     EmbedTicketRequest,
     EmbedTicketResponse,
@@ -24,6 +26,7 @@ from ku_spot_ai.api.schemas import (
     TriageAnalyzeResponse,
 )
 from ku_spot_ai.prompts.triage import (
+    EMBEDDING_TEXT_VERSION,
     build_analyze_prompts,
     build_rephrase_prompts,
     build_report_embedding_text,
@@ -32,6 +35,7 @@ from ku_spot_ai.prompts.triage import (
 )
 from ku_spot_ai.providers.base import (
     EmbeddingProviderResult,
+    ProviderUpstreamError,
     StructuredProviderResult,
     TriageProvider,
 )
@@ -46,8 +50,11 @@ from ku_spot_ai.scoring.vectors import l2_normalize, weighted_blend
 ANALYZE_LLM_TASKS = frozenset({"classify", "severity", "keywords"})
 
 
-def _clamp_score(value: float) -> float:
-    return round(max(0.0, min(1.0, float(value))), 4)
+def _clamp_confidence(value: float, *, field_name: str) -> float:
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        raise ProviderUpstreamError(f"AI provider returned a non-finite {field_name}")
+    return round(max(0.0, min(1.0, numeric)), 4)
 
 
 def _clean_keywords(raw_keywords: list[str], *, limit: int = 8) -> list[str]:
@@ -85,6 +92,25 @@ class TriageService:
     def __init__(self, provider: TriageProvider) -> None:
         self._provider = provider
 
+    def _normalize_upstream_embedding(self, embed_result: EmbeddingProviderResult) -> EmbeddingResult:
+        expected_dim = self._provider.embedding_dimensions
+        if expected_dim > 0 and len(embed_result.values) != expected_dim:
+            raise ProviderUpstreamError(
+                "AI provider returned an embedding with unexpected dimensions"
+            )
+        try:
+            normalized = l2_normalize(embed_result.values)
+        except ValueError as exc:
+            raise ProviderUpstreamError(
+                "AI provider returned an invalid embedding vector"
+            ) from exc
+        return EmbeddingResult(
+            model=embed_result.model,
+            dimensions=len(normalized),
+            text_version=EMBEDDING_TEXT_VERSION,
+            values=normalized,
+        )
+
     async def rephrase(self, request: RephraseRequest) -> RephraseResponse:
         request_id = f"rephrase_{uuid.uuid4().hex[:12]}"
         built = build_rephrase_prompts(request)
@@ -97,13 +123,20 @@ class TriageService:
         )
         latency_ms = int((time.perf_counter() - started) * 1000)
 
+        rephrased_title = result.output.rephrased_title.strip()
+        rephrased_description = result.output.rephrased_description.strip()
+        if not rephrased_title or not rephrased_description:
+            raise ProviderUpstreamError(
+                "AI provider returned an incomplete rephrase response"
+            )
+
         return RephraseResponse(
             request_id=request_id,
             provider=result.provider,
             model=result.model,
             latency_ms=latency_ms,
-            rephrased_title=result.output.rephrased_title.strip(),
-            rephrased_description=result.output.rephrased_description.strip(),
+            rephrased_title=rephrased_title,
+            rephrased_description=rephrased_description,
         )
 
     async def analyze(self, request: TriageAnalyzeRequest) -> TriageAnalyzeResponse:
@@ -120,18 +153,37 @@ class TriageService:
         if needs_llm and needs_embed:
             built = build_analyze_prompts(request)
             embed_text = build_report_embedding_text(request)
-            llm_result, embed_result = await asyncio.gather(
+            llm_task = asyncio.create_task(
                 self._provider.generate_structured(
                     system_instruction=built.system_instruction,
                     user_text=built.user_text,
                     response_schema=ProviderAnalyzeOutput,
                     images=request.item.images,
-                ),
+                )
+            )
+            embed_task = asyncio.create_task(
                 self._provider.embed(
                     text=embed_text,
                     images=request.item.images,
-                ),
+                )
             )
+            done, pending = await asyncio.wait(
+                {llm_task, embed_task},
+                return_when=asyncio.FIRST_EXCEPTION,
+            )
+            failed: BaseException | None = None
+            for task in done:
+                exc = task.exception()
+                if exc is not None and failed is None:
+                    failed = exc
+            if failed is not None:
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+                raise failed
+            llm_result = llm_task.result()
+            embed_result = embed_task.result()
         elif needs_llm:
             built = build_analyze_prompts(request)
             llm_result = await self._provider.generate_structured(
@@ -174,6 +226,10 @@ class TriageService:
         )
         ticket_title = llm_result.output.ticket_title.strip()
         ticket_description = llm_result.output.ticket_description.strip()
+        if not ticket_title or not ticket_description:
+            raise ProviderUpstreamError(
+                "AI provider returned an incomplete ticket summary"
+            )
         keywords = _clean_keywords(llm_result.output.keywords)
 
         summary_embedding: EmbeddingResult | None = None
@@ -187,6 +243,7 @@ class TriageService:
                 location_name=request.location_name,
                 category_name=request.category_name,
                 report_embeddings=request.report_embeddings,
+                report_embedding_meta=request.report_embedding_meta,
                 summary_weight=request.summary_weight,
                 reports_weight=request.reports_weight,
             )
@@ -216,6 +273,7 @@ class TriageService:
             location_name=request.location_name,
             category_name=request.category_name,
             report_embeddings=request.report_embeddings,
+            report_embedding_meta=request.report_embedding_meta,
             summary_weight=request.summary_weight,
             reports_weight=request.reports_weight,
         )
@@ -239,9 +297,28 @@ class TriageService:
         location_name: str | None,
         category_name: str | None,
         report_embeddings: list[list[float]],
+        report_embedding_meta: EmbeddingIdentity | None,
         summary_weight: float,
         reports_weight: float,
     ) -> tuple[EmbeddingResult, EmbeddingResult]:
+        if report_embeddings:
+            if report_embedding_meta is None:
+                raise ValueError(
+                    "report_embedding_meta is required when report_embeddings are provided"
+                )
+            expected_model = self._provider.embedding_model
+            expected_dim = self._provider.embedding_dimensions
+            if (
+                report_embedding_meta.model != expected_model
+                or (expected_dim > 0 and report_embedding_meta.dimensions != expected_dim)
+                or report_embedding_meta.text_version != EMBEDDING_TEXT_VERSION
+            ):
+                raise ValueError(
+                    "report_embedding_meta does not match active embedding space "
+                    f"({expected_model}, dim={expected_dim}, text_version={EMBEDDING_TEXT_VERSION}); "
+                    "re-embed reports before blending"
+                )
+
         embed_text = build_ticket_embedding_text(
             domain=domain,
             title=title,
@@ -250,23 +327,31 @@ class TriageService:
             category_name=category_name,
         )
         embed_result = await self._provider.embed(text=embed_text)
-        normalized_summary = l2_normalize(embed_result.values)
-        summary_embedding = EmbeddingResult(
-            model=embed_result.model,
-            dimensions=len(normalized_summary),
-            values=normalized_summary,
-        )
+        summary_embedding = self._normalize_upstream_embedding(embed_result)
 
         if report_embeddings:
+            assert report_embedding_meta is not None
+            if (
+                report_embedding_meta.model != summary_embedding.model
+                or report_embedding_meta.dimensions != summary_embedding.dimensions
+                or report_embedding_meta.text_version != summary_embedding.text_version
+            ):
+                raise ValueError(
+                    "report_embedding_meta does not match active embedding space "
+                    f"({summary_embedding.model}, dim={summary_embedding.dimensions}, "
+                    f"text_version={summary_embedding.text_version}); "
+                    "re-embed reports before blending"
+                )
             blended_values = weighted_blend(
-                normalized_summary,
+                summary_embedding.values,
                 report_embeddings,
                 summary_weight=summary_weight,
                 reports_weight=reports_weight,
             )
             blended_embedding = EmbeddingResult(
-                model=embed_result.model,
+                model=summary_embedding.model,
                 dimensions=len(blended_values),
+                text_version=summary_embedding.text_version,
                 values=blended_values,
             )
         else:
@@ -288,23 +373,28 @@ class TriageService:
         requested = set(request.tasks)
 
         classification: ClassificationResult | None = None
-        if (
-            "classify" in requested
-            and raw is not None
-            and raw.classification is not None
-            and request.taxonomy.categories
-        ):
+        if "classify" in requested:
+            if raw is None or raw.classification is None:
+                raise ProviderUpstreamError(
+                    "AI provider omitted required classification output"
+                )
             matched = _resolve_category(
                 raw.classification.category_code, request.taxonomy.categories
             )
-            chosen = matched or request.taxonomy.categories[0]
-            confidence = (
-                _clamp_score(raw.classification.confidence)
-                if matched is not None
-                else 0.0
+            if matched is None:
+                raise ProviderUpstreamError(
+                    "AI provider returned an unrecognized category code"
+                )
+            confidence = _clamp_confidence(
+                raw.classification.confidence, field_name="classification.confidence"
             )
+            reason = raw.classification.reason.strip()
+            if not reason:
+                raise ProviderUpstreamError(
+                    "AI provider returned an empty classification reason"
+                )
             alternatives: list[AlternativeCategory] = []
-            seen_codes = {chosen.code}
+            seen_codes = {matched.code}
             for alt in raw.classification.alternatives:
                 resolved_alt = _resolve_category(
                     alt.category_code, request.taxonomy.categories
@@ -316,19 +406,33 @@ class TriageService:
                     AlternativeCategory(
                         category_code=resolved_alt.code,
                         category_name=resolved_alt.name,
-                        confidence=_clamp_score(alt.confidence),
+                        confidence=_clamp_confidence(
+                            alt.confidence, field_name="classification.alternative.confidence"
+                        ),
                     )
                 )
             classification = ClassificationResult(
-                category_code=chosen.code,
-                category_name=chosen.name,
+                category_code=matched.code,
+                category_name=matched.name,
                 confidence=confidence,
                 alternatives=alternatives[:2],
-                reason=raw.classification.reason.strip(),
+                reason=reason,
             )
 
         severity: SeverityResult | None = None
-        if "severity" in requested and raw is not None and raw.severity is not None:
+        if "severity" in requested:
+            if raw is None or raw.severity is None:
+                raise ProviderUpstreamError(
+                    "AI provider omitted required severity output"
+                )
+            severity_confidence = _clamp_confidence(
+                raw.severity.confidence, field_name="severity.confidence"
+            )
+            severity_reason = raw.severity.reason.strip()
+            if not severity_reason:
+                raise ProviderUpstreamError(
+                    "AI provider returned an empty severity reason"
+                )
             w = request.taxonomy.severity_weights
             t = request.taxonomy.severity_thresholds
             computed = compute_severity(
@@ -361,22 +465,25 @@ class TriageService:
                     urgency=computed.factors.urgency,
                 ),
                 safety_override_triggered=computed.safety_override_triggered,
-                confidence=_clamp_score(raw.severity.confidence),
-                reason=raw.severity.reason.strip(),
+                confidence=severity_confidence,
+                reason=severity_reason,
             )
 
         keywords: list[str] = []
-        if "keywords" in requested and raw is not None:
+        if "keywords" in requested:
+            if raw is None:
+                raise ProviderUpstreamError(
+                    "AI provider omitted required keywords output"
+                )
             keywords = _clean_keywords(raw.keywords)
 
         embedding: EmbeddingResult | None = None
-        if "embed" in requested and embed_result is not None:
-            normalized = l2_normalize(embed_result.values)
-            embedding = EmbeddingResult(
-                model=embed_result.model,
-                dimensions=len(normalized),
-                values=normalized,
-            )
+        if "embed" in requested:
+            if embed_result is None:
+                raise ProviderUpstreamError(
+                    "AI provider omitted required embedding output"
+                )
+            embedding = self._normalize_upstream_embedding(embed_result)
 
         return TriageAnalyzeResponse(
             request_id=request_id,

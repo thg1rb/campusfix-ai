@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -33,6 +34,12 @@ class SeverityThresholds:
     critical: float = THRESHOLD_CRITICAL
 
     def validate(self) -> None:
+        if not (
+            math.isfinite(self.medium)
+            and math.isfinite(self.high)
+            and math.isfinite(self.critical)
+        ):
+            raise ValueError("severity thresholds must be finite numbers")
         if not (0.0 < self.medium < self.high < self.critical <= 3.0):
             raise ValueError(
                 "severity thresholds must satisfy 0 < medium < high < critical <= 3.0"
@@ -61,30 +68,44 @@ def compute_severity(
     """Deterministically compute SeverityLevel from 4 scored risk factors (0-3).
 
     Formula:
-        risk_score = w_safety * safety_risk
-                   + w_impact * operational_impact
-                   + w_scope  * affected_scope
-                   + w_urgency * urgency
-    Weights are normalized to sum to 1.0 so risk_score always lies in [0.0, 3.0].
-    If safety_override is enabled and safety_risk == 3, level is forced to CRITICAL.
+        risk_score = round(
+            w_safety * safety_risk
+            + w_impact * operational_impact
+            + w_scope  * affected_scope
+            + w_urgency * urgency,
+            4,
+        )
+    Weights are scaled by their maximum value before summing so arbitrarily large
+    finite weights never overflow, then normalized to sum to 1.0 so risk_score
+    always lies in [0.0, 3.0]. Threshold comparisons are evaluated against the
+    4-decimal rounded risk_score so the returned level always matches the returned
+    risk_score. If safety_override is enabled and safety_risk == 3, level is
+    forced to CRITICAL.
     """
     w = weights or SeverityWeights()
     t = thresholds or SeverityThresholds()
     t.validate()
 
-    if (
-        w.safety_risk < 0
-        or w.operational_impact < 0
-        or w.affected_scope < 0
-        or w.urgency < 0
-    ):
+    raw_weights = (
+        w.safety_risk,
+        w.operational_impact,
+        w.affected_scope,
+        w.urgency,
+    )
+    if not all(math.isfinite(val) for val in raw_weights):
+        raise ValueError("severity weights must be finite numbers")
+    if any(val < 0 for val in raw_weights):
         raise ValueError("severity weights must be non-negative")
 
-    total_weight = (
-        w.safety_risk + w.operational_impact + w.affected_scope + w.urgency
-    )
-    if total_weight <= 0:
+    max_weight = max(raw_weights)
+    if max_weight <= 0:
         raise ValueError("severity weights sum must be positive")
+
+    s_safety = w.safety_risk / max_weight
+    s_impact = w.operational_impact / max_weight
+    s_scope = w.affected_scope / max_weight
+    s_urgency = w.urgency / max_weight
+    total_scaled = s_safety + s_impact + s_scope + s_urgency
 
     clamped = SeverityFactors(
         safety_risk=_clamp_factor(factors.safety_risk),
@@ -93,16 +114,13 @@ def compute_severity(
         urgency=_clamp_factor(factors.urgency),
     )
 
-    risk_score = round(
-        (
-            w.safety_risk * clamped.safety_risk
-            + w.operational_impact * clamped.operational_impact
-            + w.affected_scope * clamped.affected_scope
-            + w.urgency * clamped.urgency
-        )
-        / total_weight,
-        4,
-    )
+    raw_score = (
+        s_safety * clamped.safety_risk
+        + s_impact * clamped.operational_impact
+        + s_scope * clamped.affected_scope
+        + s_urgency * clamped.urgency
+    ) / total_scaled
+    risk_score = round(raw_score, 4)
 
     override_triggered = bool(safety_override and clamped.safety_risk == 3)
 

@@ -52,6 +52,9 @@ class TriageProvider(Protocol):
     @property
     def embedding_model(self) -> str: ...
 
+    @property
+    def embedding_dimensions(self) -> int: ...
+
     async def generate_structured(
         self,
         *,
