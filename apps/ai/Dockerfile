@@ -9,8 +9,8 @@ COPY --chown=app:app pyproject.toml uv.lock .python-version ./
 RUN uv sync --locked --no-install-project
 COPY --chown=app:app src ./src
 RUN uv sync --locked
-CMD ["/app/.venv/bin/python", "-m", "campusfix_ai.main", "--reload"]
+CMD ["/app/.venv/bin/python", "-m", "ku_spot_ai.main", "--reload"]
 
 FROM development AS runtime
 RUN uv sync --locked --no-editable
-CMD ["/app/.venv/bin/python", "-m", "campusfix_ai.main"]
+CMD ["/app/.venv/bin/python", "-m", "ku_spot_ai.main"]

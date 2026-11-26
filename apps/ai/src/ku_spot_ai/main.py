@@ -2,8 +2,8 @@ import argparse
 
 import uvicorn
 
-from campusfix_ai.bootstrap import create_app
-from campusfix_ai.config import Settings
+from ku_spot_ai.bootstrap import create_app
+from ku_spot_ai.config import Settings
 
 
 def app_factory():
@@ -15,7 +15,7 @@ def main() -> None:
     parser.add_argument("--reload", action="store_true")
     args = parser.parse_args()
     uvicorn.run(
-        "campusfix_ai.main:app_factory",
+        "ku_spot_ai.main:app_factory",
         factory=True,
         host="0.0.0.0",
         port=Settings.load().port,

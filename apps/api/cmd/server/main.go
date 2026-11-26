@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/thg1rb/campusfix-ai/apps/api/internal/bootstrap"
-	"github.com/thg1rb/campusfix-ai/apps/api/internal/config"
+	"github.com/thg1rb/ku-spot/apps/api/internal/bootstrap"
+	"github.com/thg1rb/ku-spot/apps/api/internal/config"
 )
 
 func run() (err error) {
