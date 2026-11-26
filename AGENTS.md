@@ -1,0 +1,94 @@
+# AGENTS.md — KU Spot
+
+Repository-wide rules and context map for AI coding agents working in `ku-spot`. Keep changes small, verifiable, contract-first, and strictly faithful to Requirement Freeze 1.
+
+---
+
+## 1. Project Overview & Sources of Truth
+
+**KU Spot** is an AI-assisted physical-issue reporting, triage, multi-department resolution tracking, and public transparency platform for **Kasetsart University (Bangkhen Campus)**.
+
+Read only the relevant source-of-truth docs before implementing a slice:
+
+| Topic | Source of Truth |
+| --- | --- |
+| Business overview & MVP scope | `docs/brd.md` |
+| Atomic business rules (`BR-*`) & RBAC matrix | `docs/business-rules.md` |
+| Behavioral flows & acceptance flows (`UC-*`) | `docs/use-cases.md` |
+| System architecture, auth, storage, AI, errors | `docs/architecture.md` |
+| Enums, record numbers, DB schema, state machines | `docs/data-model.md` |
+| Cross-service contracts (`Web ↔ API`, `API ↔ AI`) | `contracts/api-v1.md`, `contracts/ai-gateway.md` |
+| UI direction, Tailwind v4 tokens, anti-slop rules | `docs/design-system.md` |
+| Current status, prototype gaps, roadmap | `docs/status.md` |
+| Testing strategy & mandatory domain test cases | `docs/testing.md` |
+| Architectural decisions (ADRs) | `docs/decisions/` (start with `0001-bootstrap.md`) |
+| Service-specific agent rules | `apps/web/AGENTS.md`, `apps/api/AGENTS.md`, `apps/ai/AGENTS.md` |
+
+**Explicitly Out of MVP (do not build unless scope changes):** Video upload/analysis, Voice-to-Text, LINE OA/LIFF, AI Chat Assistant, Detailed Heatmap, Predictive Maintenance, `recurrence_of` links, SLA/Escalation, Individual Staff Assignment, Transfer Workflows, Internal Notes, General Public Comments, Ticket Reopen, `CLOSED` state, and Multi-campus/Multi-tenant support.
+
+---
+
+## 2. Non-Negotiable Domain Invariants
+
+Never violate these rules (see `docs/business-rules.md` for full IDs):
+
+1. **`Report` vs. `Ticket` separation (`BR-GEN-004`..`006`):** A `Report` is one user's submission; a `Ticket` is one verified campus incident (`Ticket 1 ── 1..* Confirmed Report`). Deduplication groups Reports into a Ticket — never deletes or overwrites original Reports.
+2. **Human-in-the-loop AI & fallback (`BR-GEN-007`..`008`, `BR-AI-016`..`020`):** AI is strictly Decision Support. AI must **never** confirm, reject, resolve, mark cannot-resolve, delete, hide, or mutate final operational Ticket data. AI errors/timeouts/outages must **never** block Report submission or manual Reviewer work.
+3. **Roles & Separation of Duties (`BR-ROLE-001`..`007`):**
+   - 4 roles: `REPORTER`, `REVIEWER`, `DEPARTMENT_STAFF`, `ADMINISTRATOR`.
+   - `ADMINISTRATOR` is **exclusive** (cannot combine with any other role, cannot belong to a department, cannot operate on tickets).
+   - A user belongs to **at most 1 Department** (`DEPARTMENT_STAFF` only).
+   - **Separation of Duties:** A user who is a Reporter of a Report or Ticket must **never** review, confirm, reject, manage departments, or perform Department operational actions on that same Report/Ticket.
+4. **Report lifecycle & optimistic locking (`BR-RLC-001`..`010`, `BR-RPT-008`..`012`):**
+   - States: `DRAFT`, `PENDING_REVIEW`, `CONFIRMED`, `REJECTED`, `CANCELLED`.
+   - Editing a `PENDING_REVIEW` report increments `version`, marks prior AI output outdated, and triggers AI re-analysis.
+   - Reviewers may confirm/reject **only against the latest `version`**; stale review actions must fail safely with `409 STALE_REPORT_VERSION`.
+   - Purge `DRAFT` 30 days after `created_at` and `CANCELLED` 30 days after `cancelled_at` (`BR-RET-001`..`002`).
+5. **Ticket lifecycle & forbidden transition (`BR-TKT-001`..`013`, `BR-STA-001`..`011`):**
+   - **Active:** `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`.
+   - **Final:** `RESOLVED`, `CANNOT_RESOLVE` (immutable; no reopen, no new reports, no new `Mark Affected`, no department edits).
+   - **`IN_PROGRESS → CANNOT_RESOLVE` is strictly forbidden (`BR-STA-008`).**
+   - `CANNOT_RESOLVE` is allowed only from `CONFIRMED` or `WAITING_INFORMATION` (by Reviewer or Responsible Department Staff) with a mandatory description, and immediately finalizes the entire Ticket.
+   - Unpublished `Ticket Candidate` created on AI `NO_MATCH` is never public and has no operational status until Reviewer confirms.
+6. **Multi-Department resolution (`BR-DEP-001`..`008`):** Multiple departments may own a Ticket with **no Primary Department** and **no Individual Staff Assignment**. Completion is tracked per department; once all assigned departments are complete (including when removing an incomplete department leaves all remaining departments complete), the system **auto-transitions the Ticket to `RESOLVED` immediately**.
+7. **Visibility, Privacy & EXIF (`BR-AUTH-002`..`010`, `BR-THR-001`..`006`):**
+   - Public Read requires no login; all write/interactive actions require authentication.
+   - Public identity is a unique, mutable `Username` (reflected retroactively on old reports). Never expose real name, email, student ID, or academic department publicly.
+   - Strip all **EXIF metadata** from uploaded images (1–5 images, ≤10 MB, `.png`/`.jpg`/`.jpeg`) before storage/serving.
+   - Additional Information Thread is **strictly private** to involved Reviewers, Responsible Department Staff, and Reporters with a Confirmed Report in that Ticket — never exposed on Public Feed or Public Activity Timeline.
+8. **Metrics & Notifications (`BR-AI-013`, `BR-AFF-006`..`007`, `BR-NOT-001`..`005`, `BR-ANL-001`):**
+   - Report count alone must **never** auto-upgrade Severity (`CRITICAL`/`HIGH`/`MEDIUM`/`LOW`).
+   - Keep `Ticket Count`, `Report Count`, and `Affected User Count` strictly distinct.
+   - Send Major Event Emails **only to Reporters of the Ticket** (never to Affected-only users).
+
+---
+
+## 3. Toolchain & Version Discipline
+
+Verify APIs against installed packages/docs rather than legacy training data (see `docs/decisions/0001-bootstrap.md`):
+
+* **Web (`apps/web`):** Node 24.22, Bun 1.4, Next.js 16.4, React 19.3, TypeScript 5.9, Tailwind CSS 4.3
+* **API (`apps/api`):** Go 1.26, Fiber v3.7, GORM 1.31, Goose CLI 3.30
+* **AI (`apps/ai`):** Python 3.14, uv 0.13, FastAPI 0.165, Uvicorn 0.54
+* **Infrastructure:** PostgreSQL 18.7, Docker Compose with Watch
+
+---
+
+## 4. Service Boundaries & Contract Discipline
+
+* **Contract-first:** Update `contracts/api-v1.md` or `contracts/ai-gateway.md` before coding cross-service changes.
+* **`apps/api`:** Modular monolith under `internal/modules/<module>/` (`domain/`, `application/`, `adapters/inbound/http/`, `adapters/outbound/postgres/`). Keep `domain/` free of Fiber/GORM/SDK imports. All schema changes use Goose SQL migrations (`make migration-create`, `make migrate`); **never** use `gorm.AutoMigrate`. Read `apps/api/AGENTS.md`.
+* **`apps/web`:** App Router in `src/app/`, features in `src/features/`, UI primitives in `src/components/ui/`. Follow `docs/design-system.md`. Read `apps/web/AGENTS.md`.
+* **`apps/ai`:** Runtime package in `src/ku_spot_ai/` managed strictly with `uv`. Keep external model calls behind provider boundaries; keep evaluation datasets/scripts in `apps/ai/evaluation/`. Read `apps/ai/AGENTS.md`.
+
+---
+
+## 5. Workflow, Git & Definition of Done
+
+* **Branching:** Branch from `develop` and return reviewed changes to `develop` via PR. Never push directly to `main`.
+* **Secrets:** Never commit `.env` files, OAuth secrets, API keys, or credentials. Keep local defaults in `.env.example` only.
+* **Keep Context Current:** When implementing a feature or resolving a prototype gap, update `docs/status.md` (and add an ADR in `docs/decisions/` for major design choices).
+* **Mandatory Verification before finishing code changes:**
+  1. Run `make check` and report exact results.
+  2. Run `make smoke` (and `make smoke-outage` when changing Compose, readiness, or AI paths).
+  3. Add or update unit/integration tests covering domain invariants (especially Separation of Duties, state transitions, optimistic locking, and privacy boundaries per `docs/testing.md`).

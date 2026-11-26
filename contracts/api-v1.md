@@ -1,0 +1,132 @@
+# Web ↔ Go API Contract (`/api/v1`)
+
+This document defines the HTTP contract between `apps/web` and `apps/api`. All timestamps use ISO 8601 UTC (`RFC3339`), JSON fields use `camelCase`, and enums match [docs/data-model.md](../docs/data-model.md).
+
+---
+
+## 1. Conventions
+
+* **Base Path:** `/api/v1` (except operational health endpoints `/healthz` and `/readyz`).
+* **Auth:** HTTP-only session cookie (`ku_spot_session`). Public endpoints work with or without a cookie; authenticated endpoints return `401 UNAUTHENTICATED` when missing/invalid.
+* **Pagination Envelope:**
+  ```json
+  {
+    "items": [],
+    "pagination": { "page": 1, "pageSize": 25, "totalItems": 120, "totalPages": 5 }
+  }
+  ```
+  Supported `pageSize` values for Public Feed: `25`, `50`, `100` (`BR-PUB-006`).
+* **Standard Error Envelope:** Defined in [docs/architecture.md](../docs/architecture.md#7-http-error-envelope--status-code-convention).
+
+---
+
+## 2. Health & Readiness (Implemented in Bootstrap)
+
+| Method & Path | Auth | Behavior |
+| --- | --- | --- |
+| `GET /healthz` | Public | Liveness probe (`200 {"status":"ok"}`). |
+| `GET /readyz` | Public | Dependency probe checking PostgreSQL (`SELECT 1`) and AI Gateway (`/healthz`); returns `200` if both ok, `503` otherwise. |
+
+---
+
+## 3. Authentication & Profile (`UC-AUTH-001`, `UC-USR-001`)
+
+| Method & Path | Auth | Behavior |
+| --- | --- | --- |
+| `GET /api/v1/auth/login` | Public | Redirects to configured Authentication Provider (`KU_ALL` or `GOOGLE` `@ku.th`). |
+| `GET /api/v1/auth/callback` | Public | Validates provider callback, provisions/loads user + roles + department, sets session cookie. |
+| `POST /api/v1/auth/logout` | Auth | Invalidates current session cookie. |
+| `GET /api/v1/me` | Auth | Returns current authenticated user profile (`id`, `username`, `roles`, `departmentId`, `isActive`; never exposed publicly). |
+| `PATCH /api/v1/me/username` | Auth | Updates unique `username` (`BR-AUTH-006`..`008`). Returns `409 USERNAME_TAKEN` on collision. |
+
+---
+
+## 4. Public Read Endpoints (No Login Required — `BR-AUTH-003`, `BR-PUB-*`)
+
+> **Privacy Guard (`BR-AUTH-010`, `BR-PUB-010`):** Public responses MUST NEVER include `realName`, `email`, `providerSubjectId`, `avatarUrl`, `DRAFT`/`PENDING_REVIEW`/`REJECTED`/`CANCELLED` reports, `Ticket Candidate`, or `threadMessages`.
+
+| Method & Path | Query / Behavior |
+| --- | --- |
+| `GET /api/v1/public/tickets` | Public Feed (`UC-PUB-001`, `UC-PUB-002`). Defaults: Active Tickets (`CONFIRMED,IN_PROGRESS,WAITING_INFORMATION`), sort `confirmed_at DESC`, `pageSize=25`. Params: `q` (search Ticket Number, Title, Description, Location, Category, Department), `status` (comma-separated), `severity`, `categoryId`, `departmentId`, `locationId`, `dateFrom`, `dateTo`, `page`, `pageSize` (`25|50|100`). |
+| `GET /api/v1/public/tickets/map` | Lightweight markers for `UC-MAP-001` (`ticketNumber`, `title`, `status`, `severity`, `lat`, `lng`, `locationName`, `categoryId`). Accepts same filters as Feed. |
+| `GET /api/v1/public/tickets/:ticketNumber` | Ticket Detail (`UC-PUB-003`): core fields, `departments` (with per-dept completion status), linked `CONFIRMED` reports (`reportNumber`, `aiGeneratedTitle`, `thumbnailUrl`, `reporterUsername`, `submittedAt`), `reportCount`, `affectedCount`, `viewerHasMarkedAffected` (if logged in), `publicActivities`, `resolutionSummary` / `cannotResolveReason`, and `feedbackAggregate`. |
+| `GET /api/v1/public/reports/:reportNumber` | Public Report Detail (`UC-PUB-004`). Returns `404` unless `status == 'CONFIRMED'`. Fields: `reportNumber`, `ticketNumber`, `reporterUsername` (current), `description`, `images` (EXIF-stripped), `location`, `submittedAt`. |
+| `GET /api/v1/public/users/:username` | Public Reporter Profile (`UC-PUB-005`): `username` + paginated list of their `CONFIRMED` public reports. |
+| `GET /api/v1/public/master-data` | Active Categories, Departments, and Campus Locations for search filters and map pickers. |
+
+---
+
+## 5. Reporter Endpoints (`UC-RPT-001`..`005`)
+
+All require authenticated non-Admin user (`REPORTER`).
+
+| Method & Path | Behavior & Rules |
+| --- | --- |
+| `POST /api/v1/media/report-images` | Multipart upload for a single image (`.png`/`.jpg`/`.jpeg`, `≤ 10 MB`). Strips EXIF server-side and returns `imageId` + preview URL. |
+| `GET /api/v1/my-reports` | Lists caller's own reports (`DRAFT`, `PENDING_REVIEW`, `CONFIRMED`, `REJECTED`, `CANCELLED`). |
+| `GET /api/v1/reports/:id` | Returns report detail + latest AI analysis run. Accessible by owner (`reporterId`) or `REVIEWER` (for `PENDING_REVIEW`/`REJECTED`). |
+| `POST /api/v1/reports/drafts` | Save new `DRAFT` (`UC-RPT-001`). Partial fields allowed. |
+| `PATCH /api/v1/reports/:id/draft` | Update existing `DRAFT` (owner only). |
+| `POST /api/v1/reports/:id/submit` | Submit `DRAFT` (or `POST /api/v1/reports` to create+submit directly, `UC-RPT-002`). Validates Description, Location+Map Point, `1–5` images; assigns `reportNumber`; sets `PENDING_REVIEW`, `version = 1`; triggers `UC-AI-001` without failing submission on AI outage. Optional `requestedTargetTicketId` (must be Active, `UC-RPT-005`). |
+| `PATCH /api/v1/reports/:id` | Edit `PENDING_REVIEW` report (`UC-RPT-003`, owner only). Increments `version`, marks prior AI runs `isOutdated = true`, triggers `UC-AI-002`. Returns `409` if already `CONFIRMED`/`REJECTED`. |
+| `POST /api/v1/reports/:id/cancel` | Cancel `PENDING_REVIEW` report (`UC-RPT-004`, owner only) → `CANCELLED` with `cancelledAt`. |
+
+---
+
+## 6. Reviewer Endpoints (`UC-REV-001`..`006`)
+
+All require `REVIEWER` (never `ADMINISTRATOR`) and enforce **Separation of Duties** (`403 SEPARATION_OF_DUTIES_VIOLATION` if caller is Reporter of the target Report/Ticket).
+
+| Method & Path | Request Body / Rules |
+| --- | --- |
+| `GET /api/v1/reviewer/queue` | Paginated `PENDING_REVIEW` reports with latest AI status, version, and `isSelfReported` indicator. |
+| `POST /api/v1/reviewer/reports/:id/confirm-existing` | `UC-REV-002`. Body: `{ "expectedVersion": 2, "targetTicketId": "...", "reportTitleOverride": "..." }`. Enforces `expectedVersion == report.version` (`409 STALE_REPORT_VERSION`) and Active target Ticket (`409 TICKET_IS_FINAL`). Triggers `UC-AI-003` + Email. |
+| `POST /api/v1/reviewer/reports/:id/confirm-new` | `UC-REV-003`. Body: `{ "expectedVersion": 2, "title": "...", "summary": "...", "categoryId": "...", "severity": "HIGH", "departmentIds": ["..."], "reportTitleOverride": "..." }`. Requires `≥ 1` active department. Creates `CONFIRMED` Ticket + `CONFIRMED` Report + Activity + Email. |
+| `POST /api/v1/reviewer/reports/:id/reject` | `UC-REV-004`. Body: `{ "expectedVersion": 2, "reason": "..." }`. Mandatory `reason` (`422 REJECTION_REASON_REQUIRED`). |
+| `PATCH /api/v1/reviewer/reports/:id/correction` | `UC-REV-005`. Corrects fields on a `CONFIRMED` Report; writes audit log; triggers `UC-AI-003`. |
+| `PUT /api/v1/reviewer/tickets/:ticketId/departments` | `UC-REV-006`. Body: `{ "departmentIds": ["..."] }`. Active Ticket only; `≥ 1` department; preserves completed flags on retained departments; triggers Auto-`RESOLVED` immediately if all remaining departments are complete (`BR-DEP-007`). |
+| `POST /api/v1/reviewer/tickets/:ticketId/reevaluations/:reevalId/apply` | Reviewer reviews/applies or dismisses pending `TicketAIReevaluation` (`BR-AI-015`). |
+
+---
+
+## 7. Department & Ticket Operation Endpoints (`UC-DEP-*`, `UC-TKT-*`)
+
+All require `DEPARTMENT_STAFF` (for assigned Department) or `REVIEWER` where noted, and enforce **Separation of Duties** (`BR-ROLE-004`, `BR-ROLE-005`).
+
+| Method & Path | Role | Behavior & Rules |
+| --- | --- | --- |
+| `GET /api/v1/department/tickets` | Dept Staff | `UC-DEP-001`. Active (and filterable Final) Tickets assigned to caller's single Department. |
+| `POST /api/v1/tickets/:ticketId/start` | Assigned Dept Staff | `UC-TKT-001`. `CONFIRMED → IN_PROGRESS`. |
+| `POST /api/v1/tickets/:ticketId/resume` | Assigned Dept Staff | `UC-TKT-003`. `WAITING_INFORMATION → IN_PROGRESS`. |
+| `POST /api/v1/tickets/:ticketId/actions` | Assigned Dept Staff | `UC-DEP-002`. Records operational update + optional EXIF-stripped evidence images onto Public Activity Timeline. |
+| `POST /api/v1/tickets/:ticketId/departments/complete` | Assigned Dept Staff | `UC-DEP-003`. Ticket must be `IN_PROGRESS`. Marks caller's Department `isCompleted = true` with optional `note`. If all assigned departments complete, auto-transitions Ticket to `RESOLVED` immediately (`UC-TKT-004`) + sends `RESOLVED` Email. |
+| `POST /api/v1/tickets/:ticketId/cannot-resolve` | Reviewer or Assigned Dept Staff | `UC-TKT-005`. Body: `{ "description": "..." }` (mandatory). Allowed ONLY from `CONFIRMED` or `WAITING_INFORMATION`. **Returns `409 TRANSITION_FORBIDDEN` if Ticket is `IN_PROGRESS` (`BR-STA-008`).** Finalizes entire Ticket immediately + sends `CANNOT_RESOLVE` Email. |
+| `GET /api/v1/department/analytics` | Dept Staff | `UC-DEP-004`. Scoped strictly to caller's single Department. |
+
+---
+
+## 8. Private Thread, Affected & Feedback Endpoints
+
+| Method & Path | Auth / Role | Behavior & Rules |
+| --- | --- | --- |
+| `GET /api/v1/tickets/:ticketId/thread` | Involved Reviewer, Assigned Dept Staff, or Confirmed Reporter of Ticket | Reads private Additional Information Thread (`BR-THR-001`..`005`). Returns `403 THREAD_ACCESS_DENIED` to all others (including Admin). |
+| `POST /api/v1/tickets/:ticketId/thread/request-info` | Reviewer or Assigned Dept Staff (≠ Reporter) | `UC-THR-001` / `UC-TKT-002`. Posts question, transitions Active Ticket (`CONFIRMED`/`IN_PROGRESS`) → `WAITING_INFORMATION`, emails all Ticket Reporters. |
+| `POST /api/v1/tickets/:ticketId/thread/messages` | Authorized Thread Participant | `UC-THR-002`. Appends private message (active follow-up conversation). |
+| `PUT /api/v1/tickets/:ticketId/affected` | Auth non-Admin | `UC-AFF-001`. Marks caller affected on an **Active Ticket** (idempotent). Returns `409 TICKET_IS_FINAL` on Final Tickets. |
+| `DELETE /api/v1/tickets/:ticketId/affected` | Auth non-Admin | `UC-AFF-001`. Unmarks caller affected while Ticket is Active. |
+| `PUT /api/v1/tickets/:ticketId/feedback` | Confirmed Reporter of Ticket | `UC-FBK-001` / `UC-FBK-002`. Upserts caller's multi-dimensional feedback (`1..5` per dimension) on a **`RESOLVED` Ticket only**. Recalculates aggregates. |
+
+---
+
+## 9. Administrator Endpoints (`UC-ADM-001`..`005`)
+
+All require exclusive `ADMINISTRATOR` role (`BR-ROLE-002`).
+
+| Method & Path | Behavior |
+| --- | --- |
+| `GET /api/v1/admin/users`, `PATCH /api/v1/admin/users/:id` | Manage account status, roles, and single department membership. Enforces `BR-ROLE-002` (Exclusive Admin) and `BR-ROLE-003` (max 1 Department, only with `DEPARTMENT_STAFF`). |
+| `GET / POST / PATCH /api/v1/admin/categories` | Create, update, and soft-disable (`isActive: false`) Problem Categories. |
+| `GET / POST / PATCH /api/v1/admin/departments` | Create, update, soft-disable Departments and manage responsibility scopes. |
+| `GET / POST / PATCH /api/v1/admin/locations` | Create, update, soft-disable KU Bangkhen Campus Locations. |
+| `GET /api/v1/admin/analytics` | `UC-ADM-005`. System-wide KPIs (distinct Tickets, Reports, Affected Users), breakdowns, time metrics (`Review`, `Resolution`, `Total Lead`, `Aging`), satisfaction, and Department Performance table. |
+| `GET /api/v1/admin/audit-logs` | Paginated read-only audit log explorer for compliance verification (`BR-AUD-008`..`009`). |
