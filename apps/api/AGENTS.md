@@ -46,6 +46,9 @@ Read root `AGENTS.md`, `docs/architecture.md`, `docs/data-model.md`, `docs/busin
 
 ## Verification
 
+* Whenever a new Go dependency is added to `go.mod`, record it in `docs/architecture.md` (Section 8).
+* Every new feature or module in `apps/api` MUST include automated Go test file(s) (`*_test.go`) covering domain invariants, authorization, and persistence/HTTP paths.
+
 Before finishing changes in `apps/api`, run:
 
 ```sh

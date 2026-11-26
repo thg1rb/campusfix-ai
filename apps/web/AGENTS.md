@@ -14,8 +14,8 @@ Read root `AGENTS.md`, `docs/design-system.md`, `contracts/api-v1.md`, and `docs
 
 ## Stack & Package Management
 
-* Use **Bun** (`bun install --frozen-lockfile`, `bun run lint`, `bun run typecheck`, `bun run build`, `bun test`) for package management and scripts. Node 24 runs Next.js.
-* Keep `bun.lock` committed and consistent.
+* Use **Bun** (`bun install --frozen-lockfile`, `bun run lint`, `bun run typecheck`, `bun run build`, `bun run test`) for package management and scripts. Node 24 runs Next.js.
+* Keep `bun.lock` committed and consistent. Whenever a new library is installed in `apps/web`, record it in `docs/architecture.md` (Section 8).
 * Use Tailwind CSS v4 `@theme` tokens defined in `src/app/globals.css`; follow all color, typography, density, and anti-slop rules in `docs/design-system.md`.
 
 ## Structure & Boundaries
@@ -38,8 +38,8 @@ Read root `AGENTS.md`, `docs/design-system.md`, `contracts/api-v1.md`, and `docs
 
 ## Verification
 
-Before finishing changes in `apps/web`, run:
+Every new feature in `apps/web` MUST include automated test file(s) under `apps/web/tests/`. Before finishing changes in `apps/web`, run:
 
 ```sh
-cd apps/web && bun run lint && bun run typecheck && bun test && API_BASE_URL=http://127.0.0.1:8080 bun run build
+cd apps/web && bun run lint && bun run typecheck && bun run test && API_BASE_URL=http://127.0.0.1:8080 bun run build
 ```

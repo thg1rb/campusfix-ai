@@ -18,14 +18,16 @@ make smoke-outage   # Stops AI container, verifies degraded 503 readiness and au
 
 | Service | Command | Scope |
 | --- | --- | --- |
-| **Web (`apps/web`)** | `cd apps/web && bun test` | Pure domain unit tests (`tests/*.test.ts`), component logic tests |
+| **Web (`apps/web`)** | `cd apps/web && bun run test` | Pure domain unit tests (`tests/*.test.ts` via Vitest), component logic tests |
 | **Web E2E** | `cd apps/web && bunx playwright test` *(when E2E suite added)* | Full browser journeys across Public, Reporter, Reviewer, Department, Admin |
 | **API (`apps/api`)** | `cd apps/api && go test -race ./...` | Domain state machines, authorization, HTTP handlers, PostgreSQL integration tests |
 | **AI (`apps/ai`)** | `cd apps/ai && uv run --locked pytest` | Schema validation, provider mocking, similarity scoring, fallback errors |
 
 ---
 
-## 2. Test Pyramid by Service
+## 2. Mandatory Feature Testing Policy & Test Pyramid
+
+> **Rule (No Untested Features):** Every time a new feature is developed in **any service** (`apps/web`, `apps/api`, or `apps/ai`), the agent or contributor MUST create or extend dedicated automated test file(s) (`apps/web/tests/*.test.ts`, `apps/api/**/*_test.go`, `apps/ai/tests/test_*.py`) covering the feature's happy paths, failure/fallback paths, and relevant domain invariants. Feature PRs without automated tests are incomplete.
 
 1. **`apps/api` (Go):**
    - **Domain Unit Tests (`internal/modules/*/domain/`):** Pure Go table-driven tests with zero DB/network dependencies covering all state transitions, Separation of Duties, Exclusive Admin, multi-department auto-resolve, and record numbering.

@@ -14,10 +14,12 @@
 - [ ] Changes stay strictly within MVP scope (`docs/brd.md`, `docs/business-rules.md`)
 - [ ] No `.env` files, secrets, API keys, or credentials committed
 
-### Contracts, Schema & Docs
+### Contracts, Schema, Dependencies & Docs
+- [ ] Recorded any newly installed libraries/packages in `docs/architecture.md` (Section 8)
+- [ ] Updated canonical source-of-truth doc(s) **and** added/updated an ADR in `docs/decisions/` for any confirmed change conflicting with existing requirements or system design
 - [ ] Updated `contracts/api-v1.md` and/or `contracts/ai-gateway.md` if cross-service payloads changed
 - [ ] Used Goose SQL migrations (`make migration-create` / `make migrate`) for any DB change (no `gorm.AutoMigrate`)
-- [ ] Updated `docs/status.md` (and added an ADR in `docs/decisions/` if a major architectural decision was made)
+- [ ] Updated `docs/status.md` if implementation status or prototype gaps changed
 
 ### Domain Invariants & Security
 - [ ] Enforced Separation of Duties (`BR-ROLE-004`, `BR-ROLE-005`) and Exclusive Administrator (`BR-ROLE-002`, `BR-ROLE-007`) where applicable
@@ -25,9 +27,10 @@
 - [ ] Verified no private PII (`realName`, `email`, `providerSubjectId`, `avatarUrl`) or Additional Information Thread data leaks into Public Read endpoints
 - [ ] Preserved EXIF stripping on uploaded images where applicable
 
-### Verification
+### Verification & Mandatory Tests
+- [ ] Added automated test file(s) for every newly developed feature (`apps/web/tests/`, `apps/api/**/*_test.go`, `apps/ai/tests/`)
 - [ ] `make check` passed
-- [ ] Relevant unit / integration tests added or updated and passing
+- [ ] Relevant unit / integration tests passing (`bun run test`, `go test -race ./...`, `uv run --locked pytest`)
 - [ ] `make smoke` (and `make smoke-outage` if touching Compose, readiness, or AI paths) verified
 
 ## Verification Output

@@ -40,8 +40,8 @@
 
 ## 3. Known Prototype Gaps & Migration Tasks
 
-1. **Browser-only persistence & mock AI in `apps/web`:** `PrototypeStore.tsx`, `prototypeDatabase.ts`, `DemoSimulationBar.tsx`, and `mockAiService.ts` must be replaced incrementally via a typed HTTP API client in `apps/web/src/lib/api/` (tracked under `docs/decisions/0005-web-api-integration.md`).
-2. **Mock Google OAuth account switcher in `apps/web`:** Replace the prototype account selector with live backend **Google OAuth 2.0 (`@ku.th`)** sessions behind the pluggable `AuthProvider` boundary in `apps/api/internal/adapters/auth/` (ADR `0002`).
+1. **Browser-only persistence & mock AI in `apps/web`:** `PrototypeStore.tsx`, `prototypeDatabase.ts`, `DemoSimulationBar.tsx`, and `mockAiService.ts` must be replaced incrementally via a typed HTTP API client in `apps/web/src/lib/api/` (tracked under planned ADR `0006`).
+2. **Mock Google OAuth account switcher in `apps/web`:** Replace the prototype account selector with live backend **Google OAuth 2.0 (`@ku.th`)** sessions behind the pluggable `AuthProvider` boundary in `apps/api/internal/adapters/auth/` ([ADR 0002](decisions/0002-auth-provider-and-resolved-only-final-state.md), planned ADR `0003`).
 3. **EXIF stripping is not yet implemented:** `apps/web` stores uploaded images as local DataURLs in the prototype. Server-side validation and EXIF stripping must be enforced in `apps/api` before storing or serving any image.
 
 ---
@@ -50,19 +50,19 @@
 
 1. **Phase 1 — Database Schema & Core Identity:**
    - Create initial Goose SQL migrations from [docs/data-model.md](data-model.md) (`users`, `user_roles`, `categories`, `departments`, `campus_locations`, `record_sequences`, `audit_logs`).
-   - Implement `identity` and `masterdata` modules in `apps/api` + pluggable `AuthProvider` (initial provider: Google OAuth 2.0 `@ku.th`) + RBAC middleware (ADR `0002`).
+   - Implement `identity` and `masterdata` modules in `apps/api` + pluggable `AuthProvider` (initial provider: Google OAuth 2.0 `@ku.th`) + RBAC middleware ([ADR 0002](decisions/0002-auth-provider-and-resolved-only-final-state.md), planned ADR `0003`).
 2. **Phase 2 — Media Pipeline & Report Lifecycle:**
-   - Implement `media` adapter with magic-byte validation, ≤10 MB limit, and EXIF stripping (ADR `0003`).
+   - Implement `media` adapter with magic-byte validation, ≤10 MB limit, and EXIF stripping (planned ADR `0004`).
    - Implement `reports` module (`DRAFT`, `PENDING_REVIEW`, `CANCELLED`, version bumping, 30-day retention job).
 3. **Phase 3 — AI Gateway & Triage Integration:**
-   - Complete `apps/ai` endpoints per [contracts/ai-gateway.md](../contracts/ai-gateway.md) (JEV provider boundary, structured validation, similarity scoring, golden evaluation suite; ADR `0004`).
+   - Complete `apps/ai` endpoints per [contracts/ai-gateway.md](../contracts/ai-gateway.md) (JEV provider boundary, structured validation, similarity scoring, golden evaluation suite; planned ADR `0005`).
    - Wire `apps/api` candidate shortlisting, async/bounded-timeout AI triage, fallback logging, and Ticket re-evaluation (`UC-AI-001`..`003`).
 4. **Phase 4 — Reviewer, Ticket Operations & Multi-Department Resolution:**
    - Implement `review` and `tickets` modules: optimistic lock `409`, Separation of Duties, multi-department assignments, per-department completion, Auto-`RESOLVED`, Public Feed/Map/Detail, and `Mark Affected`.
 5. **Phase 5 — Threads, Feedback, Email & Analytics:**
    - Implement `threads` (strictly private), `feedback` (`RESOLVED` only), `notifications` (Major Event Emails to Reporters only), and `analytics` (System + Department).
 6. **Phase 6 — Frontend Integration & E2E Verification:**
-   - Migrate `apps/web` screens from `PrototypeStore` to live `/api/v1/*` endpoints (ADR `0005`).
+   - Migrate `apps/web` screens from `PrototypeStore` to live `/api/v1/*` endpoints (planned ADR `0006`).
    - Run full unit, integration, contract, Playwright E2E, `make check`, `make smoke`, and `make smoke-outage`.
 
 ---

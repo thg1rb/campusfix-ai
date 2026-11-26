@@ -25,6 +25,9 @@ Read root `AGENTS.md`, `docs/architecture.md`, `contracts/ai-gateway.md`, and `d
 
 ## Verification
 
+* Whenever a new Python library is installed via `uv add`, record it in `docs/architecture.md` (Section 8).
+* Every new feature or endpoint in `apps/ai` MUST include automated `pytest` test file(s) under `apps/ai/tests/`.
+
 Before finishing changes in `apps/ai`, run:
 
 ```sh

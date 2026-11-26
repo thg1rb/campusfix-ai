@@ -144,3 +144,43 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 | `409` | `STALE_REPORT_VERSION`, `TRANSITION_FORBIDDEN`, `TICKET_IS_FINAL`, `THREAD_READ_ONLY`, `USERNAME_TAKEN`, `ALREADY_COMPLETED` | Optimistic lock mismatch (`BR-RPT-012`), invalid state transition, mutating Final (`RESOLVED`) Ticket, posting to Thread outside `WAITING_INFORMATION`, duplicate username |
 | `422` | `VALIDATION_ERROR`, `REJECTION_REASON_REQUIRED`, `DEPARTMENT_REQUIRED`, `EXCLUSIVE_ADMIN_CONFLICT`, `SINGLE_DEPARTMENT_LIMIT` | Missing mandatory domain fields or role/department constraint violation |
 | `503` | `SERVICE_UNAVAILABLE` | Unexpected downstream outage on `/api/v1/*` business routes (not used by `/readyz`, which returns `{ "status": "unavailable", "checks": { ... } }`) |
+
+---
+
+## 8. Key Libraries & Dependencies Registry
+
+> **Maintenance Rule (Mandatory):** Whenever a new library or package is installed in **any service** (`apps/web`, `apps/api`, or `apps/ai`), update the corresponding table below in the same PR so AI agents and contributors always have an accurate architectural inventory.
+
+### 8.1 Web (`apps/web` — `package.json`)
+
+| Library | Version | Purpose |
+| --- | --- | --- |
+| `next` | `16.4.6` | App Router framework & server route handlers |
+| `react` / `react-dom` | `19.3.1` | UI component runtime |
+| `tailwindcss` / `@tailwindcss/turbopack` | `4.3.5` | CSS utility framework (`@theme` tokens) |
+| `typescript` | `5.9.3` | Static type checking |
+| `shadcn` / `radix-ui` / `class-variance-authority` / `cn` / `tw-animate-css` | `^4.23.0` / `^1.8.1` / `^0.7.1` / `^0.5.2` / `^1.4.0` | Accessible UI component primitives and variant styling |
+| `lucide-react` | `^1.78.0` | Line iconography |
+| `leaflet` / `react-leaflet` | `^1.9.4` / `^5.0.0` | KU Bangkhen interactive campus map and pin picker |
+| `recharts` | `^3.8.0` | Flat operational/analytics charts |
+| `sonner` | `^2.0.8` | Toast notifications |
+| `next-themes` | `^0.4.6` | Theme provider support (light-mode first) |
+| `vitest` / `fake-indexeddb` | `^5.1.1` / `^6.2.8` | Unit testing and prototype IndexedDB test doubles |
+| `eslint` / `eslint-config-next` | `^9` / `16.4.6` | Static linting |
+
+### 8.2 Go API (`apps/api` — `go.mod`)
+
+| Library | Version | Purpose |
+| --- | --- | --- |
+| `github.com/gofiber/fiber/v3` | `v3.7.0` | HTTP router, server, and middleware |
+| `gorm.io/gorm` | `v1.31.2` | Persistence ORM inside `adapters/outbound/postgres/` only |
+| `gorm.io/driver/postgres` | `v1.6.3` | PostgreSQL driver for GORM (`pgx/v5`) |
+| `github.com/pressly/goose/v3` *(CLI via `Makefile`)* | `v3.30.1` | Explicit SQL schema migrations (`make migration-create`, `make migrate`) |
+
+### 8.3 AI Gateway (`apps/ai` — `pyproject.toml`)
+
+| Library | Version | Purpose |
+| --- | --- | --- |
+| `fastapi` | `0.165.0` | HTTP API framework and Pydantic schema validation |
+| `uvicorn` | `0.54.0` | ASGI server managing gateway lifecycle |
+| `hatchling` *(build backend)* | `1.33.0` | Python src-layout packaging (`ku_spot_ai`) |

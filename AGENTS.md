@@ -95,11 +95,16 @@ Every AI agent and contributor MUST follow this Git flow without exception:
 5. **Production Release (`develop` → `main`):** Releasing integrated features to end users MUST be done via a Pull Request from **`develop` → `main`** only.
 6. **Human Review Gate:** Do not push, open a PR, or merge automatically unless the user explicitly instructs you to do so; allow the user to review changes on the feature branch first when requested.
 
-### 5.2 Hygiene & Definition of Done
+### 5.2 Hygiene, Documentation Sync & Definition of Done
 
 * **Secrets:** Never commit `.env` files, OAuth secrets, API keys, or credentials. Keep local defaults in `.env.example` only.
-* **Keep Context Current:** When implementing a feature or resolving a prototype gap, update `docs/status.md` (and add an ADR in `docs/decisions/` for major design choices).
+* **Library & Dependency Registry (Mandatory):** Every time a new library or package is installed in **any service** (`apps/web`, `apps/api`, or `apps/ai`), record its name, version, service, and purpose in the **Key Libraries & Dependencies Registry** in `docs/architecture.md`.
+* **Confirmed Requirement / Architecture Changes (Mandatory):** Whenever a confirmed decision conflicts with an existing requirement, business rule, contract, or current system design, you MUST update **both**:
+  1. The canonical source-of-truth document(s) affected (`docs/brd.md`, `docs/business-rules.md`, `docs/use-cases.md`, `docs/data-model.md`, `docs/architecture.md`, `contracts/*`, etc.), **and**
+  2. An Architecture Decision Record (ADR) in `docs/decisions/` (plus its entry in `docs/decisions/README.md`).
+* **Keep Status Current:** When implementing a feature or resolving a prototype gap, update `docs/status.md`.
+* **Mandatory Feature Tests:** Every newly developed feature MUST include automated test file(s) covering its behavior and domain invariants (especially Separation of Duties, state transitions, optimistic locking, and privacy boundaries per `docs/testing.md`). Never ship a new feature without tests.
 * **Mandatory Verification before finishing code changes:**
   1. Run `make check` and report exact results.
   2. Run `make smoke` (and `make smoke-outage` when changing Compose, readiness, or AI paths).
-  3. Add or update unit/integration tests covering domain invariants (especially Separation of Duties, state transitions, optimistic locking, and privacy boundaries per `docs/testing.md`).
+  3. Run all relevant service test suites (`bun run test`, `go test -race ./...`, `uv run --locked pytest`) and report exact results.
