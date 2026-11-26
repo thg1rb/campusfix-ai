@@ -17,7 +17,7 @@ Read only the relevant source-of-truth docs before implementing a slice:
 | Behavioral flows & acceptance flows (`UC-*`) | `docs/use-cases.md` |
 | System architecture, auth, storage, AI, errors | `docs/architecture.md` |
 | Enums, record numbers, DB schema, state machines | `docs/data-model.md` |
-| Cross-service contracts (`Web ↔ API`, `API ↔ AI`) | `contracts/api-v1.md`, `contracts/ai-gateway.md` |
+| Cross-service contracts (`Web ↔ API`, `API ↔ AI`) | `contracts/api-v1.md`, `contracts/ai-triage.v1.yaml`, `contracts/ai-gateway.md` |
 | UI direction, Tailwind v4 tokens, anti-slop rules | `docs/design-system.md` |
 | Current status, prototype gaps, roadmap | `docs/status.md` |
 | Testing strategy & mandatory domain test cases | `docs/testing.md` |
@@ -107,4 +107,4 @@ Every AI agent and contributor MUST follow this Git flow without exception:
 * **Mandatory Verification before finishing code changes:**
   1. Run `make check` and report exact results.
   2. Run `make smoke` (and `make smoke-outage` when changing Compose, readiness, or AI paths).
-  3. Run all relevant service test suites (`cd apps/web && bun run test`, `cd apps/api && go test -race ./...`, and `cd apps/ai && uv run --locked pytest` once the AI test runner is initialized on the first AI feature PR per `docs/testing.md`) and report exact results.
+  3. Run all relevant service test suites (`cd apps/web && bun run test`, `cd apps/api && go test -race ./...`, and `cd apps/ai && uv run --locked pytest`) and report exact results.

@@ -141,12 +141,13 @@ WAITING_INFORMATION
 AI operates strictly as a **Decision Support System**:
 
 * **Capabilities (MVP):**
-  1. Multimodal **Category Classification** (from Description + Images + Location) with Confidence (`0–100%`) and optional Alternative Category.
-  2. **Severity Assessment** (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) at both Report and Ticket levels. High report volume must **never** automatically escalate Severity (`BR-AI-013`).
-  3. **Duplicate / Ticket Matching** comparing against **Active Tickets only**, using Images + Description + Location as primary signals (Category, time window, and existing linked Reports as auxiliary signals). Returns either `MATCHED` (ranked Active Ticket candidates + similarity %) or `NO_MATCH` (prepares an unpublished `Ticket Candidate`).
-  4. **Multi-Department Recommendation** based on Category, Description, Location, Images, and Department responsibility scopes.
-  5. **Report Title** generation (short summary of each Report for Ticket Detail) and **Ticket Title / Summary** generation.
-  6. **Ticket Re-evaluation (`UC-AI-003`):** Triggered when a Confirmed Report is added to or corrected on a Ticket. Produces recommendations only; never mutates final Ticket fields without Reviewer approval (`BR-AI-014`, `BR-AI-015`).
+  1. Optional **Report Rephrasing** (`Rephrase`) to polish user-authored report text without inventing facts.
+  2. Multimodal **Category Classification** (from Description + Images + Location) with Confidence (`0–100%`) and optional Alternative Category.
+  3. **Severity Assessment** (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) using deterministic scoring at both Report and Ticket levels. High report volume must **never** automatically escalate Severity (`BR-AI-013`).
+  4. **Duplicate / Ticket Matching** comparing against **Active Tickets only**, using Images + Description + Location + extracted keywords and semantic embedding vectors (the AI Gateway produces unit-normalized report/ticket embeddings and keywords while `apps/api` computes cosine similarity + keyword matching + spatial/recency ranking). Returns either `MATCHED` (ranked Active Ticket candidates + similarity %) or `NO_MATCH` (prepares an unpublished `Ticket Candidate`).
+  5. **Multi-Department Recommendation** based on Category, Description, Location, Images, and Department responsibility scopes.
+  6. **Report Title** generation (short summary of each Report for Ticket Detail) and **Ticket Title / Summary (Description)** synthesis across all linked Reports.
+  7. **Ticket Re-evaluation (`UC-AI-003`):** Triggered when a Confirmed Report is added to or corrected on a Ticket. Produces recommendations and updated ticket vectors only; never mutates final Ticket fields without Reviewer approval (`BR-AI-014`, `BR-AI-015`).
 * **Hard Guardrails:** AI must **never** confirm, reject, resolve, delete, hide, or mutate final operational Tickets (`BR-AI-016`..`019`).
 * **Failure Resilience:** AI timeouts, errors, or outages must **never** block Report submission or manual Reviewer operations (`BR-GEN-008`, `BR-AI-020`).
 

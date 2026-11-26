@@ -11,8 +11,8 @@ flowchart LR
   Browser["Web Browser (Mobile / Desktop)"] --> Web["apps/web (Next.js 16 / React 19)"]
   Web -->|HTTP JSON /api/v1| API["apps/api (Go 1.26 / Fiber v3)"]
   API -->|SQL via GORM + Goose| DB[("PostgreSQL 18.7")]
-  API -->|HTTP JSON /v1/* bounded timeout| AI["apps/ai (FastAPI / Python 3.14)"]
-  AI -->|JEV Provider Boundary| LLM["External Multimodal LLM / Vision API"]
+  API -->|HTTP JSON /v1/triage/* + X-API-Key| AI["apps/ai (FastAPI / Python 3.14)"]
+  AI -->|Pluggable Provider Boundary| LLM["Gemini Multimodal LLM & Embeddings API"]
   API -->|Auth Provider Boundary| Auth["Google OAuth 2.0 (@ku.th) / Future Providers"]
   API -->|Storage Adapter| Storage["Object Storage (EXIF-stripped Images)"]
   API -->|Email Adapter| Mail["SMTP / Email Delivery Provider"]
@@ -24,7 +24,7 @@ flowchart LR
 | --- | --- | --- |
 | **`apps/web`** | UI rendering, public/authenticated routes, interactive Leaflet campus map, client validation, `/api/health` readiness proxy. | Connect directly to PostgreSQL or AI Gateway; enforce security/Separation-of-Duties client-side only; expose PII on public pages. |
 | **`apps/api`** | System of Record, authentication & session management, RBAC & Separation of Duties, state machines, EXIF stripping, media storage orchestration, candidate shortlisting for AI, audit logging, retention jobs, email dispatch, analytics queries. | Run `gorm.AutoMigrate`; allow AI failure to fail report submission; expose private fields in public DTOs. |
-| **`apps/ai`** | Stateless multimodal triage (classification, severity, department recommendation, duplicate similarity against supplied Active Tickets, Report/Ticket title & summary generation) and Ticket re-evaluation. | Connect directly to PostgreSQL; mutate operational Tickets/Reports; auto-confirm/reject/resolve; auto-upgrade severity purely from report count. |
+| **`apps/ai`** | Stateless pluggable AI Triage & Embedding Gateway (`contracts/ai-triage.v1.yaml`): optional report rephrasing, multimodal category classification, deterministic severity, keyword extraction, report/ticket embedding vectors, and multi-report Ticket synthesis. | Connect directly to PostgreSQL; mutate operational Tickets/Reports; auto-confirm/reject/resolve; auto-upgrade severity purely from report count. |
 
 ---
 
@@ -99,20 +99,20 @@ internal/modules/<module-name>/
 
 ## 5. AI Triage & Re-evaluation Pipeline (`apps/api` ↔ `apps/ai`)
 
-1. **Candidate Shortlisting (in `apps/api`):** Before calling `apps/ai`, the Go API queries PostgreSQL for **Active Tickets only** (`status IN ('CONFIRMED', 'IN_PROGRESS', 'WAITING_INFORMATION')`), shortlisted by geospatial proximity (bounding box / Haversine within KU Bangkhen) and recency (e.g., top 20–50 Active Tickets).
-2. **Bounded Timeout & Non-Blocking Submit (`BR-GEN-008`, `BR-AI-020`):**
-   * `POST /reports/:id/submit` persists `PENDING_REVIEW` first in PostgreSQL, then triggers AI analysis (asynchronously via worker/goroutine with bounded context timeout, e.g., `15–25s`, or fast-fail retryable job).
-   * If `apps/ai` times out, returns `5xx`, or is unreachable, `apps/api` records `ai_analysis_runs(status = 'FAILED', error_message = ...)` and writes an audit entry. The Report stays `PENDING_REVIEW` and Reviewers can triage manually immediately.
-3. **Edit Re-analysis (`UC-AI-002`):** Editing a `PENDING_REVIEW` Report marks all prior `ai_analysis_runs` for that Report `is_outdated = true`, increments `report.version`, and triggers a fresh AI run tagged with the new `report_version`.
+Canonical OpenAPI schema: [contracts/ai-triage.v1.yaml](../contracts/ai-triage.v1.yaml). Integration rules: [contracts/ai-gateway.md](../contracts/ai-gateway.md).
+
+1. **Bounded Timeout & Non-Blocking Submit (`BR-GEN-008`, `BR-AI-020`):**
+   * `POST /reports/:id/submit` persists `PENDING_REVIEW` first in PostgreSQL, then triggers `POST /v1/triage/analyze` (authenticated with `X-API-Key`, bounded context timeout e.g., `20s`) to obtain advisory category classification, deterministic severity, keywords, and a unit-length **report embedding vector**.
+   * If `apps/ai` times out, returns `4xx`/`5xx`, or is unreachable, `apps/api` records `ai_analysis_runs(status = 'FAILED', error_message = ...)` and writes an audit entry. The Report stays `PENDING_REVIEW` and Reviewers can triage manually immediately.
+2. **Backend-Computed Duplicate Matching (`BR-AI-001`..`005`):**
+   * Using the report embedding vector and keywords returned by `apps/ai`, `apps/api` queries PostgreSQL for **Active Tickets only** (`status IN ('CONFIRMED', 'IN_PROGRESS', 'WAITING_INFORMATION')`), combines cosine similarity + keyword overlap + geospatial proximity (within KU Bangkhen) + recency, and stores ranked `similar_candidates` + `match_decision` (`MATCHED` or `NO_MATCH` → unpublished `ticket_candidates`) on `ai_analysis_runs`.
+3. **Edit Re-analysis (`UC-AI-002`):** Editing a `PENDING_REVIEW` Report marks all prior `ai_analysis_runs` for that Report `is_outdated = true`, increments `report.version`, and triggers a fresh `/v1/triage/analyze` run tagged with the new `report_version`.
 4. **Ticket Re-evaluation & Revision Freshness (`UC-AI-003`):**
    * Inside the locked transaction (`FOR UPDATE` on `tickets`) for `UC-REV-002` (attach Confirmed Report) or `UC-REV-005` (correct Confirmed Report), `apps/api` increments `tickets.reevaluation_revision`, marks prior unreviewed `ticket_ai_reevaluations` rows `is_outdated = true`, and inserts a new `ticket_ai_reevaluations(status = 'PENDING', ticket_revision = <new_revision>)` row before committing.
-   * After commit, `apps/api` invokes `POST /v1/tickets/reevaluate` on `apps/ai` with the snapshot of all Confirmed Reports for that revision. On success, that specific row transitions to `status = 'COMPLETED'`; on timeout/error/outage, it transitions to `status = 'FAILED'` with `error_message` while **preserving** the already-confirmed Report and existing Ticket data intact (never rolling back).
+   * After commit, `apps/api` invokes `POST /v1/triage/summarize-ticket` on `apps/ai` with all Confirmed Reports (and report embeddings) for that revision. On success, that specific row transitions to `status = 'COMPLETED'`; on timeout/error/outage, it transitions to `status = 'FAILED'` with `error_message` while **preserving** the already-confirmed Report and existing Ticket data intact (never rolling back).
+   * When a Reviewer manually edits final Ticket text without full LLM synthesis, `apps/api` calls `POST /v1/triage/embed-ticket` to refresh the weighted-blend Ticket vector (`0.6 * summary_vector + 0.4 * centroid(report_embeddings)`).
    * Because out-of-order AI responses update only their own `reevalId` and older runs are bound to an older `ticket_revision` (`is_outdated = true`), a slower earlier run can never supersede a newer revision.
    * Applying a re-evaluation (`POST /api/v1/reviewer/tickets/:ticketId/reevaluations/:reevalId/apply`) locks the Ticket row `FOR UPDATE`, verifies Active Ticket, Ticket-level Separation of Duties, `status == 'COMPLETED'`, `is_reviewed == false`, and **`is_outdated == false && ticket_revision == ticket.reevaluation_revision`** (returning `409 STALE_REEVALUATION` otherwise), and applies any department changes using the exact `UC-REV-006` completion-preservation + Auto-`RESOLVED` logic (`BR-DEP-005`..`007`).
-5. **Duplicate Similarity Guidance (from Overview + Freeze 1):**
-   * Primary signals (`BR-AI-001`): Multimodal image similarity, text/description semantic similarity, and geographic proximity.
-   * Auxiliary signals (`BR-AI-003`): Category overlap, recency, and existing linked Reports.
-   * Reference baseline weighting from Project Overview (tunable in `apps/ai/src/ku_spot_ai/scoring/` and benchmarked via `apps/ai/evaluation/`): semantic/multimodal content + spatial proximity + category + time proximity.
 
 ---
 
@@ -195,4 +195,7 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 | --- | --- | --- |
 | `fastapi` | `0.165.0` | HTTP API framework and Pydantic schema validation |
 | `uvicorn` | `0.54.0` | ASGI server managing gateway lifecycle |
+| `google-genai` | `>=3.6.1` | Official Google Gemini SDK for multimodal triage and semantic embeddings (`providers/gemini/`) |
 | `hatchling` *(build backend)* | `1.33.0` | Python src-layout packaging (`ku_spot_ai`) |
+| `pytest` *(dev)* | `>=9.2.0` | Automated Python unit and API contract test runner (`apps/ai/tests/`) |
+| `httpx` *(dev)* | `>=0.28.1` | ASGI HTTP test client support for FastAPI tests |

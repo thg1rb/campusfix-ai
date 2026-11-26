@@ -11,8 +11,8 @@
 | **Infrastructure & Compose** | **Ready (Bootstrap Verified)** | `compose.yaml`, `compose.dev.yaml`, `Makefile`, and `scripts/smoke.sh` verified (see [docs/verification.md](verification.md)). |
 | **`apps/web` (Next.js 16)** | **Prototype Migrated (Mock-Backed)** | Full UI prototype migrated to `apps/web` with App Router screens, Leaflet campus map, shadcn primitives, domain helpers (`src/lib/domain/`), and unit tests (`tests/*.test.ts`). Currently backed by in-browser `PrototypeStore.tsx` and `mockAiService.ts` — **not yet wired to `apps/api`** (except `/api/health`). |
 | **`apps/api` (Go / Fiber v3)** | **Bootstrap Skeleton** | `/healthz`, `/readyz` (PostgreSQL + AI check), config, and bootstrap wiring exist. `internal/modules/` and `migrations/` are currently empty. |
-| **`apps/ai` (Python / FastAPI)** | **Bootstrap Skeleton** | `/healthz` and package layout (`ku_spot_ai`) exist on `develop`. Inference, JEV provider, prompts, similarity scoring, and evaluation cases are pending integration *(note: active work exists on remote branch `origin/feature/ai-triage-gateway`)*. |
-| **Documentation & Contracts** | **Aligned to Freeze 1** | Root/scoped `AGENTS.md`, BRD, Business Rules (`BR-*`), Use Cases (`UC-*`), Architecture, Data Model, Design System, Contracts, and Testing specs are aligned to Requirement Freeze 1. |
+| **`apps/ai` (Python / FastAPI)** | **Implemented (PR #2 Merged)** | Pluggable Gemini Triage & Embedding Gateway (`contracts/ai-triage.v1.yaml`: `/v1/triage/rephrase`, `/v1/triage/analyze`, `/v1/triage/summarize-ticket`, `/v1/triage/embed-ticket`, `X-API-Key` auth, deterministic severity, unit-length vectors) with `pytest` suite (`apps/ai/tests/`) and cross-domain evaluation demo (`apps/ai/evaluation/demo_cross_domain.py`). |
+| **Documentation & Contracts** | **Aligned to Freeze 1 + PR #2** | Root/scoped `AGENTS.md`, BRD, Business Rules (`BR-*`), Use Cases (`UC-*`), Architecture (including Dependency Registry), Data Model, Design System, Contracts (`api-v1.md`, `ai-triage.v1.yaml`, `ai-gateway.md`), ADRs, and Testing specs are synchronized. |
 
 ---
 
@@ -25,7 +25,7 @@
 | Master Data CRUD (`UC-ADM-002`..`004`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |
 | Media Upload & EXIF Stripping (`BR-RPT-003`..`005`) | Prototype DataURL | Not Started | N/A | Not Started | Not Started |
 | Report Draft / Submit / Edit / Cancel (`UC-RPT-001`..`005`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |
-| AI Triage & Active Ticket Matching (`UC-AI-001`..`003`) | Prototype Mock | Not Started | Skeleton | Not Started | Not Started |
+| AI Triage, Embeddings & Ticket Synthesis (`UC-AI-001`..`003`) | Prototype Mock | Not Started | **Done (PR #2)** | Not Started | Not Started |
 | Reviewer Triage, Optimistic Lock & Dept Edits (`UC-REV-001`..`006`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |
 | Public Feed, Search/Filter, Map, Detail (`UC-PUB-*`, `UC-MAP-001`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |
 | Department Operations & Multi-Dept Auto-Resolve (`UC-DEP-*`, `UC-TKT-001`..`004`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |
@@ -54,9 +54,9 @@
 2. **Phase 2 — Media Pipeline & Report Lifecycle:**
    - Implement `media` adapter with magic-byte validation, ≤10 MB limit, and EXIF stripping (planned ADR `0004`).
    - Implement `reports` module (`DRAFT`, `PENDING_REVIEW`, `CANCELLED`, version bumping, 30-day retention job).
-3. **Phase 3 — AI Gateway & Triage Integration:**
-   - Complete `apps/ai` endpoints per [contracts/ai-gateway.md](../contracts/ai-gateway.md) (JEV provider boundary, structured validation, similarity scoring, golden evaluation suite; planned ADR `0005`).
-   - Wire `apps/api` candidate shortlisting, async/bounded-timeout AI triage, fallback logging, and Ticket re-evaluation (`UC-AI-001`..`003`).
+3. **Phase 3 — Go API ↔ AI Gateway Triage & Matching Integration:**
+   - `apps/ai` endpoints (`contracts/ai-triage.v1.yaml`) and `pytest` suite are implemented (PR #2).
+   - Wire `apps/api` to `/v1/triage/*` with `X-API-Key`, backend-computed cosine similarity + keyword duplicate matching against Active Tickets, async/bounded-timeout AI triage, fallback logging, and Ticket re-evaluation (`UC-AI-001`..`003`; planned ADR `0005`).
 4. **Phase 4 — Reviewer, Ticket Operations & Multi-Department Resolution:**
    - Implement `review` and `tickets` modules: optimistic lock `409`, Separation of Duties, multi-department assignments, per-department completion, Auto-`RESOLVED`, Public Feed/Map/Detail, and `Mark Affected`.
 5. **Phase 5 — Threads, Feedback, Email & Analytics:**

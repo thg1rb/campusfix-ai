@@ -56,7 +56,7 @@ cd apps/web && bun install --frozen-lockfile && bun run dev
 
 Root `.env` supplies Compose's published ports and PostgreSQL user, password, and database. Compose passes database settings to PostgreSQL and generates the API's `DATABASE_URL` targeting `db:5432`. If credentials contain URL-reserved characters, set the root `DATABASE_URL` explicitly with URL-encoded credentials. PostgreSQL initializes its role and database on the first boot of an empty volume.
 
-Compose sets internal URLs to `http://api:8080` and `http://ai:8000`. Host port overrides affect only host access. Each app's `.env` is for standalone runs. Adjust the standalone API's `DATABASE_URL`, `API_PORT`, and `AI_BASE_URL`, the gateway's `AI_PORT`, and the Web server's private `API_BASE_URL` if you change ports. Quote shell metacharacters in standalone API settings. Keep private secrets in git-ignored `.env` files only.
+Compose sets internal URLs to `http://api:8080` and `http://ai:8000`. Host port overrides affect only host access. Compose also loads `apps/ai/.env` (`required: false`) into the AI container when present; other app `.env` files are for standalone runs. Adjust the standalone API's `DATABASE_URL`, `API_PORT`, and `AI_BASE_URL`, the gateway's `AI_PORT`, and the Web server's private `API_BASE_URL` if you change ports. Quote shell metacharacters in standalone API settings. Keep private secrets in git-ignored `.env` files only.
 
 Use Goose for all PostgreSQL schema changes:
 
@@ -71,8 +71,8 @@ Migrations are an explicit operation separate from application startup. Never us
 
 - `apps/web/` — Next.js App Router frontend (currently contains the migrated UI prototype backed by an in-browser prototype store; see [docs/status.md](docs/status.md) for API integration progress).
 - `apps/api/` — Go modular monolith API. `cmd/server` owns lifecycle, `internal/bootstrap` wires constructors, `internal/platform` holds HTTP/DB infrastructure, `internal/adapters` holds external integration boundaries, and `internal/modules` hosts domain modules.
-- `apps/ai/` — Python FastAPI AI Gateway (`src/ku_spot_ai/`). Provider, application, scoring, and prompt packages live inside `ku_spot_ai`; evaluation datasets and benchmarks live in `apps/ai/evaluation/`.
-- `contracts/` — Cross-service API and AI Gateway contracts (`Web ↔ API` and `API ↔ AI`).
+- `apps/ai/` — Python FastAPI Pluggable AI Triage Gateway (`src/ku_spot_ai/`: `api/`, `application/`, `prompts/`, `providers/`, `scoring/`), `pytest` test suite (`apps/ai/tests/`), and evaluation scripts (`apps/ai/evaluation/`).
+- `contracts/` — Cross-service contracts (`contracts/api-v1.md`, `contracts/ai-triage.v1.yaml`, and `contracts/ai-gateway.md`).
 - `docs/` — Authoritative specifications, architecture, data model, design system, ADRs, status, and testing standards.
 - `scripts/` — Operational and smoke verification scripts.
 

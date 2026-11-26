@@ -21,7 +21,7 @@ make smoke-outage   # Stops AI container, verifies degraded 503 readiness and au
 | **Web (`apps/web`)** | `cd apps/web && bun run test` | Pure domain unit tests (`tests/*.test.ts` via Vitest), component logic tests |
 | **Web E2E** | `cd apps/web && bunx playwright test` *(when E2E suite added)* | Full browser journeys across Public, Reporter, Reviewer, Department, Admin |
 | **API (`apps/api`)** | `cd apps/api && go test -race ./...` | Domain state machines, authorization, HTTP handlers, PostgreSQL integration tests |
-| **AI (`apps/ai`)** | Bootstrap: `cd apps/ai && uv lock --check && uv sync --locked && uv run --locked python -c 'from ku_spot_ai.main import app_factory; app_factory()'`<br>Once test suite initialized: `cd apps/ai && uv run --locked pytest` | Currently lock/import + `make smoke` / `make smoke-outage` baseline (`pytest` is not yet installed in `apps/ai/pyproject.toml`). First AI feature PR must add `pytest` as a locked dev dependency, log it in `docs/architecture.md`, add tests in `apps/ai/tests/`, and wire it into `make check`. |
+| **AI (`apps/ai`)** | `cd apps/ai && uv run --locked pytest` | FastAPI API contract tests (`tests/test_triage_api.py`), provider unit/mock tests (`tests/test_gemini_provider.py`), deterministic severity, vector blending, and error handling (also executed inside `make check`). |
 
 ---
 

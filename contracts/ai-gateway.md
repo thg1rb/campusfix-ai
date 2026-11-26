@@ -1,203 +1,68 @@
-# Go API ↔ Python AI Gateway Contract (`/v1`)
+# Go API ↔ Python AI Gateway Integration Guide (`/v1/triage`)
 
-This document defines the internal HTTP contract between `apps/api` and `apps/ai` (`ku_spot_ai`). The AI Gateway is strictly **stateless** and acts solely as a **Decision Support System** (`BR-GEN-007`, `BR-AI-001`..`020`).
+> **Canonical Schema:** Full OpenAPI 3.1.0 request/response schemas live in [contracts/ai-triage.v1.yaml](ai-triage.v1.yaml) (`v1.1.0`). This guide defines the operational integration rules, authentication, timeout budgets, backend matching split, revision freshness, and failure fallback semantics between `apps/api` and `apps/ai` (`ku_spot_ai`).
+
+The AI Gateway is strictly **stateless** and acts solely as a **Decision Support System** (`BR-GEN-007`, `BR-AI-001`..`020`).
 
 ---
 
-## 1. Operational Constraints
+## 1. Operational Constraints & Authentication
 
 * **Internal Network Only:** Exposed inside Docker Compose at `http://ai:8000` (`AI_BASE_URL`); never exposed directly to browser clients.
+* **Authentication (`X-API-Key`):**
+  * `GET /healthz` is always public for liveness/readiness checks.
+  * All `POST /v1/triage/*` endpoints **fail closed by default** and require a configured `X-API-Key` header (`401 unauthorized_client` on missing/invalid key) unless local anonymous mode is explicitly enabled via `AI_ALLOW_ANONYMOUS=true`.
+* **Payload Limits:** Up to 5 PNG/JPEG images per request, `≤ 10 MiB` per image and `≤ 15 MiB` aggregate decoded payload (magic bytes must match declared `mime_type`); exceeding gateway byte limits returns `413`.
 * **Bounded Timeouts:**
   * `GET /healthz`: `2s` timeout (readiness check).
-  * `POST /v1/triage/analyze`: `20s` client timeout in Go API (provider call timeout `≤ 15s`).
-  * `POST /v1/tickets/reevaluate`: `20s` client timeout in Go API.
-* **Failure Fallback (`BR-GEN-008`, `BR-AI-020`):** Any non-200 response, malformed JSON, schema validation error, or timeout is handled per workflow without blocking or rolling back human operations:
+  * `POST /v1/triage/*`: bounded client timeout in `apps/api` (default `20s`, upstream provider call timeout `≤ 15s`).
+* **Failure Fallback (`BR-GEN-008`, `BR-AI-020`):** Any non-200 response (`401`, `413`, `422`, `503`), malformed JSON, schema mismatch, or timeout is handled per workflow without blocking or rolling back human operations:
   * **Report Triage (`POST /v1/triage/analyze`):** `apps/api` records `ai_analysis_runs(status = 'FAILED', error_message = ...)` and leaves the Report in `PENDING_REVIEW` so Reviewers can triage manually.
-  * **Ticket Re-evaluation (`POST /v1/tickets/reevaluate`):** `apps/api` records `ticket_ai_reevaluations(status = 'FAILED', error_message = ...)` while preserving the already-`CONFIRMED` Report and existing Ticket data untouched (never rolling back confirmation or correction).
-* **Canonical Enums:** `severity` MUST be one of `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`. Confidence and similarity scores MUST be integers `0..100`.
+  * **Ticket Re-evaluation (`POST /v1/triage/summarize-ticket` / `POST /v1/triage/embed-ticket`):** `apps/api` records `ticket_ai_reevaluations(status = 'FAILED', error_message = ...)` while preserving the already-`CONFIRMED` Report and existing Ticket data untouched (never rolling back confirmation or correction).
+  * **Optional Rephrase (`POST /v1/triage/rephrase`):** Non-blocking; UI keeps the user's original text untouched on failure.
 
 ---
 
-## 2. Health Check (Implemented in Bootstrap)
+## 2. Implemented Endpoints (Mirrored from `contracts/ai-triage.v1.yaml`)
 
-### `GET /healthz`
-Returns `200 OK`:
-```json
-{ "status": "ok" }
-```
-Establishes gateway process availability only (does not invoke paid external LLM inference on every readiness poll).
-
----
-
-## 3. Analyze & Match Report (`UC-AI-001`, `UC-AI-002`)
-
-### `POST /v1/triage/analyze`
-
-Invoked when a Report is submitted (`PENDING_REVIEW`, `version = 1`) or edited while `PENDING_REVIEW` (`version > 1`).
-
-#### Request Body
-```json
-{
-  "requestId": "req_01J...",
-  "report": {
-    "id": "uuid",
-    "version": 1,
-    "description": "Streetlights along the walkway in front of Male Dorm 5 are out and very dark at night.",
-    "location": {
-      "locationId": "uuid-or-null",
-      "locationName": "Male Dormitory 5 Walkway",
-      "detailNote": "West entrance near bicycle rack",
-      "lat": 13.8476,
-      "lng": 100.5697
-    },
-    "images": [
-      {
-        "id": "img-uuid",
-        "mimeType": "image/jpeg",
-        "url": "http://api:8080/internal/media/..."
-      }
-    ],
-    "submittedAt": "2026-11-26T11:30:00Z"
-  },
-  "activeCategories": [
-    { "id": "cat-uuid", "name": "Electrical & Lighting", "description": "Streetlights, wiring, power outlets" }
-  ],
-  "activeDepartments": [
-    { "id": "dept-uuid", "name": "Buildings & Grounds", "responsibilityScope": "Campus lighting, structural repairs" }
-  ],
-  "activeTicketShortlist": [
-    {
-      "ticketId": "tkt-uuid",
-      "ticketNumber": "TKT-2026-00014",
-      "status": "CONFIRMED",
-      "title": "Walkway lights out near Male Dorm 5",
-      "summary": "Multiple walkway lights not functioning after 19:00.",
-      "categoryId": "cat-uuid",
-      "severity": "HIGH",
-      "locationName": "Male Dormitory 5",
-      "lat": 13.8475,
-      "lng": 100.5698,
-      "confirmedAt": "2026-11-26T09:10:00Z",
-      "recentReportExcerpts": [
-        "Walkway is pitch dark near the dorm entrance."
-      ]
-    }
-  ]
-}
-```
-
-> **Invariant (`BR-AI-002`):** `apps/api` MUST ONLY include Active Tickets (`CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`) in `activeTicketShortlist`. Final Tickets (`RESOLVED`) must never be sent as candidates.
-
-#### Success Response (`200 OK`)
-```json
-{
-  "modelVersion": "jev-multimodal-2026-11",
-  "generatedReportTitle": "Dark walkway lights outside Male Dorm 5",
-  "classification": {
-    "suggestedCategoryId": "cat-uuid",
-    "confidence": 92,
-    "alternativeCategoryId": "cat-safety-uuid"
-  },
-  "severity": {
-    "suggestedSeverity": "HIGH",
-    "rationale": "Unlit walkway outside a dormitory creates a nighttime pedestrian safety risk."
-  },
-  "recommendedDepartmentIds": ["dept-uuid"],
-  "matching": {
-    "decision": "MATCHED",
-    "topCandidateTicketId": "tkt-uuid",
-    "topSimilarity": 89,
-    "candidates": [
-      { "ticketId": "tkt-uuid", "similarity": 89 }
-    ],
-    "ticketCandidateDraft": null
-  }
-}
-```
-
-When `matching.decision == "NO_MATCH"`, `topCandidateTicketId` and `topSimilarity` are `null`, `candidates` is `[]` (or below-threshold references), and `ticketCandidateDraft` MUST be populated (`BR-AI-005`):
-
-```json
-"ticketCandidateDraft": {
-  "suggestedTitle": "Walkway streetlights out at Male Dorm 5",
-  "suggestedSummary": "Report indicates multiple exterior walkway lights near the west entrance of Male Dorm 5 are not working at night.",
-  "suggestedCategoryId": "cat-uuid",
-  "suggestedSeverity": "HIGH",
-  "recommendedDepartmentIds": ["dept-uuid"]
-}
-```
-
-#### Response Validation Rules
-* `suggestedCategoryId` and `alternativeCategoryId` (if non-null) MUST exist in the request's `activeCategories`.
-* Every ID in `recommendedDepartmentIds` MUST exist in the request's `activeDepartments`.
-* Every `ticketId` in `matching.candidates` / `topCandidateTicketId` MUST exist in `activeTicketShortlist`.
-* `confidence` and `similarity` MUST be integers in `0..100`.
+| Method & Path | Auth | Purpose & Backend Integration Role |
+| --- | --- | --- |
+| `GET /healthz` | Public | Liveness probe (`200 {"status": "ok"}`). Establishes process availability only; never calls paid upstream LLM inference. |
+| `POST /v1/triage/rephrase` | `X-API-Key` | Optional clarity/tone rephrasing of user-authored report title and description without inventing facts. |
+| `POST /v1/triage/analyze` | `X-API-Key` | Core Report Triage (`UC-AI-001`, `UC-AI-002`). Returns advisory category classification + confidence, deterministic severity assessment (`CRITICAL`/`HIGH`/`MEDIUM`/`LOW` from rounded `risk_score`), extracted keywords, and a unit-length semantic **report embedding vector**. |
+| `POST /v1/triage/summarize-ticket` | `X-API-Key` | Multi-report Ticket synthesis (`UC-AI-003`). Combines all Confirmed Reports in a Ticket to propose updated `ticket_title`, `ticket_description`, keywords, and weighted-blend **ticket embedding vector** (`0.6 * summary_vector + 0.4 * centroid(report_embeddings)`). |
+| `POST /v1/triage/embed-ticket` | `X-API-Key` | Embed-only weighted-blend ticket vector (no LLM call) invoked when a Reviewer manually edits final Ticket text and `apps/api` needs a refreshed vector for Active Ticket matching. |
 
 ---
 
-## 4. Re-evaluate Ticket (`UC-AI-003`)
+## 3. Division of Responsibility: Duplicate Matching (`BR-AI-001`..`006`)
 
-### `POST /v1/tickets/reevaluate`
-
-Invoked when a new Confirmed Report is attached to an Active Ticket (`UC-REV-002`) or when a Reviewer corrects a Confirmed Report (`UC-REV-005`).
-
-#### Request Body
-```json
-{
-  "requestId": "req_01J...",
-  "ticket": {
-    "id": "tkt-uuid",
-    "currentTitle": "Walkway lights out near Male Dorm 5",
-    "currentSummary": "Multiple walkway lights not functioning after 19:00.",
-    "currentCategoryId": "cat-uuid",
-    "currentSeverity": "HIGH",
-    "currentDepartmentIds": ["dept-uuid"]
-  },
-  "confirmedReports": [
-    {
-      "id": "rpt-1",
-      "description": "Walkway is pitch dark near the dorm entrance.",
-      "locationName": "Male Dormitory 5",
-      "submittedAt": "2026-11-26T09:00:00Z"
-    },
-    {
-      "id": "rpt-2",
-      "description": "Exposed sparking wire seen at base of broken lamp post.",
-      "locationName": "Male Dormitory 5 Walkway",
-      "submittedAt": "2026-11-26T11:30:00Z"
-    }
-  ],
-  "activeDepartments": [
-    { "id": "dept-uuid", "name": "Buildings & Grounds", "responsibilityScope": "Campus lighting, electrical repairs" }
-  ]
-}
-```
-
-#### Success Response (`200 OK`)
-```json
-{
-  "modelVersion": "jev-multimodal-2026-11",
-  "suggestedTitle": "Broken walkway lights with exposed sparking wire at Male Dorm 5",
-  "suggestedSummary": "Two confirmed reports indicate unlit walkway lamps outside Male Dorm 5, with the latest report noting an exposed sparking wire at the lamp post base.",
-  "suggestedSeverity": "CRITICAL",
-  "recommendedDepartmentIds": ["dept-uuid"],
-  "rationale": "Upgraded from HIGH to CRITICAL due to direct electrical shock/fire hazard from exposed sparking wire (not report volume)."
-}
-```
-
-> **Invariants (`BR-AI-013`, `BR-AI-015`):** Severity recommendations MUST be justified by physical hazard/impact content — never by report count alone. Each re-evaluation run is pinned to a specific `tickets.reevaluation_revision` (`ticket_ai_reevaluations.ticket_revision`), and `apps/api` updates only that `reevalId` row (`status = 'COMPLETED'`, `is_reviewed = false`) without mutating live Ticket fields or letting slower earlier runs supersede newer revisions. If this call fails or times out, `apps/api` records `ticket_ai_reevaluations(status = 'FAILED', error_message = ...)` and keeps the confirmed Report and existing Ticket data intact.
+* **`apps/ai` computes representations & advisory fields:** Multimodal classification, deterministic severity, keywords, and unit-length embedding vectors (keeping the gateway domain-agnostic and stateless).
+* **`apps/api` computes duplicate matching strictly against Active Tickets (`BR-AI-002`):**
+  1. Queries PostgreSQL for **Active Tickets only** (`status IN ('CONFIRMED', 'IN_PROGRESS', 'WAITING_INFORMATION')`) — Final Tickets (`RESOLVED`) are never eligible as matching candidates.
+  2. Combines cosine similarity (between the report embedding vector and Active Ticket weighted-blend vectors) with keyword overlap, geospatial proximity, and recency.
+  3. Persists ranked `similar_candidates` and `match_decision` (`MATCHED` vs. `NO_MATCH` → unpublished `ticket_candidates` row) on `ai_analysis_runs` for Reviewer verification.
 
 ---
 
-## 5. Error Response Format (`4xx` / `5xx`)
+## 4. Ticket Re-evaluation Freshness Invariants (`UC-AI-003`)
+
+* Each re-evaluation triggered by `UC-REV-002` or `UC-REV-005` is pinned to `tickets.reevaluation_revision` (`ticket_ai_reevaluations.ticket_revision`), and prior unreviewed runs are marked `is_outdated = true` under `SELECT ... FOR UPDATE` on `tickets`.
+* `apps/api` updates only the triggered `reevalId` row (`status = 'COMPLETED'` or `'FAILED'`), never mutating live Ticket fields without Reviewer approval (`BR-AI-015`) and never allowing slower earlier runs to supersede newer revisions (`409 STALE_REEVALUATION` on stale apply).
+* Severity suggestions MUST be grounded in physical hazard/impact rubric signals — never upgraded solely because linked Report count increased (`BR-AI-013`).
+
+---
+
+## 5. Error Response Format (`401` / `413` / `422` / `503`)
+
+As defined by `ErrorResponse` in [contracts/ai-triage.v1.yaml](ai-triage.v1.yaml):
 
 ```json
 {
   "error": {
-    "code": "UPSTREAM_PROVIDER_TIMEOUT",
-    "message": "JEV multimodal inference exceeded 15s timeout.",
-    "retryable": true,
-    "requestId": "req_01J..."
+    "code": "provider_timeout",
+    "message": "AI provider request timed out",
+    "details": []
   }
 }
 ```
