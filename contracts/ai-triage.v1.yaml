@@ -1,0 +1,854 @@
+openapi: 3.1.0
+info:
+  title: KU Spot Pluggable AI Triage API
+  version: 1.1.0
+  description: |
+    Stateless, domain-agnostic multimodal incident AI API for KU Spot and
+    other university reporting/helpdesk systems.
+
+    Authentication:
+    - `/healthz` is always public for liveness/readiness checks.
+    - All `/v1/triage/*` endpoints fail closed by default: callers must provide
+      a configured `X-API-Key` unless local anonymous mode is explicitly enabled
+      via `AI_ALLOW_ANONYMOUS=true`.
+
+    Provides 4 composable capabilities:
+    1. POST /v1/triage/rephrase         — Optional report title & description rephrasing
+    2. POST /v1/triage/analyze          — Category classification, deterministic severity, keyword extraction, and report embedding vector
+    3. POST /v1/triage/summarize-ticket — Multi-report ticket title/description/keywords synthesis and weighted-blend ticket vector
+    4. POST /v1/triage/embed-ticket     — Embed-only weighted-blend ticket vector (no LLM call; used when Reviewer edits final ticket text)
+paths:
+  /healthz:
+    get:
+      summary: Service liveness check
+      responses:
+        "200":
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/triage/rephrase:
+    post:
+      summary: Optionally rephrase user-authored report title and description
+      description: |
+        Improves clarity and tone of a user's report title and description
+        without inventing facts. Both title and description are required and
+        must contain non-whitespace characters.
+      security:
+        - ClientApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RephraseRequest"
+      responses:
+        "200":
+          description: Rephrased title and description suggestion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RephraseResponse"
+        "401":
+          description: Missing or invalid X-API-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Request payload exceeds gateway byte limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Request validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: AI provider unavailable, timed out, or returned incomplete output
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/triage/analyze:
+    post:
+      summary: Analyze a submitted report (category, severity, keywords, and embedding vector)
+      description: |
+        Accepts report title, description, optional images (up to 5 PNG/JPEG,
+        <=10 MiB each and <=15 MiB aggregate decoded payload to fit within
+        Gemini's 20 MB inline budget; magic bytes must match declared mime_type),
+        optional location, and caller-defined categories/rubric. Returns advisory
+        classification, deterministic severity assessment (thresholds compared
+        against the 4-decimal rounded risk_score), keywords, and a unit-length
+        semantic embedding vector for downstream cosine similarity matching.
+      security:
+        - ClientApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriageAnalyzeRequest"
+      responses:
+        "200":
+          description: Advisory classification, severity, keywords, and/or embedding vector
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriageAnalyzeResponse"
+        "401":
+          description: Missing or invalid X-API-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Request payload exceeds gateway byte limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Request validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: AI provider unavailable, timed out, or returned incomplete output
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/triage/summarize-ticket:
+    post:
+      summary: Synthesize ticket title and description from all reports in a ticket
+      description: |
+        Combines all reports belonging to a ticket to propose an updated
+        ticket_title and ticket_description for Reviewer confirmation. Optionally
+        returns the summary embedding and a weighted-blend ticket vector
+        (0.6 * summary_vector + 0.4 * centroid(report_embeddings)) for cosine
+        similarity matching. When report_embeddings are supplied,
+        report_embedding_meta is required and must match the active embedding
+        space (model, dimensions, text_version).
+      security:
+        - ClientApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SummarizeTicketRequest"
+      responses:
+        "200":
+          description: Advisory ticket title, description, and optional ticket vectors
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SummarizeTicketResponse"
+        "401":
+          description: Missing or invalid X-API-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Request payload exceeds gateway byte limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Request validation error or embedding-space mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: AI provider unavailable, timed out, or returned incomplete output
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/triage/embed-ticket:
+    post:
+      summary: Compute summary and weighted-blend ticket vectors without calling the LLM
+      description: |
+        Used when a Reviewer edits or writes the final ticket title/description
+        manually and the backend needs an updated ticket embedding vector.
+        When report_embeddings are supplied, report_embedding_meta is required
+        and must match the active embedding space (model, dimensions, text_version).
+      security:
+        - ClientApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmbedTicketRequest"
+      responses:
+        "200":
+          description: Unit-normalized summary and weighted-blend ticket vectors
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedTicketResponse"
+        "401":
+          description: Missing or invalid X-API-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Request payload exceeds gateway byte limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Request validation error or embedding-space mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: AI embedding provider unavailable, timed out, or returned invalid vector
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  securitySchemes:
+    ClientApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Required unless local anonymous mode is explicitly opted in via AI_ALLOW_ANONYMOUS=true
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    AnalyzeTask:
+      type: string
+      enum: [classify, severity, keywords, embed]
+    SeverityLevel:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
+    LocationInput:
+      type: object
+      properties:
+        name:
+          type: [string, "null"]
+          maxLength: 200
+        latitude:
+          type: [number, "null"]
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: [number, "null"]
+          minimum: -180
+          maximum: 180
+    ImageInput:
+      type: object
+      required: [mime_type, data_base64]
+      properties:
+        mime_type:
+          type: string
+          enum: [image/jpeg, image/png]
+        data_base64:
+          type: string
+          minLength: 1
+          description: Raw base64 or data URL (<= 10 MiB decoded; decoded magic bytes must match mime_type)
+    RephraseRequest:
+      type: object
+      required: [title, description]
+      properties:
+        domain:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$"
+          default: campus_facilities
+        language:
+          type: string
+          minLength: 2
+          maxLength: 16
+          pattern: "^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$"
+          default: th
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: "\\S"
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          pattern: "\\S"
+        location:
+          oneOf:
+            - $ref: "#/components/schemas/LocationInput"
+            - type: "null"
+    RephraseResponse:
+      type: object
+      required: [request_id, provider, model, latency_ms, rephrased_title, rephrased_description]
+      properties:
+        request_id:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        latency_ms:
+          type: integer
+          minimum: 0
+        rephrased_title:
+          type: string
+        rephrased_description:
+          type: string
+    ReportItemInput:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: "\\S"
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          pattern: "\\S"
+        location:
+          oneOf:
+            - $ref: "#/components/schemas/LocationInput"
+            - type: "null"
+        images:
+          type: array
+          maxItems: 5
+          default: []
+          description: Up to 5 PNG/JPEG images; combined decoded size must not exceed 15 MiB
+          items:
+            $ref: "#/components/schemas/ImageInput"
+        metadata:
+          type: object
+          maxProperties: 20
+          default: {}
+          additionalProperties: true
+          description: Up to 20 keys (each 1..64 chars), serialized JSON <= 4096 bytes
+    CategoryOption:
+      type: object
+      required: [code, name]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "\\S"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: "\\S"
+        description:
+          type: [string, "null"]
+          maxLength: 400
+    SeverityRubricInput:
+      type: object
+      description: Optional custom severity definitions (defaults to KU Spot campus rubric for campus_facilities, or generic rubric for other domains)
+      properties:
+        LOW:
+          type: [string, "null"]
+          maxLength: 400
+        MEDIUM:
+          type: [string, "null"]
+          maxLength: 400
+        HIGH:
+          type: [string, "null"]
+          maxLength: 400
+        CRITICAL:
+          type: [string, "null"]
+          maxLength: 400
+    SeverityWeightsInput:
+      type: object
+      description: Optional finite custom weights for deterministic severity scoring (sum must be > 0; normalized to sum to 1.0)
+      properties:
+        safety_risk:
+          type: number
+          minimum: 0
+          maximum: 1000000
+          default: 0.40
+        operational_impact:
+          type: number
+          minimum: 0
+          maximum: 1000000
+          default: 0.25
+        affected_scope:
+          type: number
+          minimum: 0
+          maximum: 1000000
+          default: 0.20
+        urgency:
+          type: number
+          minimum: 0
+          maximum: 1000000
+          default: 0.15
+    SeverityThresholdsInput:
+      type: object
+      description: Optional score cutoffs (must satisfy 0 < medium < high < critical <= 3.0; compared against 4-decimal rounded risk_score)
+      properties:
+        medium:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 3
+          default: 0.80
+        high:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 3
+          default: 1.60
+        critical:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 3
+          default: 2.35
+    TaxonomyInput:
+      type: object
+      properties:
+        categories:
+          type: array
+          maxItems: 50
+          default: []
+          items:
+            $ref: "#/components/schemas/CategoryOption"
+        severity_rubric:
+          $ref: "#/components/schemas/SeverityRubricInput"
+        severity_weights:
+          $ref: "#/components/schemas/SeverityWeightsInput"
+        severity_thresholds:
+          $ref: "#/components/schemas/SeverityThresholdsInput"
+        safety_override:
+          type: boolean
+          default: true
+          description: When true, safety_risk == 3 always forces level = CRITICAL
+    TriageAnalyzeRequest:
+      type: object
+      required: [item]
+      properties:
+        domain:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$"
+          default: campus_facilities
+        language:
+          type: string
+          minLength: 2
+          maxLength: 16
+          pattern: "^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$"
+          default: th
+        tasks:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/AnalyzeTask"
+          default: [classify, severity, keywords, embed]
+        item:
+          $ref: "#/components/schemas/ReportItemInput"
+        taxonomy:
+          $ref: "#/components/schemas/TaxonomyInput"
+      anyOf:
+        - required: [tasks]
+          properties:
+            tasks:
+              not:
+                contains:
+                  const: classify
+        - required: [taxonomy]
+          properties:
+            taxonomy:
+              required: [categories]
+              properties:
+                categories:
+                  minItems: 1
+    AlternativeCategory:
+      type: object
+      required: [category_code, category_name, confidence]
+      properties:
+        category_code:
+          type: string
+        category_name:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+    ClassificationResult:
+      type: object
+      required: [category_code, category_name, confidence, alternatives, reason]
+      properties:
+        category_code:
+          type: string
+        category_name:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        alternatives:
+          type: array
+          default: []
+          items:
+            $ref: "#/components/schemas/AlternativeCategory"
+        reason:
+          type: string
+    SeverityFactorsResult:
+      type: object
+      required: [safety_risk, operational_impact, affected_scope, urgency]
+      properties:
+        safety_risk:
+          type: integer
+          minimum: 0
+          maximum: 3
+        operational_impact:
+          type: integer
+          minimum: 0
+          maximum: 3
+        affected_scope:
+          type: integer
+          minimum: 0
+          maximum: 3
+        urgency:
+          type: integer
+          minimum: 0
+          maximum: 3
+    SeverityResult:
+      type: object
+      required: [level, risk_score, factors, safety_override_triggered, confidence, reason]
+      properties:
+        level:
+          $ref: "#/components/schemas/SeverityLevel"
+        risk_score:
+          type: number
+          minimum: 0
+          maximum: 3
+        factors:
+          $ref: "#/components/schemas/SeverityFactorsResult"
+        safety_override_triggered:
+          type: boolean
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reason:
+          type: string
+    EmbeddingIdentity:
+      type: object
+      required: [model, dimensions]
+      properties:
+        model:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: "\\S"
+        dimensions:
+          type: integer
+          minimum: 1
+          maximum: 3072
+        text_version:
+          type: string
+          minLength: 1
+          maxLength: 32
+          pattern: "\\S"
+          default: v1
+    EmbeddingResult:
+      type: object
+      required: [model, dimensions, text_version, values]
+      properties:
+        model:
+          type: string
+        dimensions:
+          type: integer
+          minimum: 1
+        text_version:
+          type: string
+          default: v1
+        values:
+          type: array
+          items:
+            type: number
+    TriageAnalyzeResponse:
+      type: object
+      required: [request_id, provider, latency_ms]
+      properties:
+        request_id:
+          type: string
+        provider:
+          type: string
+        model:
+          type: [string, "null"]
+        latency_ms:
+          type: integer
+          minimum: 0
+        classification:
+          oneOf:
+            - $ref: "#/components/schemas/ClassificationResult"
+            - type: "null"
+        severity:
+          oneOf:
+            - $ref: "#/components/schemas/SeverityResult"
+            - type: "null"
+        keywords:
+          type: array
+          default: []
+          items:
+            type: string
+        embedding:
+          oneOf:
+            - $ref: "#/components/schemas/EmbeddingResult"
+            - type: "null"
+    TicketReportSource:
+      type: object
+      required: [title, description]
+      properties:
+        report_id:
+          type: [string, "null"]
+          maxLength: 128
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: "\\S"
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          pattern: "\\S"
+        location_name:
+          type: [string, "null"]
+          maxLength: 200
+    CurrentTicketInput:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: "\\S"
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          pattern: "\\S"
+    SummarizeTicketRequest:
+      type: object
+      required: [reports]
+      properties:
+        domain:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$"
+          default: campus_facilities
+        language:
+          type: string
+          minLength: 2
+          maxLength: 16
+          pattern: "^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$"
+          default: th
+        location_name:
+          type: [string, "null"]
+          maxLength: 200
+        category_name:
+          type: [string, "null"]
+          maxLength: 120
+        current_ticket:
+          oneOf:
+            - $ref: "#/components/schemas/CurrentTicketInput"
+            - type: "null"
+        reports:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TicketReportSource"
+        include_embedding:
+          type: boolean
+          default: true
+        report_embeddings:
+          type: array
+          maxItems: 50
+          default: []
+          description: Optional finite non-zero vectors of the reports in this ticket to compute blended_embedding (0.6*summary + 0.4*centroid). Requires report_embedding_meta when non-empty.
+          items:
+            type: array
+            minItems: 1
+            maxItems: 3072
+            items:
+              type: number
+        report_embedding_meta:
+          oneOf:
+            - $ref: "#/components/schemas/EmbeddingIdentity"
+            - type: "null"
+        summary_weight:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.6
+        reports_weight:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.4
+      anyOf:
+        - properties:
+            report_embeddings:
+              maxItems: 0
+        - required: [report_embedding_meta]
+          properties:
+            report_embedding_meta:
+              $ref: "#/components/schemas/EmbeddingIdentity"
+    SummarizeTicketResponse:
+      type: object
+      required: [request_id, provider, model, latency_ms, ticket_title, ticket_description]
+      properties:
+        request_id:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        latency_ms:
+          type: integer
+          minimum: 0
+        ticket_title:
+          type: string
+        ticket_description:
+          type: string
+        keywords:
+          type: array
+          default: []
+          items:
+            type: string
+        summary_embedding:
+          oneOf:
+            - $ref: "#/components/schemas/EmbeddingResult"
+            - type: "null"
+        blended_embedding:
+          oneOf:
+            - $ref: "#/components/schemas/EmbeddingResult"
+            - type: "null"
+    EmbedTicketRequest:
+      type: object
+      required: [title, description]
+      properties:
+        domain:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$"
+          default: campus_facilities
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: "\\S"
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          pattern: "\\S"
+        location_name:
+          type: [string, "null"]
+          maxLength: 200
+        category_name:
+          type: [string, "null"]
+          maxLength: 120
+        report_embeddings:
+          type: array
+          maxItems: 50
+          default: []
+          description: Optional finite non-zero vectors of the reports in this ticket. Requires report_embedding_meta when non-empty.
+          items:
+            type: array
+            minItems: 1
+            maxItems: 3072
+            items:
+              type: number
+        report_embedding_meta:
+          oneOf:
+            - $ref: "#/components/schemas/EmbeddingIdentity"
+            - type: "null"
+        summary_weight:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.6
+        reports_weight:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.4
+      anyOf:
+        - properties:
+            report_embeddings:
+              maxItems: 0
+        - required: [report_embedding_meta]
+          properties:
+            report_embedding_meta:
+              $ref: "#/components/schemas/EmbeddingIdentity"
+    EmbedTicketResponse:
+      type: object
+      required: [request_id, provider, latency_ms, summary_embedding, blended_embedding]
+      properties:
+        request_id:
+          type: string
+        provider:
+          type: string
+        latency_ms:
+          type: integer
+          minimum: 0
+        summary_embedding:
+          $ref: "#/components/schemas/EmbeddingResult"
+        blended_embedding:
+          $ref: "#/components/schemas/EmbeddingResult"
+    FieldError:
+      type: object
+      required: [loc, message, type]
+      properties:
+        loc:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              oneOf:
+                - type: array
+                  items:
+                    $ref: "#/components/schemas/FieldError"
+                - type: "null"

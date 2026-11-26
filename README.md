@@ -57,7 +57,7 @@ cd apps/web && bun install --frozen-lockfile && bun run dev
 
 Root `.env` supplies Compose's published ports and PostgreSQL user, password, and database. Compose passes the database settings to PostgreSQL and generates the API's `DATABASE_URL` targeting `db:5432`. If the credentials contain URL-reserved characters, set the root `DATABASE_URL` explicitly with URL-encoded credentials. PostgreSQL initializes its role and database on the first boot of an empty volume.
 
-Compose sets internal URLs to `http://api:8080` and `http://ai:8000`. Host port overrides affect only host access. Each app's `.env` is for standalone runs. Adjust the standalone API's `DATABASE_URL`, `API_PORT` and `AI_BASE_URL`, the gateway's `AI_PORT`, and the Web server's private `API_BASE_URL` if you change ports. Quote shell metacharacters in standalone API settings. The examples contain local development defaults. Keep private values in ignored environment files.
+Compose sets internal URLs to `http://api:8080` and `http://ai:8000`. Host port overrides affect only host access. Compose also loads `apps/ai/.env` (`required: false`) into the AI container when present; other app `.env` files are for standalone runs. Adjust the standalone API's `DATABASE_URL`, `API_PORT` and `AI_BASE_URL`, the gateway's `AI_PORT`, and the Web server's private `API_BASE_URL` if you change ports. Quote shell metacharacters in standalone API settings. The examples contain local development defaults. Keep private values in ignored environment files.
 
 The migrations directory starts empty. Use `make migration-create NAME=describe_change` to generate the first SQL file, fill its Goose Up and Down sections, and review it. With PostgreSQL available and `apps/api/.env` pointing to it, run `make migrate`. Migrations are an explicit operation separate from application startup.
 
@@ -65,8 +65,8 @@ The migrations directory starts empty. Use `make migration-create NAME=describe_
 
 - `apps/web/src/app` holds the App Router and technical route. `features/` and `components/ui/` are reserved.
 - `apps/api/cmd/server` owns lifecycle. `internal/bootstrap` wires constructors, `internal/platform` holds the server and database infrastructure, and `internal/adapters` holds external integration boundaries.
-- `apps/ai/src/ku_spot_ai` is the installed gateway package. Provider, application, scoring and prompt directories are reserved. Evaluation cases live outside the installed package.
-- `contracts/` is reserved for shared service contracts. `scripts/` holds smoke checks, and `docs/` holds the BRD, design system, decisions, and verification.
+- `apps/ai/src/ku_spot_ai` is the installed Pluggable AI Triage Gateway package (`api/`, `application/`, `prompts/`, `providers/`, `scoring/`). Evaluation scripts live outside the installed package in `apps/ai/evaluation/`.
+- `contracts/` holds shared service contracts (including `contracts/ai-triage.v1.yaml`). `scripts/` holds smoke checks, and `docs/` holds the BRD, design system, decisions, and verification.
 
 Start feature branches from `develop` and return changes to `develop` through review. Promote reviewed integration work to `main` in a separate release step.
 
