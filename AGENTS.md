@@ -82,9 +82,21 @@ Verify APIs against installed packages/docs rather than legacy training data (se
 
 ---
 
-## 5. Workflow, Git & Definition of Done
+## 5. Git Workflow & Definition of Done
 
-* **Branching:** Branch from `develop` and return reviewed changes to `develop` via PR. Never push directly to `main`.
+### 5.1 Mandatory Git Branching & PR Flow
+
+Every AI agent and contributor MUST follow this Git flow without exception:
+
+1. **Protected Branches (`develop` and `main`):** Never commit directly to or push directly to `develop` or `main`.
+2. **Always Start from a Feature Branch:** For every new feature, enhancement, bug fix, or documentation update, create a fresh branch off `develop` first (e.g., `feature/<short-kebab-name>`, `fix/<short-kebab-name>`, `docs/<short-kebab-name>`).
+3. **Test Before Opening a PR:** Complete implementation and verify all relevant checks (`make check`, unit/integration tests, and `make smoke` / `make smoke-outage` when applicable) on the feature branch **before** opening a Pull Request.
+4. **Integrate into `develop` via PR:** Open a Pull Request from `<feature-branch>` → **`develop`** (the integration branch for all completed features). Never open a PR from a feature branch directly into `main`.
+5. **Production Release (`develop` → `main`):** Releasing integrated features to end users MUST be done via a Pull Request from **`develop` → `main`** only.
+6. **Human Review Gate:** Do not push, open a PR, or merge automatically unless the user explicitly instructs you to do so; allow the user to review changes on the feature branch first when requested.
+
+### 5.2 Hygiene & Definition of Done
+
 * **Secrets:** Never commit `.env` files, OAuth secrets, API keys, or credentials. Keep local defaults in `.env.example` only.
 * **Keep Context Current:** When implementing a feature or resolving a prototype gap, update `docs/status.md` (and add an ADR in `docs/decisions/` for major design choices).
 * **Mandatory Verification before finishing code changes:**

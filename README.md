@@ -97,7 +97,10 @@ Start with [AGENTS.md](AGENTS.md) if you are an AI coding agent or contributor l
 
 ## Git workflow
 
-Start feature branches from `develop` and return changes to `develop` through pull request review. Promote reviewed integration work to `main` in a separate release step. Never push directly to `main`.
+1. Always create a new branch from `develop` (e.g., `feature/<name>`, `fix/<name>`, `docs/<name>`). Never commit or push directly to `develop` or `main`.
+2. Complete testing and verification (`make check`, tests, and `make smoke` when applicable) on the feature branch.
+3. Open a Pull Request from the feature branch into `develop` for review and integration.
+4. Release tested features to end users by opening a Pull Request from `develop` → `main`.
 
 ## Troubleshooting
 
