@@ -117,7 +117,7 @@ CampusFix AI คือเครื่องมือแจ้งและติ�
 - **Incoming Review Workbench (Split Pane):**
   - **ฝั่งซ้าย (หลักฐานต้นทาง):** Report ID, Version badge (`v2`), Username ผู้แจ้ง, รายละเอียด, แกลเลอรีรูปภาพ (คลิกขยายได้), และตำแหน่งบนแผนที่
   - **ฝั่งขวา (การตัดสินใจ + AI Support):**
-    - กล่อง **ข้อเสนอจาก AI** (`bg-surface-subtle`, กรอบ `1px solid`, ระบุ Confidence % และปุ่มคัดลอก/แก้ไขค่า Category, Severity, Title/Summary)
+    - กล่อง **ข้อเสนอจาก AI** (`bg-surface-subtle`, กรอบ `1px solid`, ระบุ Confidence % และปุ่มคัดลอก/แก้ไขค่า Category, Severity, Title/Description)
     - รายการ **Ticket เดิมที่ใกล้เคียง** เปรียบเทียบข้อมูลข้างกันให้เลือกผูก Ticket เดิม หรือยืนยันสร้าง Ticket ใหม่
     - แถบ Action ด้านล่างติดจอ: `Confirm Ticket` (สี accent) และ `Reject` (ต้องกรอกเหตุผล)
 - **Admin Dashboard:** เน้นตัวเลขที่แยกกันชัดเจนตาม BRD (`Tickets` / `Reports` / `Affected Users` / `Average Review Time`) ใช้กราฟเรียบสะอาด (Bar/Line ไม่มี 3D หรือ glow)

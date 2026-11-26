@@ -34,6 +34,9 @@ services:
       retries: 15
   ai:
     build: ./apps/ai
+    env_file:
+      - path: ./apps/ai/.env
+        required: false
     environment:
       AI_PORT: "8000"
     ports:

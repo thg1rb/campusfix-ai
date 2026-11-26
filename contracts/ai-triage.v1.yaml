@@ -1,0 +1,657 @@
+openapi: 3.1.0
+info:
+  title: CampusFix Pluggable AI Triage API
+  version: 1.1.0
+  description: |
+    Stateless, domain-agnostic multimodal incident AI API for CampusFix AI and
+    other university reporting/helpdesk systems.
+
+    Provides 4 composable capabilities:
+    1. POST /v1/triage/rephrase         — Optional report title & description rephrasing
+    2. POST /v1/triage/analyze          — Category classification, deterministic severity, keyword extraction, and report embedding vector
+    3. POST /v1/triage/summarize-ticket — Multi-report ticket title/description/keywords synthesis and weighted-blend ticket vector
+    4. POST /v1/triage/embed-ticket     — Embed-only weighted-blend ticket vector (no LLM call; used when Reviewer edits final ticket text)
+paths:
+  /healthz:
+    get:
+      summary: Service liveness check
+      responses:
+        "200":
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+  /v1/triage/rephrase:
+    post:
+      summary: Optionally rephrase user-authored report title and description
+      description: |
+        Improves clarity and tone of a user's report title and description
+        without inventing facts. Both title and description are required.
+      security:
+        - ClientApiKey: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RephraseRequest"
+      responses:
+        "200":
+          description: Rephrased title and description suggestion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RephraseResponse"
+        "401":
+          description: Missing or invalid X-API-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Request validation error
+        "503":
+          description: AI provider unavailable or timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/triage/analyze:
+    post:
+      summary: Analyze a submitted report (category, severity, and embedding vector)
+      description: |
+        Accepts report title, description, optional images (1-5 PNG/JPEG, <=10MB each),
+        optional location, and caller-defined categories/rubric. Returns advisory
+        classification, severity assessment, and a semantic embedding vector for
+        downstream cosine similarity + keyword duplicate detection.
+      security:
+        - ClientApiKey: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriageAnalyzeRequest"
+      responses:
+        "200":
+          description: Advisory classification, severity, and/or embedding vector
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriageAnalyzeResponse"
+        "401":
+          description: Missing or invalid X-API-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Request validation error
+        "503":
+          description: AI provider unavailable or timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/triage/summarize-ticket:
+    post:
+      summary: Synthesize ticket title and description from all reports in a ticket
+      description: |
+        Combines all reports belonging to a ticket to propose an updated
+        ticket_title and ticket_description for Reviewer confirmation. Optionally
+        returns the summary embedding and a weighted-blend ticket vector
+        (0.6 * summary_vector + 0.4 * centroid(report_embeddings)) for cosine
+        similarity matching.
+      security:
+        - ClientApiKey: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SummarizeTicketRequest"
+      responses:
+        "200":
+          description: Advisory ticket title, description, and optional ticket vectors
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SummarizeTicketResponse"
+        "401":
+          description: Missing or invalid X-API-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Request validation error
+        "503":
+          description: AI provider unavailable or timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/triage/embed-ticket:
+    post:
+      summary: Compute summary and weighted-blend ticket vectors without calling the LLM
+      description: |
+        Used when a Reviewer edits or writes the final ticket title/description
+        manually and the backend needs an updated ticket embedding vector.
+      security:
+        - ClientApiKey: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmbedTicketRequest"
+      responses:
+        "200":
+          description: Unit-normalized summary and weighted-blend ticket vectors
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedTicketResponse"
+        "401":
+          description: Missing or invalid X-API-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Request validation error
+        "503":
+          description: AI embedding provider unavailable or timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  securitySchemes:
+    ClientApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    AnalyzeTask:
+      type: string
+      enum: [classify, severity, keywords, embed]
+    SeverityLevel:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
+    LocationInput:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+    ImageInput:
+      type: object
+      required: [mime_type, data_base64]
+      properties:
+        mime_type:
+          type: string
+          enum: [image/jpeg, image/png]
+        data_base64:
+          type: string
+          description: Raw base64 or data URL (<= 10 MB decoded)
+    RephraseRequest:
+      type: object
+      required: [title, description]
+      properties:
+        domain:
+          type: string
+          default: campus_facilities
+        language:
+          type: string
+          default: th
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        location:
+          $ref: "#/components/schemas/LocationInput"
+    RephraseResponse:
+      type: object
+      required: [request_id, provider, model, latency_ms, rephrased_title, rephrased_description]
+      properties:
+        request_id:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        latency_ms:
+          type: integer
+        rephrased_title:
+          type: string
+        rephrased_description:
+          type: string
+    ReportItemInput:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        location:
+          $ref: "#/components/schemas/LocationInput"
+        images:
+          type: array
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/ImageInput"
+        metadata:
+          type: object
+          additionalProperties: true
+    CategoryOption:
+      type: object
+      required: [code, name]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 400
+    SeverityRubricInput:
+      type: object
+      description: Optional custom severity definitions (defaults to BRD rubric when omitted)
+      properties:
+        LOW:
+          type: string
+          maxLength: 400
+        MEDIUM:
+          type: string
+          maxLength: 400
+        HIGH:
+          type: string
+          maxLength: 400
+        CRITICAL:
+          type: string
+          maxLength: 400
+    SeverityWeightsInput:
+      type: object
+      description: Optional custom weights for deterministic severity scoring (normalized to sum to 1.0)
+      properties:
+        safety_risk:
+          type: number
+          minimum: 0
+          default: 0.40
+        operational_impact:
+          type: number
+          minimum: 0
+          default: 0.25
+        affected_scope:
+          type: number
+          minimum: 0
+          default: 0.20
+        urgency:
+          type: number
+          minimum: 0
+          default: 0.15
+    SeverityThresholdsInput:
+      type: object
+      description: Optional score cutoffs (must satisfy 0 < medium < high < critical <= 3.0)
+      properties:
+        medium:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 3
+          default: 0.80
+        high:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 3
+          default: 1.60
+        critical:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 3
+          default: 2.35
+    TaxonomyInput:
+      type: object
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryOption"
+        severity_rubric:
+          $ref: "#/components/schemas/SeverityRubricInput"
+        severity_weights:
+          $ref: "#/components/schemas/SeverityWeightsInput"
+        severity_thresholds:
+          $ref: "#/components/schemas/SeverityThresholdsInput"
+        safety_override:
+          type: boolean
+          default: true
+          description: When true, safety_risk == 3 always forces level = CRITICAL
+    TriageAnalyzeRequest:
+      type: object
+      required: [item]
+      properties:
+        domain:
+          type: string
+          default: campus_facilities
+        language:
+          type: string
+          default: th
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyzeTask"
+          default: [classify, severity, keywords, embed]
+        item:
+          $ref: "#/components/schemas/ReportItemInput"
+        taxonomy:
+          $ref: "#/components/schemas/TaxonomyInput"
+    AlternativeCategory:
+      type: object
+      required: [category_code, category_name, confidence]
+      properties:
+        category_code:
+          type: string
+        category_name:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+    ClassificationResult:
+      type: object
+      required: [category_code, category_name, confidence, alternatives, reason]
+      properties:
+        category_code:
+          type: string
+        category_name:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        alternatives:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlternativeCategory"
+        reason:
+          type: string
+    SeverityFactorsResult:
+      type: object
+      required: [safety_risk, operational_impact, affected_scope, urgency]
+      properties:
+        safety_risk:
+          type: integer
+          minimum: 0
+          maximum: 3
+        operational_impact:
+          type: integer
+          minimum: 0
+          maximum: 3
+        affected_scope:
+          type: integer
+          minimum: 0
+          maximum: 3
+        urgency:
+          type: integer
+          minimum: 0
+          maximum: 3
+    SeverityResult:
+      type: object
+      required: [level, risk_score, factors, safety_override_triggered, confidence, reason]
+      properties:
+        level:
+          $ref: "#/components/schemas/SeverityLevel"
+        risk_score:
+          type: number
+          minimum: 0
+          maximum: 3
+        factors:
+          $ref: "#/components/schemas/SeverityFactorsResult"
+        safety_override_triggered:
+          type: boolean
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reason:
+          type: string
+    EmbeddingResult:
+      type: object
+      required: [model, dimensions, values]
+      properties:
+        model:
+          type: string
+        dimensions:
+          type: integer
+          minimum: 1
+        values:
+          type: array
+          items:
+            type: number
+    TriageAnalyzeResponse:
+      type: object
+      required: [request_id, provider, latency_ms]
+      properties:
+        request_id:
+          type: string
+        provider:
+          type: string
+        model:
+          oneOf:
+            - type: string
+            - type: "null"
+        latency_ms:
+          type: integer
+        classification:
+          oneOf:
+            - $ref: "#/components/schemas/ClassificationResult"
+            - type: "null"
+        severity:
+          oneOf:
+            - $ref: "#/components/schemas/SeverityResult"
+            - type: "null"
+        keywords:
+          type: array
+          items:
+            type: string
+        embedding:
+          oneOf:
+            - $ref: "#/components/schemas/EmbeddingResult"
+            - type: "null"
+    TicketReportSource:
+      type: object
+      required: [title, description]
+      properties:
+        report_id:
+          type: string
+          maxLength: 128
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        location_name:
+          type: string
+          maxLength: 200
+    CurrentTicketInput:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+    SummarizeTicketRequest:
+      type: object
+      required: [reports]
+      properties:
+        domain:
+          type: string
+          default: campus_facilities
+        language:
+          type: string
+          default: th
+        location_name:
+          type: string
+          maxLength: 200
+        category_name:
+          type: string
+          maxLength: 120
+        current_ticket:
+          $ref: "#/components/schemas/CurrentTicketInput"
+        reports:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TicketReportSource"
+        include_embedding:
+          type: boolean
+          default: true
+        report_embeddings:
+          type: array
+          description: Optional unit/raw vectors of the reports in this ticket to compute blended_embedding (0.6*summary + 0.4*centroid)
+          items:
+            type: array
+            items:
+              type: number
+        summary_weight:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.6
+        reports_weight:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.4
+    SummarizeTicketResponse:
+      type: object
+      required: [request_id, provider, model, latency_ms, ticket_title, ticket_description]
+      properties:
+        request_id:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        latency_ms:
+          type: integer
+        ticket_title:
+          type: string
+        ticket_description:
+          type: string
+        keywords:
+          type: array
+          items:
+            type: string
+        summary_embedding:
+          oneOf:
+            - $ref: "#/components/schemas/EmbeddingResult"
+            - type: "null"
+        blended_embedding:
+          oneOf:
+            - $ref: "#/components/schemas/EmbeddingResult"
+            - type: "null"
+    EmbedTicketRequest:
+      type: object
+      required: [title, description]
+      properties:
+        domain:
+          type: string
+          default: campus_facilities
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        location_name:
+          type: string
+          maxLength: 200
+        category_name:
+          type: string
+          maxLength: 120
+        report_embeddings:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+        summary_weight:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.6
+        reports_weight:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.4
+    EmbedTicketResponse:
+      type: object
+      required: [request_id, provider, latency_ms, summary_embedding, blended_embedding]
+      properties:
+        request_id:
+          type: string
+        provider:
+          type: string
+        latency_ms:
+          type: integer
+        summary_embedding:
+          $ref: "#/components/schemas/EmbeddingResult"
+        blended_embedding:
+          $ref: "#/components/schemas/EmbeddingResult"
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string

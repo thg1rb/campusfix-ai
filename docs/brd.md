@@ -55,7 +55,7 @@
 | ประเด็น | Report | Ticket |
 | :--- | :--- | :--- |
 | **ใช้แทนอะไร** | การแจ้ง/มุมมองของผู้ใช้หนึ่งคน | เหตุการณ์หรือปัญหาหนึ่งเรื่องที่ผ่านการคัดกรองแล้ว |
-| **ข้อมูลสำคัญ** | ผู้รายงาน รายละเอียด ภาพ ตำแหน่ง และสถานะการตรวจ Report | หัวข้อ/สรุป, Category, Severity, สถานะการยืนยัน และข้อมูลพิกัดสถานที่ |
+| **ข้อมูลสำคัญ** | ผู้รายงาน, หัวข้อ (Title), รายละเอียด (Description), ภาพ, ตำแหน่ง และสถานะการตรวจ Report | หัวข้อ (Title), รายละเอียดสรุป (Description), Category, Severity, สถานะ และข้อมูลพิกัดสถานที่ |
 | **การเกิดและการเชื่อมโยง** | เริ่มเมื่อ Reporter กดส่งตรวจ (`PENDING`) เมื่อ Confirm แล้วผูกกับ Ticket ได้หนึ่งรายการ | เกิดเมื่อ Reviewer ยืนยันสร้าง Ticket ใหม่ และมี Report ที่ Confirm แล้วอย่างน้อยหนึ่งรายการ |
 | **จำนวนและการรวม** | หลาย Report อาจกล่าวถึงปัญหาเดียวกัน และยังคงเก็บแยกเป็นรายรายการ | Ticket เดียวรวม Report ที่ยืนยันว่าเป็นเหตุการณ์เดียวกันได้หลายรายการ |
 | **ใครใช้ติดตาม** | Reporter ติดตาม Report ของตนและการยืนยันของ Ticket ที่เชื่อมอยู่ | Reviewer ใช้ตรวจสอบและจัดกลุ่ม; Reporter ติดตามรายการปัญหาที่ยืนยันแล้ว |
@@ -64,7 +64,7 @@
 
 ### 1.2 บทบาทของ AI
 
-AI ช่วยจำแนก Category ประเมิน Severity ค้นหา Ticket ที่อาจเป็นเหตุการณ์เดียวกัน และสร้าง Title/Summary แต่ไม่ตัดสินใจเชิงปฏิบัติการแทนมนุษย์ Reviewer ตรวจผลและยืนยันก่อนข้อมูลกลายเป็น Ticket สาธารณะ หาก AI ใช้งานไม่ได้ ผู้ใช้ยังส่ง Report ได้และ Reviewer ทำงานต่อได้
+AI ช่วยเกลาข้อความของ Report แบบเลือกใช้ได้ (Rephrase), แปลงข้อมูลเป็น Vector สำหรับคำนวณความคล้ายกับ Ticket เดิม (ร่วมกับ Keyword Matching), จำแนก Category, ประเมิน Severity และสรุปรวมเนื้อหาจาก Report ทั้งหมดใน Ticket เพื่อเสนอ `Ticket Title` และ `Ticket Description` แต่ไม่ตัดสินใจเชิงปฏิบัติการแทนมนุษย์ Reviewer ตรวจผลและยืนยันก่อนข้อมูลกลายเป็น Ticket สาธารณะ หาก AI ใช้งานไม่ได้ ผู้ใช้ยังส่ง Report ได้และ Reviewer ทำงานต่อได้
 
 ### 1.3 ผลลัพธ์ที่ระบบมุ่งสร้าง
 
@@ -147,7 +147,7 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 | :--- | :--- |
 | **พื้นที่และการเข้าสู่ระบบ** | KU บางเขน; Google OAuth (ออกแบบรองรับ KU-ALL SSO ในระยะถัดไป); Username สาธารณะ; Public Read ไม่ต้อง Login |
 | **Reporter** | สร้าง/แก้/ถอน Report ที่ยัง `PENDING`, ภาพ, Map Point, Public Feed, Thread, Email แจ้งผลตรวจและเมื่อแก้ไขแล้ว, Mark Affected |
-| **AI** | Classification, Severity (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`), Matching กับ Ticket ที่ยังเปิดอยู่ (`CONFIRMED`/`WAITING_INFO`), Title/Summary, Confidence, Fallback |
+| **AI** | Rephrase ข้อความ Report (Optional), แปลง Report/Ticket เป็น Vector (สำหรับ Cosine Similarity + Keyword Matching), Classification, Severity (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`), สรุป `Ticket Title`/`Ticket Description` จาก Reports ทั้งหมด, Confidence, Fallback |
 | **Reviewer** | Review, แก้ผล AI, ยืนยัน Ticket ใหม่/เดิม, Reject พร้อมเหตุผล, Request Information (เฉพาะบน Ticket ที่ยืนยันแล้ว), เปลี่ยนสถานะ Ticket เป็น `RESOLVED` |
 | **Administrator** | จัดการ User/Role/Permission, Category, Location; System Dashboard และ Analytics |
 | **แผนที่** | เลือกตำแหน่ง Report และแสดง Ticket บนแผนที่แบบพื้นฐาน |
@@ -175,9 +175,9 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 
 | ขั้น | ผู้ดำเนินการ | ผลลัพธ์/การควบคุม |
 | :--- | :--- | :--- |
-| **1** | Reporter | สร้าง Report; เลือก Location และแนบภาพ; กด Submit เพื่อส่งตรวจ |
-| **2** | ระบบ + AI | ตั้งสถานะ `PENDING`; วิเคราะห์ข้อความ/ภาพ/ตำแหน่ง; ค้นหา Ticket ที่ยังเปิดอยู่ (`CONFIRMED`/`WAITING_INFO`) และแนบข้อเสนอ AI ไว้บน Report |
-| **3** | Reviewer | ตรวจเวอร์ชันล่าสุด; แก้ข้อเสนอ AI; เลือกผูก Ticket เดิม/สร้าง Ticket ใหม่ หรือ Reject พร้อมเหตุผล |
+| **1** | Reporter | กรอก Title + Description, เลือก Location และแนบภาพ (เลือกกด AI Rephrase เกลาข้อความได้) แล้วกด Submit เพื่อส่งตรวจ |
+| **2** | ระบบ + AI | ตั้งสถานะ `PENDING`; เรียก AI แปลง Report เป็น Vector, จำแนก Category และประเมิน Severity; Backend นำ Vector (Cosine Similarity) ร่วมกับ Keyword Matching ไปค้นหา Ticket ที่ยังเปิดอยู่ (`CONFIRMED`/`WAITING_INFO`) |
+| **3** | Reviewer | ตรวจเวอร์ชันล่าสุด; แก้ข้อเสนอ AI; เลือกผูก Ticket เดิมหรือสร้าง Ticket ใหม่ (AI สรุปข้อเสนอ Title/Description ของ Ticket จาก Reports ทั้งหมดให้ตรวจยืนยัน) หรือ Reject พร้อมเหตุผล |
 | **4** | ระบบ | Confirm: Report ผูก Ticket หนึ่งรายการ; หากสร้างใหม่ Ticket จะเกิดขึ้นในสถานะ `CONFIRMED` และเปิดเผยบน Public Feed/Map ทันที; ส่งอีเมลแจ้ง Reporter |
 | **5** | Reviewer / Reporter / ผู้ได้รับผลกระทบ | ติดตาม Ticket ที่เผยแพร่แล้ว, กด Mark Affected (บน Ticket ที่ยังเปิดอยู่), หากต้องการข้อมูลเพิ่ม Reviewer เปลี่ยนเป็น `WAITING_INFO` เพื่อสื่อสารผ่าน Private Thread และเมื่อปัญหาได้รับการแก้ไขแล้ว Reviewer เปลี่ยนเป็น `RESOLVED` พร้อมส่งอีเมลแจ้ง Reporter |
 | **6** | Administrator | วิเคราะห์สถิติข้อมูลการแจ้งปัญหา สถานะการแก้ไข และประสิทธิภาพการคัดกรองผ่าน Dashboard |
@@ -189,7 +189,8 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 | ข้อกำหนด | เกณฑ์การยอมรับโดยสรุป |
 | :--- | :--- |
 | **บัญชีและตัวตน** | Login ผ่าน Google OAuth (ออกแบบรองรับ KU-ALL SSO ในระยะถัดไป); ตั้ง/เปลี่ยน Username ที่ไม่ซ้ำ; Public Identity แสดง Username ปัจจุบันแม้เป็น Report เก่า |
-| **สร้าง Report** | Description, รูปภาพ 1–5 ภาพ ภาพละ ≤10MB PNG/JPG/JPEG (ลบ EXIF Metadata ก่อนจัดเก็บ/เผยแพร่) และ Map Point เป็นข้อมูลที่ต้องมี |
+| **สร้าง Report** | **Title และ Description (ต้องกรอกทั้งคู่)**, รูปภาพ 1–5 ภาพ ภาพละ ≤10MB PNG/JPG/JPEG (ลบ EXIF Metadata ก่อนจัดเก็บ/เผยแพร่) และ Map Point เป็นข้อมูลที่ต้องมี |
+| **AI Rephrase (Optional)** | เมื่อกรอกทั้ง Title และ Description แล้ว ผู้ใช้สามารถเลือกให้ AI ช่วยเกลาข้อความให้ชัดเจนและสุภาพได้โดยไม่แต่งเติมข้อเท็จจริง ผู้ใช้ตรวจสอบและตัดสินใจก่อนส่งเองได้ (หากยังไม่กรอกครบจะไม่เปิดให้ Rephrase/ส่ง และหาก AI ขัดข้องยังส่งได้ปกติ) |
 | **ระบุตำแหน่ง** | เลือกชื่อสถานที่ภายในมหาวิทยาลัยหรือปัก Map Pin; ทุก Report ต้องมี Map Point |
 | **แก้/ถอนก่อน Review จบ** | แก้ Report ในสถานะ `PENDING` ได้จนกว่า Reviewer จะ Confirm/Reject (การแก้จะเพิ่ม Version และวิเคราะห์ AI ใหม่); ถอน/ยกเลิกก่อนตรวจได้ โดยระบบจะลบออกจากคิวตรวจและบันทึก Audit Log |
 | **ดูผล AI เบื้องต้น** | เห็นผล AI เบื้องต้นเมื่อมี; AI Failure ไม่ขัดขวางการ Submit/Review |
@@ -211,19 +212,20 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 
 | ความสามารถ | เกณฑ์การยอมรับโดยสรุป |
 | :--- | :--- |
-| **วิเคราะห์หลายสื่อ** | ใช้ Description, รูปภาพ และ Location ร่วมกัน; Video ไม่อยู่ใน MVP |
-| **จำแนกปัญหา** | แนะนำ Category, Confidence และ Alternative Category เมื่อเหมาะสม; Category จัดการโดย Administrator |
-| **ประเมิน Severity** | ประเมินระดับของ Report และช่วยประเมิน Ticket จาก Reports ที่อยู่ภายใต้ Ticket; Reviewer กำหนดค่า Final |
+| **วิเคราะห์หลายสื่อ** | ใช้ Title, Description, รูปภาพ และ Location ร่วมกัน; Video ไม่อยู่ใน MVP |
+| **เกลาข้อความ Report (Rephrase)** | ทำงานแบบ Optional เมื่อผู้ใช้กดเลือกหลังกรอก Title และ Description แล้ว เพื่อปรับข้อความให้ชัดเจนขึ้นโดยไม่เปลี่ยนข้อเท็จจริง |
+| **จำแนกปัญหา** | รับรายการ Category ที่เปิดใช้งานอยู่จากระบบ และวิเคราะห์ว่าใกล้เคียงกับหมวดหมู่ใดมากที่สุดพร้อม Confidence และ Alternative Category; Category จัดการโดย Administrator |
+| **ประเมิน Severity** | AI ประเมินคะแนนย่อย 4 ปัจจัย (`safety_risk`, `operational_impact`, `affected_scope`, `urgency` ระดับ 0–3) แล้วคำนวณระดับความรุนแรง (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`) ด้วยสูตรถ่วงน้ำหนักแบบแน่นอนพร้อม Safety Override (`safety_risk = 3 → CRITICAL`), `risk_score`, Confidence และเหตุผล; Reviewer กำหนดค่า Final |
 | **ไม่อนุมานความรุนแรงจากจำนวนล้วน** | จำนวน Report ที่มากไม่ทำให้ Severity สูงขึ้นโดยอัตโนมัติ |
-| **ค้นหาเหตุการณ์ซ้ำ** | จับคู่กับ Ticket ที่ยังเปิดอยู่ (`CONFIRMED` และ `WAITING_INFO`) เท่านั้น โดยใช้ภาพ+ข้อความ+ตำแหน่ง แสดงรายการ Ticket ที่ใกล้เคียงพร้อม Confidence/Similarity |
-| **สร้างหัวข้อ/สรุป** | สร้างข้อเสนอ Report Title และ Ticket Title/Summary แนบไว้บน Report; Reviewer ตรวจ/แก้ก่อน Confirm |
-| **ไม่เปลี่ยนข้อมูล Final เอง** | เมื่อมี Report เพิ่ม อาจคำนวณข้อเสนอ Ticket Title/Summary ใหม่ได้ แต่ห้ามเปลี่ยน Final Ticket Data โดยไม่มี Reviewer ตรวจ |
-| **ความทนทานเมื่อ AI ขัดข้อง** | Timeout/Error/Unavailable/วิเคราะห์ไม่ได้ ต้องบันทึก Report ได้; Reviewer ทำ Classification, Severity, Title/Summary และ Duplicate Review เองได้ |
+| **แปลงเป็น Vector เพื่อหาเหตุการณ์ซ้ำ** | AI แปลง Report เป็น Vector ส่งกลับให้ Backend คำนวณความคล้ายด้วย **Cosine Similarity ร่วมกับ Keyword Matching** เทียบกับ Ticket ที่ยังเปิดอยู่ (`CONFIRMED`/`WAITING_INFO`) โดย Vector ของ Ticket คำนวณแบบผสมถ่วงน้ำหนักระหว่าง Vector ของข้อความสรุป Ticket และค่าเฉลี่ย (Centroid) ของ Report Vectors ใน Ticket นั้น |
+| **สร้างหัวข้อ/รายละเอียดของ Ticket** | เมื่อสร้าง Ticket ใหม่หรือรวม Report เพิ่มเข้า Ticket เดิม AI นำเนื้อความของ **Report ทั้งหมดใน Ticket นั้น** มาสรุปรวมเป็นข้อเสนอ `Ticket Title` และ `Ticket Description` ให้ Reviewer ตรวจ/แก้ก่อน Confirm |
+| **ไม่เปลี่ยนข้อมูล Final เอง** | เมื่อมี Report เพิ่ม AI อาจคำนวณข้อเสนอ `Ticket Title`/`Ticket Description` ใหม่ได้ แต่ห้ามเปลี่ยน Final Ticket Data โดยไม่มี Reviewer ตรวจยืนยัน |
+| **ความทนทานเมื่อ AI ขัดข้อง** | Timeout/Error/Unavailable/วิเคราะห์ไม่ได้ ต้องบันทึก Report ได้; Reviewer ทำ Classification, Severity, Title/Description และ Duplicate Review เองได้ |
 | **ไม่มีอำนาจปฏิบัติการ** | AI ไม่ Confirm, Reject, Delete, ซ่อน Report/Ticket หรือสร้าง Ticket ด้วยตนเอง |
 | **Retry** | รองรับการ Retry ตามกลไกระบบ; ไม่เป็นเงื่อนไขบังคับก่อน Reviewer ทำงาน |
 
 * **กรณี AI ล้มเหลว:** ระบบยังบันทึก Submit สำเร็จและคง Report ใน `PENDING` ได้ Reviewer กำหนดข้อมูลที่จำเป็นและตรวจจับซ้ำด้วยตนเองได้
-* **กรณีไม่พบ Ticket ที่ใกล้เคียง:** ระบบเก็บข้อเสนอ Title/Summary, Category และ Severity ของ AI ไว้กับ Report เพื่อให้ Reviewer ตรวจสอบและสร้าง Ticket ใหม่เมื่อ Confirm
+* **กรณีไม่พบ Ticket ที่ใกล้เคียง:** ระบบเก็บผลแนะนำ Category, Severity และ Vector ไว้กับ Report เพื่อให้ Reviewer ตรวจสอบและสร้าง Ticket ใหม่ (โดยให้ AI ช่วยสรุปข้อเสนอ `Ticket Title`/`Ticket Description` ได้) เมื่อ Confirm
 
 #### ระดับความรุนแรงของปัญหา (Severity Scale)
 
@@ -244,10 +246,10 @@ MVP จำกัดที่วิทยาเขตบางเขน ใช้
 | :--- | :--- |
 | **Incoming Review** | เห็น Report ID, Username, รายละเอียด, ภาพ, Location, Version/Last Updated, AI Result/Confidence, รายการ Ticket เดิมที่ใกล้เคียง และสถานะการวิเคราะห์ |
 | **ตรวจเวอร์ชันล่าสุด** | Confirm/Reject ได้จากข้อมูลเวอร์ชันล่าสุดเท่านั้น; หาก Report ถูกแก้หลังเปิด Review ต้องตรวจใหม่ |
-| **แก้ AI Result** | กำหนด Category, Severity, Title/Summary และ Ticket Matching ใหม่ได้ |
-| **ยืนยันการจับคู่** | เลือกผูกกับ Ticket เดิมที่ AI แนะนำหรือรายการอื่น หรือยืนยันสร้าง Ticket ใหม่จากข้อมูลที่ตรวจแล้ว |
+| **แก้ AI Result** | กำหนด Category, Severity, Title/Description ของ Ticket และ Ticket Matching ใหม่ได้ |
+| **ยืนยันการจับคู่** | เลือกผูกกับ Ticket เดิมที่ระบบแนะนำหรือรายการอื่น หรือยืนยันสร้าง Ticket ใหม่จากข้อมูลที่ตรวจแล้ว |
 | **Reject** | Reject Report สถานะ `PENDING` พร้อม Reason; Report เป็น Final, ไม่ผูก Ticket, ไม่ Public และบันทึก Audit Log |
-| **ข้อมูลก่อน Confirm Ticket ใหม่** | ต้องมี Category, Severity, Matching Decision และ Title/Summary ครบถ้วน |
+| **ข้อมูลก่อน Confirm Ticket ใหม่** | ต้องมี Category, Severity, Matching Decision และ Title/Description ครบถ้วน |
 | **ขอข้อมูลเพิ่มเติม** | เกิดขึ้นได้เฉพาะบน **Ticket ที่ `CONFIRMED` แล้วเท่านั้น** (ไม่เกิดกับ Report ในสถานะ `PENDING`) เพื่อรองรับกรณีแจ้งเรื่องต่อผู้มีอำนาจแล้วต้องการรายละเอียดเพิ่มเติมจาก Reporter |
 | **อัปเดตสถานะแก้ไขแล้ว (`RESOLVED`)** | Reviewer สามารถเปลี่ยนสถานะ Ticket (`CONFIRMED` หรือ `WAITING_INFO`) เป็น `RESOLVED` พร้อมบันทึกสรุปสั้น ๆ (ไม่บังคับ) เมื่อได้รับการยืนยันว่าปัญหาถูกแก้ไขแล้ว และส่งอีเมลแจ้ง Reporter |
 | **ข้อจำกัดตนเอง** | ห้าม Review/Confirm/Reject หรือเปลี่ยนสถานะ `RESOLVED` รายการที่ตนเป็น Reporter; ห้ามดำเนินการกับรายการของตนเอง |
@@ -269,7 +271,7 @@ Ticket จะถูกสร้างขึ้นเมื่อ Reviewer ยื
 
 | จากสถานะ | ไปสถานะ | ผู้เปลี่ยน/เงื่อนไข |
 | :--- | :--- | :--- |
-| *(สร้างใหม่)* | **CONFIRMED** | Reviewer ยืนยันสร้าง Ticket ใหม่พร้อมข้อมูลบังคับ (Category, Severity, Title/Summary) → กลายเป็น Public ทันที และบันทึก Audit Log |
+| *(สร้างใหม่)* | **CONFIRMED** | Reviewer ยืนยันสร้าง Ticket ใหม่พร้อมข้อมูลบังคับ (Category, Severity, Title/Description) → กลายเป็น Public ทันที และบันทึก Audit Log |
 | **CONFIRMED** | **WAITING_INFO** | Reviewer ขอข้อมูลเพิ่มเติมจาก Reporter บน Ticket (เช่น กรณีผู้มีอำนาจต้องการรายละเอียดเพิ่ม) → เปิด Private Thread และส่งอีเมลแจ้ง Reporter; Ticket ยังคงแสดงใน Public Feed/Map โดยระบุสถานะ `WAITING_INFO` |
 | **WAITING_INFO** | **CONFIRMED** | Reviewer ได้รับข้อมูลครบถ้วนและยืนยันข้อมูลล่าสุด → ปิดสถานะรอข้อมูลและบันทึก Audit Log |
 | **CONFIRMED** / **WAITING_INFO** | **RESOLVED** | Reviewer ยืนยันว่าปัญหาได้รับการแก้ไขแล้ว (ระบุหมายเหตุสรุปเพิ่มเติมได้) → ส่งอีเมลแจ้ง Reporter ของ Ticket, แสดงสถานะ `RESOLVED` บน Public Feed/Timeline และบันทึก Audit Log *(Final)* |
@@ -305,8 +307,8 @@ Ticket จะถูกสร้างขึ้นเมื่อ Reviewer ยื
 | **ค้นหา** | Ticket ID, Title, Description, Location, Category |
 | **ตัวกรอง** | Status, Severity, Category, Date, Location |
 | **Pagination** | รองรับการแบ่งหน้า 25, 50 หรือ 100 รายการต่อหน้า |
-| **Ticket Detail** | ID, Title, Summary, Status, Severity, Category, Location, Reports/Thumbnail/AI Report Title, Counts และ Public Timeline |
-| **Report Detail** | Reporter Username ปัจจุบัน, Description, รูปภาพ และ Location |
+| **Ticket Detail** | ID, Title, Description, Status, Severity, Category, Location, Reports/Thumbnail/Report Title, Counts และ Public Timeline |
+| **Report Detail** | Reporter Username ปัจจุบัน, Title, Description, รูปภาพ และ Location |
 | **แผนที่** | เลือก Location ขณะสร้าง Report และแสดง Ticket; Heatmap ขั้นสูงไม่รวม |
 
 ### 8.2 ข้อมูลเพิ่มเติมและความคิดเห็น
