@@ -34,8 +34,8 @@ wait_ready() {
 
 wait_ready
 [ "$(curl -sS --max-time 5 -o "$body" -w '%{http_code}' "$web/")" = 200 ]
-grep -q 'CampusFix AI' "$body"
-printf '%s/ → 200 CampusFix AI\n' "$web"
+grep -q 'KU Spot' "$body"
+printf '%s/ → 200 KU Spot\n' "$web"
 check "$ai/healthz" 200 "$live"
 check "$api/healthz" 200 "$live"
 

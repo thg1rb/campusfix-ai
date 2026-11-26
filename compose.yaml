@@ -1,4 +1,4 @@
-name: campusfix-ai
+name: ku-spot
 services:
   web:
     build: ./apps/web
@@ -18,7 +18,7 @@ services:
     build: ./apps/api
     environment:
       API_PORT: "8080"
-      DATABASE_URL: "${DATABASE_URL:-postgresql://${POSTGRES_USER:-campusfix}:${POSTGRES_PASSWORD:-campusfix-local}@db:5432/${POSTGRES_DB:-campusfix}?sslmode=disable}"
+      DATABASE_URL: "${DATABASE_URL:-postgresql://${POSTGRES_USER:-kuspot}:${POSTGRES_PASSWORD:-kuspot-local}@db:5432/${POSTGRES_DB:-kuspot}?sslmode=disable}"
       AI_BASE_URL: http://ai:8000
     ports:
       - "127.0.0.1:${API_PORT:-8080}:8080"
@@ -46,9 +46,9 @@ services:
   db:
     image: postgres:18.7-bookworm
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-campusfix}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-campusfix-local}
-      POSTGRES_DB: ${POSTGRES_DB:-campusfix}
+      POSTGRES_USER: ${POSTGRES_USER:-kuspot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kuspot-local}
+      POSTGRES_DB: ${POSTGRES_DB:-kuspot}
     ports:
       - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
