@@ -10,7 +10,7 @@ Verified on Docker Engine 29.1.5 with Compose v5.0.1.
 | AI checks | uv lock validation, locked package installation, and installed package import passed. |
 | Base stack | All four containers reached healthy status. Startup logs showed each service listening. |
 | Development override | All four containers reached healthy status and the smoke script passed. |
-| Web page | HTTP 200 and a browser-rendered level-one heading of CampusFix AI. |
+| Web page | HTTP 200 and a browser-rendered level-one heading of KU Spot. |
 | AI and API liveness | Both returned HTTP 200 with `{"status":"ok"}`. |
 | API → PostgreSQL and AI | API readiness returned HTTP 200 with both dependencies `ok`. |
 | Web server → API | Web readiness returned HTTP 200 with the same dependency results. |

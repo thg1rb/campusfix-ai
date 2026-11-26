@@ -1,4 +1,4 @@
-module github.com/thg1rb/campusfix-ai/apps/api
+module github.com/thg1rb/ku-spot/apps/api
 
 go 1.26.11
 
