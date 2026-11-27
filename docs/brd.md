@@ -1,387 +1,246 @@
-# KU Spot
+# KU Spot — Business Requirements Document (Requirement Freeze 1)
 
-**เอกสารข้อกำหนดทางธุรกิจและระบบ (Business Requirements Document - BRD)**
+> **Source Alignment:** This document is the English canonical Business Requirements Document for **KU Spot**, aligned with **Requirement Freeze 1** (originating from the CampusFix AI V4 Requirement Freeze 1 specification suite). Detailed atomic rules live in [docs/business-rules.md](business-rules.md) (`BR-*`), and behavioral flows live in [docs/use-cases.md](use-cases.md) (`UC-*`).
 
-**แพลตฟอร์มอัจฉริยะเพื่อการรับแจ้ง วิเคราะห์ จัดกลุ่ม และเผยแพร่ข้อมูลปัญหาทางกายภาพภายในมหาวิทยาลัยเกษตรศาสตร์ วิทยาเขตบางเขน**
-
-**ผู้จัดทำ:**
-
-* 6610402205 นายรักษิต รุ่งรัตนไชย
-
-* 6610402132 นายบวรรัตน์ ตั้งนรารัชชกิจ
-
-## เกี่ยวกับเอกสารนี้
-
-| รายการ | รายละเอียด |
-| :--- | :--- |
-| **ชื่อระบบ** | KU Spot - แพลตฟอร์มรับแจ้ง วิเคราะห์ จัดกลุ่ม และติดตามสถานะการคัดกรองปัญหาทางกายภาพภายในมหาวิทยาลัย |
-| **ประเภทเอกสาร** | Business Requirements Document (BRD) |
-| **วันที่จัดทำ** | 5 ตุลาคม 2569 |
-| **สถานะ** | ฉบับปรับปรุงขอบเขต (ดำเนินการคัดกรอง เผยแพร่ และปิดสถานะแก้ไขโดย Reviewer) |
-| **ผู้อ่านหลัก** | ผู้สนับสนุนโครงการ ผู้บริหาร Reviewer ทีมพัฒนา ทีมปฏิบัติการ และผู้แทนผู้ใช้ |
-
-### วิธีอ่านเอกสาร
-
-เอกสารฉบับนี้เรียบเรียงข้อกำหนดทางธุรกิจของระบบ KU Spot โดยจัดลำดับให้อ่านต่อเนื่องเป็นเรื่องเดียว เริ่มจากทำไมต้องมีระบบ (บทที่ 1–3) ต่อด้วยใครเกี่ยวข้องและระบบครอบคลุมแค่ไหน (บทที่ 4–5) จากนั้นตามไปกับเส้นทางของเรื่องแจ้งหนึ่งเรื่องตั้งแต่ผู้ใช้แจ้งจนถึงขั้น Reviewer ยืนยันข้อมูลและเผยแพร่สู่สาธารณะ (บทที่ 6) แล้วสรุปกติกาที่ต้องรักษา การเผยแพร่ การวิเคราะห์ และสิทธิ์ความเป็นส่วนตัว (บทที่ 7–10) และปิดท้ายด้วยข้อจำกัดและสิ่งที่อยู่นอกขอบเขต (บทที่ 11)
-
-> *ผู้ที่ต้องการภาพรวมอย่างรวดเร็วสามารถอ่านบทที่ 1 และตารางสรุปขั้นตอนในหัวข้อ 6.1 ได้ก่อน*
-
-### สารบัญ
-
-1. **ภาพรวมของระบบ** - ระบบคืออะไร และแนวคิด Report กับ Ticket
-2. **บริบท ปัญหา และคุณค่าทางธุรกิจ** - เหตุผลที่ต้องมีระบบ
-3. **เป้าหมายและตัวชี้วัดความสำเร็จ** - สิ่งที่ต้องการบรรลุและวัดอย่างไร
-4. **ผู้มีส่วนได้ส่วนเสียและบทบาท** - ผู้ใช้แต่ละกลุ่มและหลักสิทธิ์ร่วม
-5. **ขอบเขตระบบและ MVP** - อะไรอยู่ในและนอกระยะแรก
-6. **เส้นทางของเรื่องแจ้งตั้งแต่ต้นจนจบ** - กระบวนงาน ข้อกำหนดตามบทบาท AI และวงจรสถานะ
-7. **กติกาทางธุรกิจหลักที่ต้องรักษา**
-8. **การเผยแพร่ การสื่อสาร และข้อมูลเพิ่มเติม**
-9. **การบริหารจัดการระบบและ Analytics**
-10. **สิทธิ์ ความเป็นส่วนตัว และ Audit**
-11. **ข้อจำกัด สมมติฐาน และสิ่งที่ไม่อยู่ใน MVP**
+| Field | Detail |
+| --- | --- |
+| **Platform Name** | KU Spot — AI-Assisted Campus Issue Management Platform |
+| **Scope Campus (MVP)** | Kasetsart University, Bangkhen Campus |
+| **Requirement Baseline** | Requirement Freeze 1 (V4) |
+| **Authors** | Rugsit Rungrattanachai (6610402205), Bowornrat Tangnararatchakit (6610402132) |
 
 ---
 
-## 1. ภาพรวมของระบบ
+## 1. System Overview
 
-**KU Spot** เป็นแพลตฟอร์มกลางสำหรับรับ วิเคราะห์ ตรวจสอบ จัดกลุ่ม และเผยแพร่ข้อมูลปัญหาทางกายภาพหรือบริการส่วนกลางภายในมหาวิทยาลัยเกษตรศาสตร์ วิทยาเขตบางเขน
+**KU Spot** is a centralized platform for students, staff, and campus community members at Kasetsart University (Bangkhen Campus) to report physical infrastructure and shared campus service issues, leverage AI-assisted analysis and duplicate matching, support human verification by Reviewers, coordinate multi-department resolution, and publish transparent status updates.
 
-ระบบครอบคลุมตั้งแต่ผู้ใช้รายงานปัญหาพร้อมภาพและตำแหน่ง ให้ AI ช่วยวิเคราะห์และจับคู่ปัญหาเบื้องต้น ให้มนุษย์ (Reviewer) ตรวจสอบยืนยันความถูกต้อง เปิดเผยข้อมูลปัญหาสู่สาธารณะ และอัปเดตสถานะเป็น `RESOLVED` เมื่อปัญหาได้รับการแก้ไขแล้วเพื่อให้ผู้แจ้งรับทราบ *(หมายเหตุ: ขั้นตอนการส่งต่อใบงานและระบบบริหารงานซ่อมของหน่วยงานปฏิบัติการอยู่นอกขอบเขตของระบบนี้)*
+### 1.1 Issue Scope
 
-### 1.1 แนวคิดหลัก: Report กับ Ticket
+* **In Scope:** Physical facilities, infrastructure, shared spaces, assets, and campus services — including lighting/electrical, classrooms/restrooms/buildings, damaged furniture or equipment, campus internet/IT infrastructure, cleanliness/waste, water leaks/drainage/flooding, elevators, campus safety hazards, and traffic/parking issues.
+* **Out of Scope:** Personal complaints against faculty, staff, or students; harassment; interpersonal conflicts; or disciplinary matters (`BR-GEN-001`, `BR-GEN-002`).
 
-หัวใจของแบบจำลองข้อมูลคือการแยก **Report** ซึ่งเป็นมุมมองการแจ้งของบุคคลหนึ่งคน ออกจาก **Ticket** ซึ่งแทนเหตุการณ์หรือปัญหาหนึ่งเรื่อง Report หลายรายการสามารถถูกรวมเข้า Ticket เดียวได้โดยไม่ลบข้อมูลต้นทาง เพื่อรักษาหลักฐานและจำนวนผู้รายงานจริง
+### 1.2 End-to-End Value Flow
 
-| ประเด็น | Report | Ticket |
-| :--- | :--- | :--- |
-| **ใช้แทนอะไร** | การแจ้ง/มุมมองของผู้ใช้หนึ่งคน | เหตุการณ์หรือปัญหาหนึ่งเรื่องที่ผ่านการคัดกรองแล้ว |
-| **ข้อมูลสำคัญ** | ผู้รายงาน, หัวข้อ (Title), รายละเอียด (Description), ภาพ, ตำแหน่ง และสถานะการตรวจ Report | หัวข้อ (Title), รายละเอียดสรุป (Description), Category, Severity, สถานะ และข้อมูลพิกัดสถานที่ |
-| **การเกิดและการเชื่อมโยง** | เริ่มเมื่อ Reporter กดส่งตรวจ (`PENDING`) เมื่อ Confirm แล้วผูกกับ Ticket ได้หนึ่งรายการ | เกิดเมื่อ Reviewer ยืนยันสร้าง Ticket ใหม่ และมี Report ที่ Confirm แล้วอย่างน้อยหนึ่งรายการ |
-| **จำนวนและการรวม** | หลาย Report อาจกล่าวถึงปัญหาเดียวกัน และยังคงเก็บแยกเป็นรายรายการ | Ticket เดียวรวม Report ที่ยืนยันว่าเป็นเหตุการณ์เดียวกันได้หลายรายการ |
-| **ใครใช้ติดตาม** | Reporter ติดตาม Report ของตนและการยืนยันของ Ticket ที่เชื่อมอยู่ | Reviewer ใช้ตรวจสอบและจัดกลุ่ม; Reporter ติดตามรายการปัญหาที่ยืนยันแล้ว |
+```text
+Recognize Issue → Submit Report → AI Analysis & Active Ticket Matching → Reviewer Verification
+  → Group into Ticket → Assign Responsible Department(s) → Department Operations & Tracking
+  → Multi-Department Completion / Auto-Resolve → Reporter Feedback → Analytics & Prevention
+```
 
-> **ตัวอย่าง:** นักศึกษา 4 คนพบไฟทางเดินหน้าหอพักดับและส่ง Report คนละรายการ ภายหลัง Reviewer ยืนยันว่าเป็นเหตุการณ์เดียวกัน ระบบจึงเก็บ Report ทั้ง 4 รายการไว้และเชื่อมเข้ากับ Ticket เดียวเพื่อแสดงผลเป็นปัญหาเดียวกันบนหน้าสาธารณะ ดังนั้นจำนวน Report เป็น 4 ขณะที่จำนวน Ticket เป็น 1
+### 1.3 Core Domain Concept: Report vs. Ticket
 
-### 1.2 บทบาทของ AI
+The central architectural abstraction is separating **Report** (one individual's observation) from **Ticket** (one verified campus incident):
 
-AI ช่วยเกลาข้อความของ Report แบบเลือกใช้ได้ (Rephrase), แปลงข้อมูลเป็น Vector สำหรับคำนวณความคล้ายกับ Ticket เดิม (ร่วมกับ Keyword Matching), จำแนก Category, ประเมิน Severity และสรุปรวมเนื้อหาจาก Report ทั้งหมดใน Ticket เพื่อเสนอ `Ticket Title` และ `Ticket Description` แต่ไม่ตัดสินใจเชิงปฏิบัติการแทนมนุษย์ Reviewer ตรวจผลและยืนยันก่อนข้อมูลกลายเป็น Ticket สาธารณะ หาก AI ใช้งานไม่ได้ ผู้ใช้ยังส่ง Report ได้และ Reviewer ทำงานต่อได้
+```text
+Ticket 1 ──────── 1..* Confirmed Report
+```
 
-### 1.3 ผลลัพธ์ที่ระบบมุ่งสร้าง
-
-* มีช่องทางกลางที่ค้นหาและติดตามปัญหาที่เกิดขึ้นในพื้นที่ได้
-* ลดภาระการคัดแยกและจัดกลุ่มข้อมูลด้วยมือ โดยยังคงการตรวจสอบของ Reviewer
-* รวมรายงานซ้ำตามเหตุการณ์โดยไม่สูญเสีย Report แต่ละรายการ
-* เปิดเผยข้อมูลปัญหาที่ยืนยันแล้วอย่างโปร่งใส โดยไม่เปิดข้อมูลส่วนบุคคลที่ไม่จำเป็น
-* สร้างข้อมูลเชิงประวัติที่แยกจำนวน Ticket, Report และผู้ได้รับผลกระทบอย่างถูกต้อง
-
-### 1.4 ขอบเขต MVP โดยสรุป
-
-MVP จำกัดที่วิทยาเขตบางเขน ใช้ Google OAuth สำหรับการเข้าสู่ระบบ (และออกแบบรองรับการเปลี่ยนไปใช้ KU-ALL SSO ในระยะถัดไป) รองรับรายงานพร้อมภาพ 1–5 ภาพ (ลบข้อมูล EXIF เพื่อความเป็นส่วนตัว) และตำแหน่ง การวิเคราะห์ AI จากข้อความ/ภาพ/ตำแหน่ง การ Review ยืนยัน และอัปเดตสถานะ `RESOLVED` โดย Reviewer, Public Feed/Map, Email แจ้งเตือนผลการตรวจสอบและเมื่อปัญหาได้รับการแก้ไข และ Dashboard/การจัดการข้อมูลหลัก ทั้งนี้ **กระบวนการส่งต่อใบงานและระบบปฏิบัติการซ่อมแซมของหน่วยงาน (Department Workflow)**, การให้ Feedback หลังซ่อม, SLA, วิดีโอ, AI Assistant, Heatmap ขั้นสูง และ KU-ALL SSO อยู่นอกขอบเขต MVP *(รายละเอียดในบทที่ 5)*
+| Dimension | Report | Ticket |
+| --- | --- | --- |
+| **Represents** | One Reporter's submission at a point in time | One verified campus incident/problem tracked operationally |
+| **Core Data** | Reporter, Description, 1–5 Images, Location + Map Point, Version, Report Status, AI Analysis Runs | Ticket Number, Title, Summary, Category, Severity, Canonical Location, Responsible Departments, Ticket Status, Public Activity Timeline |
+| **Cardinality** | Many Reports can describe the same incident; each confirmed Report links to **exactly one** Ticket (`BR-GEN-005`) | Must contain **at least one** confirmed Report (`BR-GEN-006`) |
+| **Deduplication** | Duplicate detection **never deletes or overwrites** original Reports; it groups them under one Ticket | Aggregates evidence and counts while preserving every linked Report |
+| **Pre-Confirmation Draft** | `DRAFT` and `PENDING_REVIEW` are never public | On AI No Match, the system prepares an unpublished `Ticket Candidate` without operational status until Reviewer confirms (`BR-TKT-009`) |
 
 ---
 
-## 2. บริบท ปัญหา และคุณค่าทางธุรกิจ
+## 2. Problem Statement & Objectives
 
-### 2.1 สภาพปัญหาปัจจุบัน
+### 2.1 Current Pain Points
 
-ปัจจุบันการแจ้งเหตุกระจายอยู่หลายช่องทาง เช่น แจ้งเจ้าหน้าที่ โทรศัพท์ อีเมล และ Social Media ส่งผลให้ข้อมูลไม่ครบถ้วน รายงานซ้ำไม่ถูกรวมเป็นเรื่องเดียวกัน ผู้แจ้งไม่ทราบว่าเรื่องของตนได้รับการรับทราบหรือคัดกรองแล้วหรือไม่ และผู้บริหารเห็นภาพรวมหรือแนวโน้มของปัญหาในพื้นที่ได้ยาก นอกจากนี้ยังขาดช่องทางให้ผู้ได้รับผลกระทบแสดงจำนวนโดยไม่ต้องเขียน Report ซ้ำ
+1. Issue reports are fragmented across direct staff contact, phone, email, LINE, and social media.
+2. Reporters do not know which university department owns a given issue.
+3. Submissions frequently lack photos or precise location data.
+4. Multiple people report the same incident without grouping or deduplication.
+5. Staff must manually triage, categorize, and route issues.
+6. Reporters lack visibility into progress and resolution evidence.
+7. Departments and Administrators lack unified operational and spatial visibility.
+8. Historical issue data is not structured for preventive maintenance planning.
+9. Affected campus users who do not wish to write a full report have no lightweight way to signal impact.
 
-### 2.2 ปัญหาที่ระบบรับและไม่รับ
+### 2.2 Platform Objectives
 
-* **อยู่ในขอบเขต:** ปัญหาด้านพื้นที่ ทรัพย์สิน โครงสร้างพื้นฐาน และบริการส่วนกลาง เช่น ไฟฟ้า อาคาร ห้องเรียน ห้องน้ำ อุปกรณ์ อินเทอร์เน็ต ความสะอาด น้ำ/ท่อระบายน้ำ ลิฟต์ ความปลอดภัย การจราจร และที่จอดรถ
-* **อยู่นอกขอบเขต:** 
-  1. ข้อร้องเรียนส่วนบุคคลเกี่ยวกับอาจารย์ บุคลากร นักศึกษา การคุกคาม ความขัดแย้งระหว่างบุคคล หรือเรื่องวินัย
-  2. **การส่งต่อใบงานเพื่อลงมือแก้ไขซ่อมแซม การบันทึกผลการซ่อม และการตรวจรับงานโดยหน่วยงานปฏิบัติการ (Department Operations)**
-
-### 2.3 คุณค่าที่คาดหวัง
-
-| คุณค่า | กลไกในระบบ |
-| :--- | :--- |
-| **รวมศูนย์ข้อมูล** | Report และ Ticket อยู่ในระบบเดียว พร้อมสถานะ ประวัติ และตำแหน่ง |
-| **ลดงานคัดแยกซ้ำ** | AI จัดเตรียมข้อเสนอและค้นหา Ticket ที่ยืนยันแล้วซึ่งใกล้เคียง |
-| **คงการกำกับโดยมนุษย์** | Reviewer ยืนยันหรือแก้ผล AI ก่อนเผยแพร่ข้อมูลจริง |
-| **โปร่งใส** | Ticket ที่ Confirm แล้วแสดงบน Public Feed และ Timeline |
-| **วิเคราะห์เพื่อปรับปรุง** | Dashboard แยก Ticket/Report/ผู้ได้รับผลกระทบ และเวลาในการคัดกรอง |
-
----
-
-## 3. เป้าหมายและตัวชี้วัดความสำเร็จ
-
-ตัวชี้วัดในตารางนี้เป็น Metrics ที่ระบบต้องจัดเก็บเพื่อให้เห็นประสิทธิภาพการรับแจ้งและการคัดกรองข้อมูล
-
-| เป้าหมาย | หลักฐาน/Metric ที่ระบบต้องรองรับ | หมายเหตุ |
-| :--- | :--- | :--- |
-| **รวมช่องทางแจ้งปัญหา** | จำนวน Report และ Ticket ในช่วงเวลา/หมวด/สถานที่ | แยกจำนวน Report จาก Ticket |
-| **ลดความล่าช้าในการตรวจสอบ** | Average Review Time | Submitted ถึง Reviewer Confirm |
-| **เข้าใจผลกระทบ** | Affected User Count | ไม่เท่ากับ Reporter Count โดยอัตโนมัติ |
-| **เห็นภาพรวมปัญหาในพื้นที่** | สัดส่วน Ticket แยกตาม Category, Severity และ Location | ใช้ข้อมูลจาก Ticket ที่ Confirmed แล้ว |
-
-> **ข้อเสนอเพื่อการกำกับโครงการ:** เจ้าของธุรกิจควรกำหนด baseline และ target หลังมีข้อมูลใช้งานจริง
+* Consolidate physical issue reporting for KU Bangkhen into a single transparent channel.
+* Use multimodal AI (description + images + location) as a **Decision Support System** for category classification, severity assessment, duplicate detection, department recommendation, and title/summary generation.
+* Preserve strict **human-in-the-loop** control: Reviewers verify and finalize every report and ticket decision; AI outages never block submission or review.
+* Coordinate multi-department work cleanly without primary-department ambiguity or individual staff assignment bottlenecks.
+* Provide public accountability through a Public Feed, Map, and Public Activity Timeline while protecting personal identity data and keeping clarification threads private.
+* Separate **Ticket Count**, **Report Count**, and **Affected User Count** across all analytics and dashboards.
 
 ---
 
-## 4. ผู้มีส่วนได้ส่วนเสียและบทบาท
+## 3. Stakeholders, Roles & Access Control
 
-ระบบมี 3 บทบาทหลัก โดยแต่ละบทบาทมีขอบเขตสิทธิ์ที่ชัดเจน
+The platform defines **4 roles**:
 
-| บทบาท | ความต้องการหลัก | สิทธิ์/ขอบเขตโดยสรุป |
-| :--- | :--- | :--- |
-| **Reporter** | ดูปัญหาที่ผ่านการยืนยันแล้ว, แจ้งง่าย, ติดตามสถานะการตรวจสอบและการแก้ไข และให้ข้อมูลเพิ่ม | อ่าน Ticket ที่เผยแพร่แล้ว (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`), Feed, Map, Timeline; สร้าง/แก้/ถอน Report ที่ยัง `PENDING`, ติดตาม Ticket ของตน, กด `Mark Affected` และใช้ Private Thread *(เฉพาะ Ticket ที่ตนมี Confirmed Report)* |
-| **Reviewer** | คัดกรอง ควบคุมคุณภาพข้อมูล จัดกลุ่ม อนุมัติเผยแพร่ และอัปเดตสถานะเมื่อแก้ไขแล้ว | ตรวจ Report, ปรับ AI Result, Confirm/Reject, เลือก Ticket หรือสร้าง Ticket ใหม่, ขอข้อมูลเพิ่มเติมบน Ticket ที่ยืนยันแล้ว และเปลี่ยนสถานะ Ticket เป็น `RESOLVED` เมื่อปัญหาได้รับการแก้ไข |
-| **Administrator** | กำกับข้อมูลหลัก สิทธิ์ และภาพรวมระบบ | จัดการ User/Role/Permission, Category, Location, Configuration และ System Analytics |
+| Role | Responsibilities & Capabilities | Key Constraints |
+| --- | --- | --- |
+| **Reporter** | Save/resume `DRAFT` reports, submit `PENDING_REVIEW` reports, edit/cancel while `PENDING_REVIEW`, add a report from an Active Ticket, track tickets, participate in private Additional Information Thread (only on tickets where they have a Confirmed Report), toggle `Mark Affected` on Active Tickets, and submit/edit multi-dimensional Feedback after `RESOLVED`. | Cannot edit/cancel after `CONFIRMED` or `REJECTED`. Does not manually choose Category, Severity, or Department on submission. |
+| **Reviewer** | Central triage authority. Inspect `PENDING_REVIEW` reports (latest version only), override AI results (Category, Severity, Departments, Title/Summary, Matching), confirm into an Existing Active Ticket or confirm a Ticket Candidate as a New Ticket, reject with mandatory reason, correct Confirmed Reports (triggering ticket re-evaluation), add/remove Responsible Departments on Active Tickets, and request additional information (`WAITING_INFORMATION`). | **Separation of Duties (`BR-ROLE-004`):** Cannot review, confirm, reject, or manage any Report/Ticket where they are a Reporter. |
+| **Department Staff** | View Department Work Dashboard for their department's Active Tickets, start work (`CONFIRMED → IN_PROGRESS`), request additional information (`WAITING_INFORMATION`), resume work (`WAITING_INFORMATION → IN_PROGRESS`), record operational actions and evidence on Public Activity Timeline, confirm their department's completion, and view department-scoped analytics. | Belongs to **at most 1 Department** (`BR-ROLE-003`). **No individual staff assignment** (`BR-TKT-012`). **Separation of Duties (`BR-ROLE-005`):** Cannot perform operational actions on Tickets where they are a Reporter. |
+| **Administrator** | Manage Users, Account Status, Roles, Permissions, Username policy, Categories, Departments, Campus Locations, System Configuration, and System-wide Analytics. | **Exclusive Role (`BR-ROLE-002`):** Cannot hold `REPORTER`, `REVIEWER`, or `DEPARTMENT_STAFF` on the same account. Cannot operate on Tickets (`BR-ROLE-007`). |
 
-### 4.1 หลักสิทธิ์ที่ใช้ร่วมกันทุกบทบาท
+### 3.1 Cross-Cutting Access & Privacy Principles
 
-* บัญชีหนึ่งมีได้หลาย Role (เช่น `Reporter` + `Reviewer`) แต่ `Administrator` เป็น Exclusive Role
-* **Separation of Duties:** ห้ามผู้ใช้ที่เป็น Reporter ของ Report/Ticket ใช้ Role Reviewer เพื่อตรวจสอบ ยืนยัน หรือปฏิเสธรายการของตนเอง
-* Reviewer เป็นผู้ตรวจสอบและตัดสินใจขั้นสุดท้ายของระบบ
-* การอ่านข้อมูลที่เผยแพร่แล้วบนหน้าสาธารณะ (Public Read) ไม่ต้อง Login; การเขียนหรือโต้ตอบ (สร้าง/แก้/ถอน Report, กด `Mark Affected`, ตอบ Private Thread) ต้อง Login และผ่านการตรวจสิทธิ์ตามเจ้าของข้อมูล
-
----
-
-## 5. ขอบเขตระบบและ MVP
-
-### 5.1 สิ่งที่รวมใน MVP
-
-| ขอบเขต | ความสามารถ |
-| :--- | :--- |
-| **พื้นที่และการเข้าสู่ระบบ** | KU บางเขน; Google OAuth (ออกแบบรองรับ KU-ALL SSO ในระยะถัดไป); Username สาธารณะ; Public Read ไม่ต้อง Login |
-| **Reporter** | สร้าง/แก้/ถอน Report ที่ยัง `PENDING`, ภาพ, Map Point, Public Feed, Thread, Email แจ้งผลตรวจและเมื่อแก้ไขแล้ว, Mark Affected |
-| **AI** | Rephrase ข้อความ Report (Optional), แปลง Report/Ticket เป็น Vector (สำหรับ Cosine Similarity + Keyword Matching), Classification, Severity (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`), สรุป `Ticket Title`/`Ticket Description` จาก Reports ทั้งหมด, Confidence, Fallback |
-| **Reviewer** | Review, แก้ผล AI, ยืนยัน Ticket ใหม่/เดิม, Reject พร้อมเหตุผล, Request Information (เฉพาะบน Ticket ที่ยืนยันแล้ว), เปลี่ยนสถานะ Ticket เป็น `RESOLVED` |
-| **Administrator** | จัดการ User/Role/Permission, Category, Location; System Dashboard และ Analytics |
-| **แผนที่** | เลือกตำแหน่ง Report และแสดง Ticket บนแผนที่แบบพื้นฐาน |
-
-### 5.2 สิ่งที่อยู่นอก MVP (Out of Scope)
-
-**กระบวนการส่งต่อใบงานและระบบปฏิบัติการซ่อมแซมของหน่วยงาน (Department Role/Workflow, Work Dashboard, สถานะกำลังซ่อม `IN_PROGRESS`/`CANNOT_RESOLVE` และการบันทึกหลักฐานการซ่อมโดยช่าง)**; การประเมินความพึงพอใจหลังซ่อม (Feedback); Video Upload/Analysis; AI Assistant; Detailed Heatmap และ Advanced Spatial Analytics; Predictive Maintenance; Recurring Ticket Link; SLA/Escalation; Internal Note; Public Comment Discussion; Multi-University/Multi-Tenant; และ KU-ALL SSO รวมถึง Authentication Provider อื่น (เลื่อนไปเชื่อมต่อในระยะถัดไป)
-
-### 5.3 ขอบเขตเชิงปริมาณที่ระบุไว้
-
-| รายการ | ข้อกำหนด |
-| :--- | :--- |
-| **ภาพต่อ Report** | 1–5 ภาพ; ภาพละไม่เกิน 10 MB; PNG/JPG/JPEG; ต้องลบ EXIF Metadata ก่อนจัดเก็บ/เผยแพร่ |
-| **Public Feed** | เรียงตาม Confirmed Time จากใหม่ไปเก่า; รองรับการแบ่งหน้า (25/50/100 รายการต่อหน้า) |
-| **Retention** | Report ที่ถูกถอนก่อนตรวจจะถูกลบออกจากคิวตรวจโดยเก็บร่องรอยไว้ใน Audit Log; `CONFIRMED`/`REJECTED` ไม่มี Retention Rule ในระยะ MVP |
-| **พื้นที่** | วิทยาเขตบางเขนในระยะ MVP |
+* **Multi-Role Accounts:** A single non-admin account may hold multiple operational roles (e.g., `REPORTER` + `REVIEWER`, or `REPORTER` + `DEPARTMENT_STAFF`), subject to Separation of Duties (`BR-ROLE-001`, `BR-ROLE-004`..`006`).
+* **Public Read vs. Authenticated Write:** Public Feed, Ticket Detail, Public Report Detail, Campus Map, Public Activity Timeline, and Public Reporter Profile are readable **without login** (`BR-AUTH-003`). All write/interactive actions require authentication (`BR-AUTH-002`).
+* **Authentication Provider:** MVP uses **Google OAuth 2.0 (`@ku.th`)** as the initial authentication provider (`BR-AUTH-001`), implemented behind a **pluggable Auth Provider boundary** (`BR-AUTH-004`) so other providers (such as KU-ALL SSO) can be added in the future without modifying domain logic.
+* **Public Identity & Privacy:** Every user has a unique, mutable `Username` displayed on public reports and profiles; changing a username updates display retroactively across historical reports (`BR-AUTH-005`..`009`). Real name, email, student ID, and academic department must never be exposed publicly (`BR-AUTH-010`). Uploaded images must have EXIF metadata stripped prior to storage/publication.
 
 ---
 
-## 6. เส้นทางของเรื่องแจ้งตั้งแต่ต้นจนจบ
+## 4. End-to-End Lifecycle & Workflow
 
-### 6.1 ภาพรวมการไหลของงาน
+### 4.1 Report Lifecycle (`BR-RLC-001`..`010`)
 
-เรื่องแจ้งหนึ่งเรื่องเดินทางผ่าน 6 ขั้นตอน ตั้งแต่ผู้ใช้แจ้งปัญหา คัดกรองและเผยแพร่ จนถึงเมื่อ Reviewer อัปเดตสถานะเป็น `RESOLVED` หลังปัญหาได้รับการแก้ไข
+```text
+DRAFT ──(Submit)──▶ PENDING_REVIEW
+                        ├──(Reviewer Confirm)──▶ CONFIRMED   [Final]
+                        ├──(Reviewer Reject)───▶ REJECTED    [Final]
+                        └──(Reporter Cancel)───▶ CANCELLED   [Final Workflow State]
+```
 
-| ขั้น | ผู้ดำเนินการ | ผลลัพธ์/การควบคุม |
-| :--- | :--- | :--- |
-| **1** | Reporter | กรอก Title + Description, เลือก Location และแนบภาพ (เลือกกด AI Rephrase เกลาข้อความได้) แล้วกด Submit เพื่อส่งตรวจ |
-| **2** | ระบบ + AI | ตั้งสถานะ `PENDING`; เรียก AI แปลง Report เป็น Vector, จำแนก Category และประเมิน Severity; Backend นำ Vector (Cosine Similarity) ร่วมกับ Keyword Matching ไปค้นหา Ticket ที่ยังเปิดอยู่ (`CONFIRMED`/`WAITING_INFO`) |
-| **3** | Reviewer | ตรวจเวอร์ชันล่าสุด; แก้ข้อเสนอ AI; เลือกผูก Ticket เดิมหรือสร้าง Ticket ใหม่ (AI สรุปข้อเสนอ Title/Description ของ Ticket จาก Reports ทั้งหมดให้ตรวจยืนยัน) หรือ Reject พร้อมเหตุผล |
-| **4** | ระบบ | Confirm: Report ผูก Ticket หนึ่งรายการ; หากสร้างใหม่ Ticket จะเกิดขึ้นในสถานะ `CONFIRMED` และเปิดเผยบน Public Feed/Map ทันที; ส่งอีเมลแจ้ง Reporter |
-| **5** | Reviewer / Reporter / ผู้ได้รับผลกระทบ | ติดตาม Ticket ที่เผยแพร่แล้ว, กด Mark Affected (บน Ticket ที่ยังเปิดอยู่), หากต้องการข้อมูลเพิ่ม Reviewer เปลี่ยนเป็น `WAITING_INFO` เพื่อสื่อสารผ่าน Private Thread และเมื่อปัญหาได้รับการแก้ไขแล้ว Reviewer เปลี่ยนเป็น `RESOLVED` พร้อมส่งอีเมลแจ้ง Reporter |
-| **6** | Administrator | วิเคราะห์สถิติข้อมูลการแจ้งปัญหา สถานะการแก้ไข และประสิทธิภาพการคัดกรองผ่าน Dashboard |
+* **`DRAFT`:** Persistent state allowing Reporters to resume later. Purged automatically 30 days after `created_at` (`BR-RET-001`).
+* **`PENDING_REVIEW`:** Created on submission (requires Description, Location + Map Point, and 1–5 images ≤10 MB in `.png`/`.jpg`/`.jpeg`). Reporter may edit or cancel until Reviewer confirms/rejects. Every edit increments `version`, marks prior AI output outdated, and triggers AI re-analysis (`BR-RPT-008`..`012`).
+* **`CONFIRMED`:** Final state for the Report; linked to exactly one Ticket. Report status does not change as Ticket status evolves (`BR-RLC-007`).
+* **`REJECTED`:** Final state; requires a mandatory rejection reason; never linked to a Ticket; never public (`BR-RLC-008`, `BR-REV-007`).
+* **`CANCELLED`:** Final workflow state used instead of immediate hard deletion to preserve audit trails. Purged automatically 30 days after `cancelled_at` (`BR-RLC-009`, `BR-RET-002`).
 
-### 6.2 ขั้นที่ 1: Reporter สร้าง Report
+### 4.2 Ticket Lifecycle (`BR-TKT-001`..`013`, `BR-STA-001`..`011`)
 
-เส้นทางเริ่มที่ผู้ใช้ Login ผ่าน Google OAuth แล้วกรอกรายละเอียด แนบภาพ และระบุตำแหน่ง จากนั้นกด Submit เพื่อส่งตรวจเข้าสู่สถานะ `PENDING`
+* **Active Tickets:** `CONFIRMED`, `IN_PROGRESS`, `WAITING_INFORMATION`
+* **Final Ticket:** `RESOLVED` *(every Ticket terminates at `RESOLVED`; there is no `CANNOT_RESOLVE` state)*
 
-| ข้อกำหนด | เกณฑ์การยอมรับโดยสรุป |
-| :--- | :--- |
-| **บัญชีและตัวตน** | Login ผ่าน Google OAuth (ออกแบบรองรับ KU-ALL SSO ในระยะถัดไป); ตั้ง/เปลี่ยน Username ที่ไม่ซ้ำ; Public Identity แสดง Username ปัจจุบันแม้เป็น Report เก่า |
-| **สร้าง Report** | **Title และ Description (ต้องกรอกทั้งคู่)**, รูปภาพ 1–5 ภาพ ภาพละ ≤10MB PNG/JPG/JPEG (ลบ EXIF Metadata ก่อนจัดเก็บ/เผยแพร่) และ Map Point เป็นข้อมูลที่ต้องมี |
-| **AI Rephrase (Optional)** | เมื่อกรอกทั้ง Title และ Description แล้ว ผู้ใช้สามารถเลือกให้ AI ช่วยเกลาข้อความให้ชัดเจนและสุภาพได้โดยไม่แต่งเติมข้อเท็จจริง ผู้ใช้ตรวจสอบและตัดสินใจก่อนส่งเองได้ (หากยังไม่กรอกครบจะไม่เปิดให้ Rephrase/ส่ง และหาก AI ขัดข้องยังส่งได้ปกติ) |
-| **ระบุตำแหน่ง** | เลือกชื่อสถานที่ภายในมหาวิทยาลัยหรือปัก Map Pin; ทุก Report ต้องมี Map Point |
-| **แก้/ถอนก่อน Review จบ** | แก้ Report ในสถานะ `PENDING` ได้จนกว่า Reviewer จะ Confirm/Reject (การแก้จะเพิ่ม Version และวิเคราะห์ AI ใหม่); ถอน/ยกเลิกก่อนตรวจได้ โดยระบบจะลบออกจากคิวตรวจและบันทึก Audit Log |
-| **ดูผล AI เบื้องต้น** | เห็นผล AI เบื้องต้นเมื่อมี; AI Failure ไม่ขัดขวางการ Submit/Review |
-| **เพิ่ม Report ใน Ticket** | จากหน้า Ticket ที่เผยแพร่แล้ว ระบบเสนอ Target Ticket; Reviewer ยังคงเลือก Ticket อื่น/ใหม่ หรือ Reject ได้ |
+```text
+Ticket Candidate (Unpublished)
+  └──(Reviewer Confirm)──▶ CONFIRMED
+                              ├──(Department Start)──────────────▶ IN_PROGRESS
+                              └──(Reviewer/Dept Request Info)────▶ WAITING_INFORMATION
 
-#### วงจรสถานะและ Transition ของ Report (`PENDING`, `CONFIRMED`, `REJECTED`)
+IN_PROGRESS
+  ├──(Reviewer/Dept Request Info)────────────────────────────────▶ WAITING_INFORMATION
+  └──(System: All Responsible Departments Complete)──────────────▶ RESOLVED       [Final]
 
-| จากสถานะ | ไปสถานะ | ผู้กระทำ | เงื่อนไข / ผลที่เกิดขึ้น |
-| :--- | :--- | :--- | :--- |
-| *(ใหม่)* | **PENDING** | Reporter | ส่ง Report พร้อมข้อมูลบังคับ → ลบ EXIF, ตั้ง `version = 1`, ส่งวิเคราะห์ AI |
-| **PENDING** | **PENDING** *(แก้ไข)* | Reporter *(เจ้าของ)* | แก้ไขข้อมูลก่อนตรวจเสร็จ → เพิ่ม `version + 1` และวิเคราะห์ AI ใหม่ |
-| **PENDING** | *(ลบ / ถอนเรื่อง)* | Reporter *(เจ้าของ)* | ถอนเรื่องก่อนตรวจ → ลบ Report ออกจากคิวตรวจ และบันทึก Audit Log |
-| **PENDING** | **CONFIRMED** | Reviewer *(ไม่ใช่เจ้าของ)* | ตรวจบนเวอร์ชันล่าสุด + เลือกผูก Ticket เดิมหรือสร้าง Ticket ใหม่ → ผูก Report เข้า Ticket 1 รายการ, ส่งอีเมลแจ้ง Reporter, บันทึก Audit Log *(Final)* |
-| **PENDING** | **REJECTED** | Reviewer *(ไม่ใช่เจ้าของ)* | ตรวจบนเวอร์ชันล่าสุด + ระบุเหตุผล → ไม่ผูก Ticket, ไม่ Public, บันทึก Audit Log *(Final)* |
+WAITING_INFORMATION
+  ├──(Department Resume)─────────────────────────────────────────▶ IN_PROGRESS
+  └──(System: Remaining Departments Complete after Dept Removal)─▶ RESOLVED       [Final]
+```
 
-### 6.3 ขั้นที่ 2: AI วิเคราะห์เบื้องต้น
-
-เมื่อ Submit ระบบตั้งสถานะ `PENDING` แล้วส่ง Report ให้ AI วิเคราะห์ AI ทำหน้าที่เป็น Decision Support System กล่าวคือผลวิเคราะห์ต้องแสดงให้ผู้ตรวจสอบประเมินได้ และต้องมีทางทำงานต่อด้วยคนเมื่อระบบ AI ขัดข้อง
-
-| ความสามารถ | เกณฑ์การยอมรับโดยสรุป |
-| :--- | :--- |
-| **วิเคราะห์หลายสื่อ** | ใช้ Title, Description, รูปภาพ และ Location ร่วมกัน; Video ไม่อยู่ใน MVP |
-| **เกลาข้อความ Report (Rephrase)** | ทำงานแบบ Optional เมื่อผู้ใช้กดเลือกหลังกรอก Title และ Description แล้ว เพื่อปรับข้อความให้ชัดเจนขึ้นโดยไม่เปลี่ยนข้อเท็จจริง |
-| **จำแนกปัญหา** | รับรายการ Category ที่เปิดใช้งานอยู่จากระบบ และวิเคราะห์ว่าใกล้เคียงกับหมวดหมู่ใดมากที่สุดพร้อม Confidence และ Alternative Category; Category จัดการโดย Administrator |
-| **ประเมิน Severity** | AI ประเมินคะแนนย่อย 4 ปัจจัย (`safety_risk`, `operational_impact`, `affected_scope`, `urgency` ระดับ 0–3) แล้วคำนวณระดับความรุนแรง (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`) ด้วยสูตรถ่วงน้ำหนักแบบแน่นอนพร้อม Safety Override (`safety_risk = 3 → CRITICAL`), `risk_score`, Confidence และเหตุผล; Reviewer กำหนดค่า Final |
-| **ไม่อนุมานความรุนแรงจากจำนวนล้วน** | จำนวน Report ที่มากไม่ทำให้ Severity สูงขึ้นโดยอัตโนมัติ |
-| **แปลงเป็น Vector เพื่อหาเหตุการณ์ซ้ำ** | AI แปลง Report เป็น Vector ส่งกลับให้ Backend คำนวณความคล้ายด้วย **Cosine Similarity ร่วมกับ Keyword Matching** เทียบกับ Ticket ที่ยังเปิดอยู่ (`CONFIRMED`/`WAITING_INFO`) โดย Vector ของ Ticket คำนวณแบบผสมถ่วงน้ำหนักระหว่าง Vector ของข้อความสรุป Ticket และค่าเฉลี่ย (Centroid) ของ Report Vectors ใน Ticket นั้น |
-| **สร้างหัวข้อ/รายละเอียดของ Ticket** | เมื่อสร้าง Ticket ใหม่หรือรวม Report เพิ่มเข้า Ticket เดิม AI นำเนื้อความของ **Report ทั้งหมดใน Ticket นั้น** มาสรุปรวมเป็นข้อเสนอ `Ticket Title` และ `Ticket Description` ให้ Reviewer ตรวจ/แก้ก่อน Confirm |
-| **ไม่เปลี่ยนข้อมูล Final เอง** | เมื่อมี Report เพิ่ม AI อาจคำนวณข้อเสนอ `Ticket Title`/`Ticket Description` ใหม่ได้ แต่ห้ามเปลี่ยน Final Ticket Data โดยไม่มี Reviewer ตรวจยืนยัน |
-| **ความทนทานเมื่อ AI ขัดข้อง** | Timeout/Error/Unavailable/วิเคราะห์ไม่ได้ ต้องบันทึก Report ได้; Reviewer ทำ Classification, Severity, Title/Description และ Duplicate Review เองได้ |
-| **ไม่มีอำนาจปฏิบัติการ** | AI ไม่ Confirm, Reject, Delete, ซ่อน Report/Ticket หรือสร้าง Ticket ด้วยตนเอง |
-| **Retry** | รองรับการ Retry ตามกลไกระบบ; ไม่เป็นเงื่อนไขบังคับก่อน Reviewer ทำงาน |
-
-* **กรณี AI ล้มเหลว:** ระบบยังบันทึก Submit สำเร็จและคง Report ใน `PENDING` ได้ Reviewer กำหนดข้อมูลที่จำเป็นและตรวจจับซ้ำด้วยตนเองได้
-* **กรณีไม่พบ Ticket ที่ใกล้เคียง:** ระบบเก็บผลแนะนำ Category, Severity และ Vector ไว้กับ Report เพื่อให้ Reviewer ตรวจสอบและสร้าง Ticket ใหม่ (โดยให้ AI ช่วยสรุปข้อเสนอ `Ticket Title`/`Ticket Description` ได้) เมื่อ Confirm
-
-#### ระดับความรุนแรงของปัญหา (Severity Scale)
-
-ทั้ง AI และ Reviewer ใช้ระดับ Severity เดียวกัน 4 ระดับ ดังนี้ (จำนวน Report ไม่ทำให้ระดับสูงขึ้นโดยอัตโนมัติ):
-
-| ระดับ | นิยามและเกณฑ์อ้างอิง |
-| :--- | :--- |
-| **LOW** | ผลกระทบจำกัด ไม่กระทบความปลอดภัยหรือการใช้งานหลัก เช่น ความชำรุดเล็กน้อยหรือความสวยงาม |
-| **MEDIUM** | กระทบความสะดวกหรือการใช้งานบางส่วน แต่ยังมีทางเลือกทดแทน เช่น ไฟบางจุดดับหรืออุปกรณ์บางชิ้นชำรุด |
-| **HIGH** | กระทบการใช้งานหลักของพื้นที่ส่วนกลางหรือผู้ใช้จำนวนมาก เช่น น้ำไม่ไหล อินเทอร์เน็ตล่มทั้งอาคาร หรือลิฟต์ใช้งานไม่ได้ |
-| **CRITICAL** | มีความเสี่ยงอันตรายต่อความปลอดภัย ชีวิต หรือทรัพย์สินโดยตรง ต้องรับทราบเร่งด่วน เช่น ไฟฟ้าลัดวงจร/ไฟรั่ว โครงสร้างชำรุดเสี่ยงถล่ม หรือน้ำท่วมขังบริเวณอุปกรณ์ไฟฟ้า |
-
-### 6.4 ขั้นที่ 3: Reviewer ตรวจสอบและตัดสินใจ
-
-ผลของ AI ถูกส่งต่อให้ Reviewer ซึ่งเป็นผู้ตัดสินใจสุดท้ายของระบบ Reviewer เห็นข้อมูลที่ต้องใช้ตัดสินใจครบในหน้า Incoming Review และต้องตรวจจากข้อมูลเวอร์ชันล่าสุดเสมอ
-
-| ข้อกำหนด | เกณฑ์การยอมรับโดยสรุป |
-| :--- | :--- |
-| **Incoming Review** | เห็น Report ID, Username, รายละเอียด, ภาพ, Location, Version/Last Updated, AI Result/Confidence, รายการ Ticket เดิมที่ใกล้เคียง และสถานะการวิเคราะห์ |
-| **ตรวจเวอร์ชันล่าสุด** | Confirm/Reject ได้จากข้อมูลเวอร์ชันล่าสุดเท่านั้น; หาก Report ถูกแก้หลังเปิด Review ต้องตรวจใหม่ |
-| **แก้ AI Result** | กำหนด Category, Severity, Title/Description ของ Ticket และ Ticket Matching ใหม่ได้ |
-| **ยืนยันการจับคู่** | เลือกผูกกับ Ticket เดิมที่ระบบแนะนำหรือรายการอื่น หรือยืนยันสร้าง Ticket ใหม่จากข้อมูลที่ตรวจแล้ว |
-| **Reject** | Reject Report สถานะ `PENDING` พร้อม Reason; Report เป็น Final, ไม่ผูก Ticket, ไม่ Public และบันทึก Audit Log |
-| **ข้อมูลก่อน Confirm Ticket ใหม่** | ต้องมี Category, Severity, Matching Decision และ Title/Description ครบถ้วน |
-| **ขอข้อมูลเพิ่มเติม** | เกิดขึ้นได้เฉพาะบน **Ticket ที่ `CONFIRMED` แล้วเท่านั้น** (ไม่เกิดกับ Report ในสถานะ `PENDING`) เพื่อรองรับกรณีแจ้งเรื่องต่อผู้มีอำนาจแล้วต้องการรายละเอียดเพิ่มเติมจาก Reporter |
-| **อัปเดตสถานะแก้ไขแล้ว (`RESOLVED`)** | Reviewer สามารถเปลี่ยนสถานะ Ticket (`CONFIRMED` หรือ `WAITING_INFO`) เป็น `RESOLVED` พร้อมบันทึกสรุปสั้น ๆ (ไม่บังคับ) เมื่อได้รับการยืนยันว่าปัญหาถูกแก้ไขแล้ว และส่งอีเมลแจ้ง Reporter |
-| **ข้อจำกัดตนเอง** | ห้าม Review/Confirm/Reject หรือเปลี่ยนสถานะ `RESOLVED` รายการที่ตนเป็น Reporter; ห้ามดำเนินการกับรายการของตนเอง |
-
-> **กรณี Report ซ้ำ:** การตรวจซ้ำเป็นการจัดกลุ่ม ไม่ใช่การลบ Report ใหม่ยังคงเป็นข้อมูลแยกและมี Reporter/รายละเอียด/ภาพของตนเอง เมื่อ Reviewer ยืนยันว่าเป็นเหตุการณ์เดียวกัน Report นั้นจึงผูกกับ Ticket เดิมที่ยังเปิดอยู่
-
-### 6.5 ขั้นที่ 4–5: หลังการยืนยัน ผู้ใช้ติดตามและมีส่วนร่วม
-
-เมื่อ Reviewer Confirm แล้ว Report ผูกกับ Ticket หนึ่งรายการ และหากเป็นการสร้างใหม่ Ticket จะเกิดขึ้นในสถานะ `CONFIRMED` และเปิดเป็น Public ทันที ผู้ใช้สามารถติดตามและมีส่วนร่วมได้ดังนี้
-
-| ข้อกำหนด | เกณฑ์การยอมรับโดยสรุป |
-| :--- | :--- |
-| **ติดตาม/ข้อมูลเพิ่ม** | ติดตาม Ticket ที่เผยแพร่แล้ว (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`) และเข้าร่วม Private Thread เมื่อ Reviewer เปิด Request Additional Information บน Ticket นั้น (เฉพาะ Reporter ที่มี Confirmed Report ใน Ticket; ดูหัวข้อ 8.2) |
-| **Mark Affected** | ต้อง Login; หนึ่ง User ต่อ Ticket; สามารถกดยืนยันหรือยกเลิก (Unmark) ได้บน Ticket ที่ยังเปิดอยู่ (`CONFIRMED` และ `WAITING_INFO`) เท่านั้น (เมื่อเป็น `RESOLVED` จะคงยอดไว้เป็นข้อมูลประวัติ) |
-
-### 6.6 วงจรสถานะและ Transition ของ Ticket (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`)
-
-Ticket จะถูกสร้างขึ้นเมื่อ Reviewer ยืนยันสร้าง Ticket ใหม่เท่านั้น ดังนั้น Ticket ทุกรายการในระบบคือปัญหาที่ผ่านการยืนยันแล้วและแสดงบนระบบสาธารณะ
-
-| จากสถานะ | ไปสถานะ | ผู้เปลี่ยน/เงื่อนไข |
-| :--- | :--- | :--- |
-| *(สร้างใหม่)* | **CONFIRMED** | Reviewer ยืนยันสร้าง Ticket ใหม่พร้อมข้อมูลบังคับ (Category, Severity, Title/Description) → กลายเป็น Public ทันที และบันทึก Audit Log |
-| **CONFIRMED** | **WAITING_INFO** | Reviewer ขอข้อมูลเพิ่มเติมจาก Reporter บน Ticket (เช่น กรณีผู้มีอำนาจต้องการรายละเอียดเพิ่ม) → เปิด Private Thread และส่งอีเมลแจ้ง Reporter; Ticket ยังคงแสดงใน Public Feed/Map โดยระบุสถานะ `WAITING_INFO` |
-| **WAITING_INFO** | **CONFIRMED** | Reviewer ได้รับข้อมูลครบถ้วนและยืนยันข้อมูลล่าสุด → ปิดสถานะรอข้อมูลและบันทึก Audit Log |
-| **CONFIRMED** / **WAITING_INFO** | **RESOLVED** | Reviewer ยืนยันว่าปัญหาได้รับการแก้ไขแล้ว (ระบุหมายเหตุสรุปเพิ่มเติมได้) → ส่งอีเมลแจ้ง Reporter ของ Ticket, แสดงสถานะ `RESOLVED` บน Public Feed/Timeline และบันทึก Audit Log *(Final)* |
-
-*(หมายเหตุ: กรณี Reviewer ยืนยัน Report ใหม่ให้ผูกเข้ากับ Ticket เดิมที่ยังเปิดอยู่ สถานะของ Ticket เดิมจะไม่เปลี่ยนโดยอัตโนมัติ; หากปัญหาเกิดซ้ำหลัง Ticket เป็น `RESOLVED` แล้ว ให้สร้างเป็น Ticket ใหม่)*
+**Critical Ticket Invariants:**
+1. **`RESOLVED` is the sole Final Ticket status** (`BR-STA-009`). Every Ticket ends at `RESOLVED` via multi-department completion; `CANNOT_RESOLVE` is not part of the platform.
+2. Only **Active Tickets** can accept additional Reports, serve as AI Matching candidates, accept `Mark Affected` toggles, or have Responsible Departments modified (`BR-TKT-001`..`004`).
+3. **Final Tickets** never reopen and cannot be modified operationally (`BR-TKT-005`..`007`, `BR-STA-009`).
+4. **Multi-Department Resolution (`BR-DEP-001`..`007`):** A Ticket may have 1 or more Responsible Departments with **no Primary Department**. Completion is recorded per department. When all assigned departments complete (or when an incomplete department is removed by a Reviewer leaving all remaining departments complete), the System **immediately auto-transitions the Ticket to `RESOLVED`** with no additional Reviewer approval.
 
 ---
 
-## 7. กติกาทางธุรกิจหลักที่ต้องรักษา
+## 5. AI Capabilities & Guardrails (`BR-AI-001`..`020`)
 
-| ข้อกำหนด / ผลที่คาดหวัง | เกณฑ์การยอมรับโดยสรุป |
-| :--- | :--- |
-| **ศูนย์กลางรับปัญหา** | รับแจ้งปัญหาทางกายภาพ/บริการส่วนกลางใน KU บางเขน (ไม่รวมการส่งซ่อมและไม่รับเรื่องร้องเรียนส่วนบุคคล) |
-| **แยก Report กับ Ticket** | Report แทนการแจ้งจากบุคคลหนึ่งคน; Ticket แทนเหตุการณ์หนึ่งเรื่อง; Ticket มี Report อย่างน้อยหนึ่งรายการ; Report ที่ Confirm แล้วผูก Ticket เดียว |
-| **ไม่ทิ้งข้อมูลซ้ำ** | รายงานหลายรายการที่เกี่ยวข้องรวมใน Ticket โดยไม่ลบหรือแทนที่ Report แต่ละรายการ |
-| **มนุษย์ตัดสินใจ** | AI ให้คำแนะนำ; Reviewer ยืนยัน/ปฏิเสธ/แก้ไขก่อนเผยแพร่ข้อมูล |
-| **AI ไม่ขวางการแจ้ง** | Timeout/Error/Unavailable/วิเคราะห์ภาพไม่ได้ ต้องไม่ทำให้การบันทึก Report ล้มเหลว |
-| **สร้าง Ticket เมื่อยืนยันเท่านั้น** | ข้อเสนอของ AI เก็บไว้บน Report และระบบจะสร้าง Ticket จริงเมื่อ Reviewer กด Confirm เท่านั้น |
-| **แยกตัวชี้วัด** | Ticket Count, Report Count และ Affected User Count เป็นคนละ Metric |
-| **Public เฉพาะข้อมูลที่ยืนยัน** | Ticket ทุกรายการ (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`) เป็น Public; Report ที่ยังไม่ Confirm (`PENDING`), `REJECTED` และ Additional Information Thread ไม่เป็น Public |
-| **ควบคุมสิทธิ์ตามหน้าที่** | Google OAuth สำหรับการใช้งานที่ต้อง Login (ออกแบบรองรับ KU-ALL SSO ในระยะถัดไป); Public Read เปิดได้; Separation of Duties บังคับใช้ |
-| **เก็บร่องรอย** | การเปลี่ยนข้อมูล/สถานะ/ผล AI/การตัดสินใจ/การถอน Report ต้องระบุผู้กระทำและเวลา |
+AI operates strictly as a **Decision Support System**:
 
----
+* **Capabilities (MVP):**
+  1. Optional **Report Rephrasing** (`Rephrase`) to polish user-authored report text without inventing facts.
+  2. Multimodal **Category Classification** (from Description + Images + Location) with Confidence (`0–100%`) and optional Alternative Category.
+  3. **Severity Assessment** (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) using deterministic scoring at both Report and Ticket levels. High report volume must **never** automatically escalate Severity (`BR-AI-013`).
+  4. **Duplicate / Ticket Matching** comparing against **Active Tickets only**, using Images + Description + Location + extracted keywords and semantic embedding vectors (the AI Gateway produces unit-normalized report/ticket embeddings and keywords while `apps/api` computes cosine similarity + keyword matching + spatial/recency ranking). Returns either `MATCHED` (ranked Active Ticket candidates + similarity %) or `NO_MATCH` (prepares an unpublished `Ticket Candidate`).
+  5. **Multi-Department Recommendation** based on Category, Description, Location, Images, and Department responsibility scopes.
+  6. **Report Title** generation (short summary of each Report for Ticket Detail) and **Ticket Title / Summary (Description)** synthesis across all linked Reports.
+  7. **Ticket Re-evaluation (`UC-AI-003`):** Triggered when a Confirmed Report is added to or corrected on a Ticket. Produces recommendations and updated ticket vectors only; never mutates final Ticket fields without Reviewer approval (`BR-AI-014`, `BR-AI-015`).
+* **Hard Guardrails:** AI must **never** confirm, reject, resolve, delete, hide, or mutate final operational Tickets (`BR-AI-016`..`019`).
+* **Failure Resilience:** AI timeouts, errors, or outages must **never** block Report submission or manual Reviewer operations (`BR-GEN-008`, `BR-AI-020`).
 
-## 8. การเผยแพร่ การสื่อสาร และข้อมูลเพิ่มเติม
+### 5.1 Severity Scale
 
-### 8.1 Public Feed และรายละเอียด
-
-| ส่วน | พฤติกรรมที่กำหนด |
-| :--- | :--- |
-| **Feed** | ไม่ต้อง Login; แสดง Ticket ที่ผ่านการยืนยันแล้ว (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`); เรียง Confirmed Time ล่าสุดก่อน |
-| **ค้นหา** | Ticket ID, Title, Description, Location, Category |
-| **ตัวกรอง** | Status, Severity, Category, Date, Location |
-| **Pagination** | รองรับการแบ่งหน้า 25, 50 หรือ 100 รายการต่อหน้า |
-| **Ticket Detail** | ID, Title, Description, Status, Severity, Category, Location, Reports/Thumbnail/Report Title, Counts และ Public Timeline |
-| **Report Detail** | Reporter Username ปัจจุบัน, Title, Description, รูปภาพ และ Location |
-| **แผนที่** | เลือก Location ขณะสร้าง Report และแสดง Ticket; Heatmap ขั้นสูงไม่รวม |
-
-### 8.2 ข้อมูลเพิ่มเติมและความคิดเห็น
-
-Additional Information Thread เป็น Private โดย Reviewer ที่เกี่ยวข้อง และ Reporter ที่มี Confirmed Report ใน Ticket อ่านและโต้ตอบได้ ไม่มี General Public Comment และ Thread นี้ต้องไม่ปรากฏใน Public Feed หรือ Timeline
-
-### 8.3 Email Notification
-
-MVP ใช้ Email เฉพาะเหตุการณ์สำคัญของการตรวจสอบ ได้แก่:
-
-* Report Confirmed กับ Ticket ใหม่
-* Report Confirmed เข้าสู่ Ticket เดิม
-* WAITING_INFO (Reviewer ขอข้อมูลเพิ่มเติม)
-* RESOLVED (Reviewer ยืนยันว่าปัญหาได้รับการแก้ไขแล้ว)
-
-ผู้รับคือ Reporter ของ Ticket เท่านั้น ผู้ที่กด Mark Affected อย่างเดียวไม่ได้รับอีเมล
+| Level | Definition |
+| --- | --- |
+| `CRITICAL` | Direct risk to human life, safety, or major property requiring immediate attention (e.g., electrical short/leakage, structural hazard, flooding near electrical equipment). |
+| `HIGH` | Severely disrupts core services or affects a large area/population (e.g., building-wide outage, water shutoff, broken elevator). |
+| `MEDIUM` | Partially disrupts convenience or usability while workarounds exist (e.g., isolated light out, single broken fixture). |
+| `LOW` | Routine minor issue or cosmetic defect that can follow standard queuing. |
 
 ---
 
-## 9. การบริหารจัดการระบบและ Analytics
+## 6. Public Publishing, Interaction & Notifications
 
-### 9.1 ข้อมูลหลักที่ Administrator ดูแล
+### 6.1 Public Feed, Map & Details (`BR-PUB-001`..`010`)
 
-| ข้อกำหนด | เกณฑ์การยอมรับโดยสรุป |
-| :--- | :--- |
-| **ผู้ใช้/สิทธิ์** | จัดการ User, Account Status, Role, Permission และ Username Policy ภายในขอบเขต |
-| **Category** | เพิ่ม/แก้/ปิดใช้งาน/อธิบาย Category; Category ที่ปิดใช้งานเลือกใหม่ไม่ได้ แต่ข้อมูลเก่ายังอ่านได้และตรวจย้อนหลังได้ |
-| **Location** | จัดการ Master Location ของอาคาร พื้นที่ ถนน ลาน จุดบริการ และสถานที่สำคัญในพื้นที่บางเขน |
-| **System Dashboard** | เห็นภาพรวมระบบ, Ticket/Report/Severity/Category/Location/Affected Users/Review Time |
-| **System Configuration** | Administrator ดูแลการตั้งค่าระบบ |
+* **Default Feed:** Displays **Active Tickets** sorted by `Confirmed Time DESC`.
+* **Search:** Ticket ID, Ticket Title, Description, Location, Category, Department.
+* **Filters:** Status, Severity, Category, Department, Date range, Location.
+* **Pagination & Layout:** Page sizes `25`, `50`, `100`; desktop grid displays **5 Ticket Cards per row** (`BR-PUB-006`, `BR-PUB-007`).
+* **Public Ticket Detail:** Ticket ID, Title, Summary, Status, Severity, Category, Location, Responsible Departments, Linked Confirmed Reports (Thumbnail + AI-generated Report Title), Report Count, Affected User Count, Public Activity Timeline, Resolution Information, and Aggregate Feedback Rating.
+* **Public Report Detail:** Reporter current Username, Description, Images, Location (only for `CONFIRMED` Reports).
+* **Map:** Basic campus map for pinning Report locations and viewing Public Tickets (no advanced heatmap in MVP).
 
-### 9.2 Dashboard และการวิเคราะห์
+### 6.2 Additional Information Thread (`BR-THR-001`..`006`)
 
-* จำนวน Ticket และ Report แยกกัน
-* Ticket ตาม Category, Severity และ Location
-* Report ตาม Category และ Location
-* Affected User Count แยกจาก Reporter Count
-* Average Review Time (ระยะเวลาตั้งแต่ Submitted จนถึง Reviewer Confirm)
+* Strictly **private** — never shown in Public Feed, Public Ticket Detail, or Public Activity Timeline.
+* Accessible only by active `REVIEWER`s (central pool), Responsible Department Staff, and Reporters who have a Confirmed Report in that Ticket (`403` for all others, including `ADMINISTRATOR`). Posting is allowed only in `WAITING_INFORMATION`; `IN_PROGRESS` allows read-only history when messages exist; `CONFIRMED` and `RESOLVED` keep the Thread closed/hidden.
+* No general public comments in MVP.
+
+### 6.3 Mark Affected (`BR-AFF-001`..`007`)
+
+* Authenticated users may mark/unmark themselves as affected once per **Active Ticket**.
+* Final Tickets freeze the count for historical display.
+* Affected-only users do **not** receive Major Event Emails unless they are also a Reporter on that Ticket.
+
+### 6.4 Multi-Dimensional Feedback (`BR-FBK-001`..`009`)
+
+* Available **only when Ticket status is `RESOLVED`**, exclusively to Reporters with a Confirmed Report in that Ticket.
+* One Feedback Set per Reporter per Ticket; editable after submission.
+* Multi-dimensional `1–5` star ratings; system computes per-dimension averages and an aggregate Ticket average.
+
+### 6.5 Major Event Email Notifications (`BR-NOT-001`..`005`)
+
+* MVP delivers Email notifications to **Reporters of the Ticket only** for major events:
+  1. Report Confirmed → New Ticket created
+  2. Report Confirmed → Attached to Existing Ticket
+  3. Ticket transitioned to `WAITING_INFORMATION`
+  4. Ticket transitioned to `RESOLVED`
 
 ---
 
-## 10. สิทธิ์ ความเป็นส่วนตัว และ Audit
+## 7. Administration, Audit & Analytics
 
-| หัวข้อ | ข้อกำหนดจากต้นฉบับ |
-| :--- | :--- |
-| **Authentication** | Google OAuth สำหรับ MVP (ออกแบบรองรับการเปลี่ยนไปใช้ KU-ALL SSO ในระยะถัดไป); Write/Interact ต้อง Login; Public Read ไม่ต้อง Login |
-| **Public Identity** | Username เป็น Public Identity, Unique และเปลี่ยนได้; Report เก่าแสดง Username ปัจจุบัน |
-| **ข้อมูลที่ไม่เปิดเผย** | ไม่เปิดเผยชื่อจริง, Email, รหัสนิสิต หรือภาควิชา; รูปภาพที่อัปโหลดต้องถูกลบ EXIF Metadata ก่อนจัดเก็บ/เผยแพร่ |
-| **Separation of Duties** | Reporter ของ Report/Ticket ห้าม Review/Confirm/Reject รายการเดียวกัน |
-| **Thread** | Private สำหรับผู้เกี่ยวข้องตามสิทธิ์เท่านั้น (เปิดใช้งานเฉพาะบน Ticket ที่ยืนยันแล้ว) |
-| **สถานะข้อมูล** | Report สถานะ `PENDING`, `REJECTED` และ Additional Information Thread ไม่ Public; Ticket ทุกรายการ (`CONFIRMED`, `WAITING_INFO`, `RESOLVED`) เป็น Public |
-| **Retention** | Report ที่ถูกถอนก่อนตรวจจะถูกลบออกจากคิวตรวจโดยเก็บ Audit Log ไว้ตรวจสอบย้อนหลัง; Report สถานะ `CONFIRMED`/`REJECTED` และ Ticket ไม่มี Retention Rule ในข้อกำหนดปัจจุบัน |
-| **Audit** | Actor, Role, Timestamp และประวัติการเปลี่ยนแปลงสำคัญรวมถึงการถอน Report ตรวจสอบย้อนหลังได้ |
+### 7.1 Master Data Management
+
+Administrators manage Users/Roles/Permissions, Problem Categories (starting with ~5 core groups: Buildings & Facilities, Electrical & Lighting, Cleanliness, Internet & IT, Safety, plus Other; soft-disable preserves historical readability), Departments (responsibility scope + staff membership), and Campus Locations (Buildings, Common Areas, Roads, Activity Plazas, Service Points, Landmarks within KU Bangkhen).
+
+### 7.2 Auditability (`BR-AUD-001`..`009`)
+
+Every Report save/submit/edit/cancel/confirm/reject, AI analysis run, Reviewer decision, Ticket status/department change, Department completion, and Retention purge must be audited with Actor, Role/Department, and Timestamp — sufficient to prove Separation of Duties compliance.
+
+### 7.3 Analytics & Time Metrics (`BR-ANL-001`..`008`)
+
+* Strictly separate **Ticket Count**, **Report Count**, and **Affected User Count**.
+* Track four time metrics (no SLA enforcement in MVP):
+  * **Review Time:** Report Submitted → Reviewer Final Decision
+  * **Resolution Time:** Ticket Confirmed → `RESOLVED`
+  * **Total Lead Time:** First Report Submitted → `RESOLVED`
+  * **Ticket Aging (Active Tickets):** `Current Time - Ticket Confirmed Time`
+* Administrators view system-wide analytics and Department performance; Department Staff view analytics scoped to their own department.
 
 ---
 
-## 11. ข้อจำกัด สมมติฐาน และสิ่งที่ไม่อยู่ใน MVP
+## 8. Out of Scope (MVP) & Post-MVP Roadmap
 
-### 11.1 ข้อจำกัดและสมมติฐานที่ระบุ
+### Explicitly Out of MVP
 
-* เปิดใช้งานพื้นที่แรกเฉพาะ KU บางเขน ไม่ต้องออกแบบ Multi-University/Multi-Tenant ใน MVP
-* Authentication ในระยะ MVP ใช้ Google OAuth โดยออกแบบแยกชั้น Provider เพื่อรองรับ KU-ALL SSO ในระยะถัดไป; Public Read เปิดโดยไม่ Login
-* Category เริ่มต้นประมาณ 5 กลุ่มหลัก แต่ Administrator จัดการได้
-* Map ใน MVP เป็นการเลือกพิกัดและแสดง Ticket ขั้นพื้นฐาน
-* ขอบเขตของระบบดำเนินการโดย Reviewer ตั้งแต่การยืนยันและเผยแพร่ข้อมูลปัญหา การขอข้อมูลเพิ่มเติมบน Ticket ไปจนถึงการอัปเดตสถานะเป็น `RESOLVED` เมื่อปัญหาได้รับการแก้ไขแล้ว
+* Video upload and video analysis
+* Voice-to-Text reporting
+* AI Chat Assistant (natural language queries)
+* Detailed Heatmap and advanced spatial analytics
+* Predictive Maintenance and Recurring Ticket Links (`recurrence_of`)
+* SLA timers and escalation workflows
+* Individual Staff Assignment and Transfer Workflows
+* Internal staff-only notes
+* General Public Comment discussions
+* Ticket Reopen, `CANNOT_RESOLVE`, and `CLOSED` states
+* LINE OA / LIFF integration
+* Multi-campus / Multi-university / Multi-tenant support
 
-### 11.2 สิ่งที่อยู่นอกขอบเขต / เลื่อนไประยะถัดไป
+### Post-MVP Expansion Candidates
 
-* **กระบวนการส่งต่อใบงานและระบบปฏิบัติการซ่อมแซมของหน่วยงาน (Department Role/Workflow, Work Dashboard, Status `IN_PROGRESS`/`CANNOT_RESOLVE`, และการบันทึกหลักฐานการซ่อมโดยช่าง)**
-* **การให้คะแนนความพึงพอใจหลังซ่อมแซม (Post-Resolution Feedback)**
-* **KU-ALL SSO** และผู้ให้บริการยืนยันตัวตนอื่นนอกเหนือจาก Google OAuth (เลื่อนไปเชื่อมต่อในระยะถัดไป)
-* วิดีโอและการวิเคราะห์วิดีโอ; Heatmap/Spatial Analytics ขั้นสูง; AI Summarization ขั้นสูง/AI Assistant; Recurring Problem Analysis; Predictive Maintenance; SLA/Escalation; ช่องทางแจ้งเตือนเพิ่มเติม; การขยายวิทยาเขต/มหาวิทยาลัย; Integration กับระบบบริหารงานซ่อมของหน่วยงานภายนอก
-
-### 11.3 ข้อควรระวังในการทำ Specification
-
-เอกสารนี้ไม่กำหนดเทคโนโลยี สถาปัตยกรรม โมเดล AI ผู้ให้บริการแผนที่ รูปแบบ API รายละเอียดการจัดวาง UX/UI หรือเป้าหมายประสิทธิภาพเชิงตัวเลข ทีมออกแบบต้องกำหนดรายละเอียดเหล่านั้นใน Technical Specification และ Design System แยกต่างหาก โดยไม่ลดทอนกติกาทางธุรกิจที่ตรึงไว้
+Video analysis, Voice-to-Text, LINE OA / LIFF secondary channel (sharing the same Backend API), Detailed Heatmap & spatial analytics, Recurring Problem Analysis (`recurrence_of`), Predictive Maintenance, AI Chat Assistant (permission-aware DB queries), SLA/Escalation, additional notification channels and authentication providers, and multi-campus expansion.
