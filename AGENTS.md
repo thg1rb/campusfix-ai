@@ -75,6 +75,7 @@ Verify APIs against installed packages/docs rather than legacy training data (se
 
 ## 4. Service Boundaries & Contract Discipline
 
+* **OpenAPI contract (Mandatory):** Every new or modified `apps/api` HTTP endpoint must update `apps/api/docs/openapi-v1.yaml` in the same PR. Document parameters, JSON schemas, security requirements, and every applicable HTTP response and error code.
 * **Contract-first:** Update `contracts/api-v1.md` or `contracts/ai-gateway.md` before coding cross-service changes.
 * **`apps/api`:** Modular monolith under `internal/modules/<module>/` (`domain/`, `application/`, `adapters/inbound/http/`, `adapters/outbound/postgres/`). Keep `domain/` free of Fiber/GORM/SDK imports. All schema changes use Goose SQL migrations (`make migration-create`, `make migrate`); **never** use `gorm.AutoMigrate`. Read `apps/api/AGENTS.md`.
 * **`apps/web`:** App Router in `src/app/`, features in `src/features/`, UI primitives in `src/components/ui/`. Follow `docs/design-system.md`. Read `apps/web/AGENTS.md`.
@@ -103,6 +104,7 @@ Every AI agent and contributor MUST follow this Git flow without exception:
   1. The canonical source-of-truth document(s) affected (`docs/brd.md`, `docs/business-rules.md`, `docs/use-cases.md`, `docs/data-model.md`, `docs/architecture.md`, `contracts/*`, etc.), **and**
   2. An Architecture Decision Record (ADR) in `docs/decisions/` (plus its entry in `docs/decisions/README.md`).
 * **Keep Status Current:** When implementing a feature or resolving a prototype gap, update `docs/status.md`.
+* **OpenAPI verification (Mandatory):** API endpoint changes must pass the OpenAPI schema validation, route parity, and operation completeness tests in `make check-api`. Review each endpoint’s response codes and error examples against its handlers and middleware.
 * **Mandatory Feature Tests:** Every newly developed feature MUST include automated test file(s) covering its behavior and domain invariants (especially Separation of Duties, state transitions, optimistic locking, and privacy boundaries per `docs/testing.md`). Never ship a new feature without tests.
 * **Mandatory Verification before finishing code changes:**
   1. Run `make check` and report exact results.

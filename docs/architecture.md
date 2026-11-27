@@ -192,6 +192,16 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 | `github.com/google/uuid` | `v1.6.0` | UUID validation and HTTP request identifiers |
 | `github.com/jackc/pgx/v5` | `v5.10.0` | PostgreSQL driver and precise database constraint error mapping |
 | `github.com/gofiber/fiber/v3` | `v3.7.0` | HTTP router, server, and middleware |
+| `github.com/getkin/kin-openapi` | `v0.153.0` | OpenAPI parsing and validation in API tests |
+| `github.com/gofiber/contrib/v3/swaggerui` | `v1.0.20` | Fiber Swagger UI HTML and embedded-spec integration |
+| `github.com/swaggest/swgui` | `v1.8.9` | Embedded Swagger UI v5 browser assets |
+| `github.com/vearutop/statigz` | `v1.4.0` | Serve embedded compressed Swagger UI assets |
+| `github.com/go-openapi/jsonpointer` | `v0.22.5` | OpenAPI reference validation (indirect) |
+| `github.com/go-openapi/runtime/server-middleware` | `v0.33.5` | Swagger UI rendering (indirect) |
+| `github.com/go-openapi/swag/jsonname` | `v0.25.5` | JSON names for reference resolution (indirect) |
+| `github.com/santhosh-tekuri/jsonschema/v6` | `v6.0.3` | Schema validation used by kin-openapi (indirect) |
+| `go.yaml.in/yaml/v4` | `v4.0.0` | OpenAPI YAML decoding in kin-openapi (indirect) |
+| `gopkg.in/yaml.v3` | `v3.0.1` | Embedded YAML parsing in Fiber Swagger UI (indirect) |
 | `gorm.io/gorm` | `v1.31.2` | Persistence ORM inside `adapters/outbound/postgres/` only |
 | `gorm.io/driver/postgres` | `v1.6.3` | PostgreSQL driver for GORM (`pgx/v5`) |
 | `github.com/pressly/goose/v3` *(CLI via `Makefile`)* | `v3.30.1` | Explicit SQL schema migrations (`make migration-create`, `make migrate`) |

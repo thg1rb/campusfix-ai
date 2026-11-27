@@ -1,0 +1,1430 @@
+openapi: 3.0.3
+info:
+  title: KU Spot API
+  version: 1.0.0
+  description: |
+    KU Spot is Kasetsart University's platform for reporting and resolving campus facility issues. This reference covers the Phase 0–1 Go API.
+
+    ### Authentication and writes
+    Google OAuth 2.0 accepts verified @ku.th identities. A successful callback issues an HttpOnly, SameSite=Lax session cookie. HTTPS requires Secure cookies. The API checks the current active account and session on each protected request. Administrator routes require ADMINISTRATOR as the sole role and no department.
+
+    With a session cookie, writes require a matching Origin or, when Origin is absent, a matching Referer for APP_BASE_URL. Sec-Fetch-Site must be same-origin when present. Browsers manage these headers and the HttpOnly cookie. The direct Swagger UI on port 8080 can call the direct API on that origin. For authenticated browser writes, the page must also be on APP_BASE_URL. Use the same-origin Web proxy with the application, or use an HTTP client with a valid session cookie and matching Origin. The Web proxy handles /api/v1/*; use the direct API for the two probe paths.
+
+    ### Responses and pagination
+    API errors use the error envelope with camelCase fields, an empty details object for current errors, and a requestId matching X-Request-Id. OAuth callback outcomes use redirects. Probes use dedicated JSON. API and readiness responses use Cache-Control no-store. Lists default to page 1 and 25 items, with page sizes 25, 50 and 100. Empty pages return an empty items array.
+
+    ### Deadlines and HTTP listener responses
+    The Go API installs a cooperative 15-second request deadline. A propagated context deadline becomes 503 SERVICE_UNAVAILABLE. The Web proxy has a 30-second upstream budget and also returns 503 on upstream failure. The listener has 30-second read, write, and idle timeouts. Read timeouts can return 408; a write timeout can close the connection. The current API has no application-level rate limiter.
+
+    The listener rejects bodies over 4 MiB with 413. Before routing, malformed HTTP can produce 400, oversized headers 431, unsupported methods or transfer codings 501, and network read errors 502 when a response can be sent. These failures can use the generic status-error payload when the API path cannot be recovered. Where the API path is known, the status is preserved and the error envelope uses INVALID_REQUEST for 400 or INTERNAL_ERROR for the other listener errors above. Unmatched API paths and unsupported methods on a known API route return 404 NOT_FOUND and 405 METHOD_NOT_ALLOWED respectively.
+servers:
+- url: http://localhost:8080
+  description: Direct Go API and operational probes
+- url: http://localhost:3000
+  description: Web proxy for /api/v1/*
+tags:
+- name: Health
+- name: Auth
+- name: Profile
+- name: Admin Users
+- name: Admin Departments
+- name: Admin Audit Logs
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      tags:
+      - Health
+      summary: Check API liveness
+      description: Returns the API process liveness independently of PostgreSQL and the AI Gateway. Direct API only.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The API is running.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '413':
+          $ref: '#/components/responses/ProbeBodyTooLarge'
+      servers:
+      - url: http://localhost:8080
+        description: Direct Go API and operational probes
+  /readyz:
+    get:
+      operationId: getReadiness
+      tags:
+      - Health
+      summary: Check API readiness
+      description: Checks PostgreSQL with SELECT 1 and the AI Gateway via /healthz concurrently within two seconds.
+        The Web readiness endpoint is /api/health.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Both dependencies are reachable.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+              examples:
+                ready:
+                  value:
+                    status: ok
+                    checks:
+                      db: ok
+                      ai: ok
+        '503':
+          description: At least one dependency is unavailable.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+              examples:
+                aiUnavailable:
+                  value:
+                    status: unavailable
+                    checks:
+                      db: ok
+                      ai: unavailable
+                dbUnavailable:
+                  value:
+                    status: unavailable
+                    checks:
+                      db: unavailable
+                      ai: ok
+                bothUnavailable:
+                  value:
+                    status: unavailable
+                    checks:
+                      db: unavailable
+                      ai: unavailable
+        '413':
+          $ref: '#/components/responses/ProbeBodyTooLarge'
+      servers:
+      - url: http://localhost:8080
+        description: Direct Go API and operational probes
+  /api/v1/auth/login:
+    get:
+      operationId: startGoogleLogin
+      tags:
+      - Auth
+      summary: Start Google OAuth login
+      description: Starts the browser OAuth flow for verified @ku.th accounts using state, nonce and S256 PKCE.
+        Navigate to this endpoint in the browser.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: next
+        in: query
+        description: Optional same-origin path starting with a single slash. Invalid paths are ignored. The handler
+          rejects paths over 1024 bytes, auth/API paths, unsafe characters or unsafe encoding.
+        schema:
+          type: string
+          example: /settings/profile
+      responses:
+        '302':
+          description: >
+            Redirect to Google and issue ku_spot_oauth for /api/v1/auth for ten minutes.
+            The signed cookie is HttpOnly and SameSite=Lax. Secure follows API configuration.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+            Referrer-Policy:
+              $ref: '#/components/headers/Referrer-Policy'
+            Location:
+              $ref: '#/components/headers/Location'
+            Set-Cookie:
+              $ref: '#/components/headers/Set-Cookie'
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/v1/auth/callback:
+    get:
+      operationId: completeGoogleLogin
+      tags:
+      - Auth
+      summary: Complete Google OAuth login
+      description: Validates the signed state cookie and returned state before exchanging the code. Success provisions
+        or loads the account and redirects to the saved path, or to /admin for exclusive administrators and /feed
+        for other users. Failures redirect to /login with INVALID_OAUTH_STATE (missing, expired or mismatched state),
+        OAUTH_DENIED (denial, missing code or rejected grant), INVALID_OAUTH_IDENTITY (failed identity checks),
+        ACCOUNT_INACTIVE, or SERVICE_UNAVAILABLE (provider or service failure).
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: code
+        in: query
+        description: Google authorization code on successful provider authorization.
+        schema:
+          type: string
+          example: example-code
+      - name: state
+        in: query
+        description: State returned by Google. Required for successful validation.
+        schema:
+          type: string
+          example: example-state
+      - name: error
+        in: query
+        description: Provider error on unsuccessful authorization.
+        schema:
+          type: string
+          example: access_denied
+      - name: ku_spot_oauth
+        in: cookie
+        description: Signed state issued by login. Required for successful validation.
+        schema:
+          type: string
+      responses:
+        '302':
+          description: Redirect to the application or to its login page with a stable error code.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+            Referrer-Policy:
+              $ref: '#/components/headers/Referrer-Policy'
+            Location:
+              description: Redirect destination.
+              schema:
+                type: string
+                format: uri
+              examples:
+                SUCCESS:
+                  value: http://localhost:3000/feed
+                ADMIN_SUCCESS:
+                  value: http://localhost:3000/admin
+                INVALID_OAUTH_STATE:
+                  value: http://localhost:3000/login?error=INVALID_OAUTH_STATE
+                OAUTH_DENIED:
+                  value: http://localhost:3000/login?error=OAUTH_DENIED
+                INVALID_OAUTH_IDENTITY:
+                  value: http://localhost:3000/login?error=INVALID_OAUTH_IDENTITY
+                ACCOUNT_INACTIVE:
+                  value: http://localhost:3000/login?error=ACCOUNT_INACTIVE
+                SERVICE_UNAVAILABLE:
+                  value: http://localhost:3000/login?error=SERVICE_UNAVAILABLE
+            Set-Cookie:
+              description: Always expires ku_spot_oauth. Success also sets the seven-day ku_spot_session cookie
+                for /api/v1. Both cookies are HttpOnly and SameSite=Lax; Secure follows API configuration.
+              schema:
+                type: string
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ProxyUnavailable'
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      tags:
+      - Auth
+      summary: Sign out the current session
+      description: Revokes the authenticated session and records a logout audit event. Write-origin verification
+        runs before authentication.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Referer'
+      - $ref: '#/components/parameters/SecFetchSite'
+      responses:
+        '204':
+          description: The session was revoked.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+            Set-Cookie:
+              description: Expires ku_spot_session for /api/v1.
+              schema:
+                type: string
+                example: ku_spot_session=; Path=/api/v1; Max-Age=0; HttpOnly; SameSite=Lax
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/InvalidOrigin'
+      security:
+      - cookieAuth: []
+  /api/v1/me:
+    get:
+      operationId: getMyProfile
+      tags:
+      - Profile
+      summary: Get the current user profile
+      description: Returns private profile and current access information for the authenticated user, including
+        real name and email.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The authenticated user profile.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+      security:
+      - cookieAuth: []
+  /api/v1/me/username:
+    patch:
+      operationId: updateMyUsername
+      tags:
+      - Profile
+      summary: Update the current username
+      description: Trims and validates the username, enforces case-insensitive uniqueness, and audits a change.
+        Write-origin verification runs before authentication.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Referer'
+      - $ref: '#/components/parameters/SecFetchSite'
+      responses:
+        '200':
+          description: The updated private profile.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/InvalidOrigin'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/UsernameTaken'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidUsername'
+      security:
+      - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUsernameRequest'
+  /api/v1/admin/users:
+    get:
+      operationId: listAdminUsers
+      tags:
+      - Admin Users
+      summary: List users
+      description: Requires an active exclusive ADMINISTRATOR. Returns private user profiles sorted by case-insensitive
+        username, then ID.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: q
+        in: query
+        description: Case-insensitive literal substring search over username, real name and email. Whitespace is
+          trimmed.
+        schema:
+          type: string
+          example: narin
+      - name: role
+        in: query
+        description: Filter by a single role. Omission or an empty value leaves the filter off.
+        schema:
+          $ref: '#/components/schemas/Role'
+      - name: isActive
+        in: query
+        description: Filter on the literal true or false. Omission or an empty value leaves the filter off.
+        schema:
+          type: boolean
+          example: true
+      responses:
+        '200':
+          description: A page of user profiles.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUserProfiles'
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+      - cookieAuth: []
+  /api/v1/admin/users/{id}:
+    patch:
+      operationId: updateAdminUser
+      tags:
+      - Admin Users
+      summary: Update user access
+      description: Requires an active exclusive ADMINISTRATOR. Applies a partial update and audits the before and
+        after access. ADMINISTRATOR must be the only role and have no department. DEPARTMENT_STAFF requires one
+        department. A newly specified department, or an existing assignment on reactivation, must be active. Deactivation
+        revokes the target user’s sessions.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: id
+        in: path
+        description: ID of the target user.
+        schema:
+          type: string
+          format: uuid
+          example: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+        required: true
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Referer'
+      - $ref: '#/components/parameters/SecFetchSite'
+      responses:
+        '200':
+          description: The updated private user profile.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/AdminWriteForbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/LastActiveAdmin'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidAccess'
+      security:
+      - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateUserRequest'
+  /api/v1/admin/departments:
+    get:
+      operationId: listAdminDepartments
+      tags:
+      - Admin Departments
+      summary: List departments
+      description: Requires an active exclusive ADMINISTRATOR. Returns active and inactive departments for user
+        assignment, sorted by case-insensitive name, then ID.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: A page of department summaries.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDepartments'
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+      - cookieAuth: []
+  /api/v1/admin/audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags:
+      - Admin Audit Logs
+      summary: List audit log entries
+      description: Requires an active exclusive ADMINISTRATOR. Returns append-only audit entries sorted by newest
+        creation time, then descending ID.
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: entityType
+        in: query
+        description: Exact entity type. Omission or an empty value leaves the filter off.
+        schema:
+          $ref: '#/components/schemas/AuditEntityType'
+      - name: action
+        in: query
+        description: Exact, case-sensitive action name. Omission or an empty value leaves the filter off.
+        schema:
+          type: string
+          example: UPDATE_USERNAME
+      - name: actorUserId
+        in: query
+        description: Filter by the recorded user actor ID. Omission or an empty value leaves the filter off.
+        schema:
+          type: string
+          format: uuid
+          example: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+      responses:
+        '200':
+          description: A page of audit log entries.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAuditLogs'
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+      - cookieAuth: []
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: ku_spot_session
+  parameters:
+    RequestId:
+      name: X-Request-Id
+      in: header
+      description: Optional correlation ID. The server replaces invalid or missing values.
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9._-]{1,64}$
+        example: ku-request-2026
+    Page:
+      name: page
+      in: query
+      description: One-based page. An omitted or empty value uses the default.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 21474836
+        example: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      description: Page size. An omitted or empty value uses the default.
+      schema:
+        type: integer
+        format: int32
+        enum:
+        - 25
+        - 50
+        - 100
+        example: 25
+        default: 25
+    Origin:
+      name: Origin
+      in: header
+      description: Must match APP_BASE_URL by scheme, hostname and effective port when supplied. A cookie-authenticated
+        write requires this or a matching Referer.
+      schema:
+        type: string
+        format: uri
+        example: http://localhost:3000
+    Referer:
+      name: Referer
+      in: header
+      description: Fallback origin proof when Origin is absent. Must have the APP_BASE_URL origin.
+      schema:
+        type: string
+        format: uri
+        example: http://localhost:3000/settings/profile
+    SecFetchSite:
+      name: Sec-Fetch-Site
+      in: header
+      description: When supplied, must be same-origin.
+      schema:
+        type: string
+        enum:
+        - same-origin
+  headers:
+    X-Request-Id:
+      description: Correlation ID. API error envelopes repeat this value in error.requestId.
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9._-]{1,64}$
+        example: ku-request-2026
+    Cache-Control:
+      description: Disables response caching.
+      schema:
+        type: string
+        enum:
+        - no-store
+    Location:
+      description: Redirect destination.
+      schema:
+        type: string
+        format: uri
+        example: https://accounts.google.com/o/oauth2/v2/auth?response_type=code&state=example-state
+    Set-Cookie:
+      description: One header field per cookie change. OAuth callback success sends two Set-Cookie fields.
+      schema:
+        type: string
+    Referrer-Policy:
+      description: Prevents forwarding the original URL as a referrer.
+      schema:
+        type: string
+        enum:
+        - no-referrer
+  responses:
+    InvalidRequest:
+      description: Malformed request data or invalid path or query parameter.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            INVALID_REQUEST:
+              value:
+                error:
+                  code: INVALID_REQUEST
+                  message: The request is invalid.
+                  details: {}
+                  requestId: ku-request-2026
+    Unauthenticated:
+      description: The session cookie is missing, invalid, expired, revoked, or belongs to an inactive account.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            UNAUTHENTICATED:
+              value:
+                error:
+                  code: UNAUTHENTICATED
+                  message: Sign in to continue.
+                  details: {}
+                  requestId: ku-request-2026
+    Forbidden:
+      description: The caller lacks the required exclusive administrator role.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            FORBIDDEN:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: You do not have access.
+                  details: {}
+                  requestId: ku-request-2026
+    InvalidOrigin:
+      description: The request failed write-origin or Fetch Metadata verification.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            FORBIDDEN:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: You do not have access.
+                  details: {}
+                  requestId: ku-request-2026
+    AdminWriteForbidden:
+      description: The caller lacks the required exclusive administrator role or the request failed write-origin
+        verification.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            FORBIDDEN:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: You do not have access.
+                  details: {}
+                  requestId: ku-request-2026
+    NotFound:
+      description: The requested user could not be found.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            NOT_FOUND:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: The requested resource was not found.
+                  details: {}
+                  requestId: ku-request-2026
+    UsernameTaken:
+      description: A user already has the requested username. Uniqueness is case-insensitive.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            USERNAME_TAKEN:
+              value:
+                error:
+                  code: USERNAME_TAKEN
+                  message: username is already taken
+                  details: {}
+                  requestId: ku-request-2026
+    LastActiveAdmin:
+      description: The change would remove the last active exclusive administrator.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            LAST_ACTIVE_ADMIN:
+              value:
+                error:
+                  code: LAST_ACTIVE_ADMIN
+                  message: at least one active administrator must remain
+                  details: {}
+                  requestId: ku-request-2026
+    BodyTooLarge:
+      description: The HTTP request body exceeds Fiber’s 4 MiB limit. The listener rejects it before endpoint execution.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            INTERNAL_ERROR:
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: The request could not be completed.
+                  details: {}
+                  requestId: ku-request-2026
+    ProbeBodyTooLarge:
+      description: The request body exceeds Fiber’s 4 MiB limit.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProbeError'
+    UnsupportedMediaType:
+      description: The request needs Content-Type application/json. Media type parameters are allowed.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            UNSUPPORTED_MEDIA_TYPE:
+              value:
+                error:
+                  code: UNSUPPORTED_MEDIA_TYPE
+                  message: Use Content-Type application/json.
+                  details: {}
+                  requestId: ku-request-2026
+    InvalidUsername:
+      description: Supply a username that meets the username constraints.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            VALIDATION_ERROR:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: use 3–30 letters, digits or underscores
+                  details: {}
+                  requestId: ku-request-2026
+    InvalidAccess:
+      description: The resulting account roles or department assignment are invalid.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            VALIDATION_ERROR:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: provide at least one valid, distinct role
+                  details: {}
+                  requestId: ku-request-2026
+            EXCLUSIVE_ADMIN_CONFLICT:
+              value:
+                error:
+                  code: EXCLUSIVE_ADMIN_CONFLICT
+                  message: administrator must be the only role and have no department
+                  details: {}
+                  requestId: ku-request-2026
+            SINGLE_DEPARTMENT_LIMIT:
+              value:
+                error:
+                  code: SINGLE_DEPARTMENT_LIMIT
+                  message: only department staff can belong to a department
+                  details: {}
+                  requestId: ku-request-2026
+            DEPARTMENT_REQUIRED:
+              value:
+                error:
+                  code: DEPARTMENT_REQUIRED
+                  message: department staff must have a department
+                  details: {}
+                  requestId: ku-request-2026
+            DEPARTMENT_UNAVAILABLE:
+              value:
+                error:
+                  code: DEPARTMENT_UNAVAILABLE
+                  message: department does not exist or is inactive
+                  details: {}
+                  requestId: ku-request-2026
+    InternalError:
+      description: An unexpected server error prevented the request from completing.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            INTERNAL_ERROR:
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: The request could not be completed.
+                  details: {}
+                  requestId: ku-request-2026
+    ServiceUnavailable:
+      description: A handler deadline elapsed, Google OAuth is disabled for login, or the Web proxy could not reach
+        the API within its budget.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            SERVICE_UNAVAILABLE:
+              value:
+                error:
+                  code: SERVICE_UNAVAILABLE
+                  message: The service is temporarily unavailable.
+                  details: {}
+                  requestId: ku-request-2026
+    ProxyUnavailable:
+      description: The Web proxy could not complete the upstream request. Direct callback failures redirect with
+        an error code.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            SERVICE_UNAVAILABLE:
+              value:
+                error:
+                  code: SERVICE_UNAVAILABLE
+                  message: The service is temporarily unavailable.
+                  details: {}
+                  requestId: ku-request-2026
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+      example:
+        status: ok
+    ReadyResponse:
+      type: object
+      required:
+      - status
+      - checks
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - unavailable
+        checks:
+          $ref: '#/components/schemas/ReadyChecks'
+      example:
+        status: ok
+        checks:
+          db: ok
+          ai: ok
+    ReadyChecks:
+      type: object
+      required:
+      - db
+      - ai
+      properties:
+        db:
+          type: string
+          enum:
+          - ok
+          - unavailable
+        ai:
+          type: string
+          enum:
+          - ok
+          - unavailable
+    ProbeError:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - error
+      example:
+        status: error
+    ErrorEnvelope:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+    ErrorBody:
+      type: object
+      required:
+      - code
+      - message
+      - details
+      - requestId
+      properties:
+        code:
+          type: string
+          example: INVALID_REQUEST
+        message:
+          type: string
+          example: The request is invalid.
+        details:
+          type: object
+          additionalProperties: true
+        requestId:
+          type: string
+          pattern: ^[A-Za-z0-9._-]{1,64}$
+          example: ku-request-2026
+    PaginationMeta:
+      type: object
+      required:
+      - page
+      - pageSize
+      - totalItems
+      - totalPages
+      properties:
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 21474836
+          example: 1
+        pageSize:
+          type: integer
+          format: int32
+          enum:
+          - 25
+          - 50
+          - 100
+          example: 25
+        totalItems:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 1
+        totalPages:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 1
+    Role:
+      type: string
+      enum:
+      - REPORTER
+      - REVIEWER
+      - DEPARTMENT_STAFF
+      - ADMINISTRATOR
+    UserProfile:
+      type: object
+      required:
+      - id
+      - username
+      - realName
+      - email
+      - emailVerified
+      - hostedDomain
+      - avatarUrl
+      - authProvider
+      - roles
+      - departmentId
+      - isActive
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+        username:
+          type: string
+          pattern: ^[a-zA-Z0-9_]{3,30}$
+          minLength: 3
+          maxLength: 30
+          example: narin_ku
+        realName:
+          type: string
+        email:
+          type: string
+          format: email
+        emailVerified:
+          type: boolean
+        hostedDomain:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        authProvider:
+          type: string
+          example: GOOGLE
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+          minItems: 1
+          uniqueItems: true
+        departmentId:
+          type: string
+          format: uuid
+          example: 037c5330-84e6-45f3-8830-1ea2f01e7813
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-11-27T08:30:00Z'
+      example:
+        id: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+        username: narin_ku
+        realName: Narin S.
+        email: narin@ku.th
+        emailVerified: true
+        hostedDomain: ku.th
+        avatarUrl: null
+        authProvider: GOOGLE
+        roles:
+        - REPORTER
+        departmentId: null
+        isActive: true
+        createdAt: '2026-11-27T08:30:00Z'
+    UpdateUsernameRequest:
+      type: object
+      required:
+      - username
+      properties:
+        username:
+          type: string
+          pattern: ^[a-zA-Z0-9_]{3,30}$
+          minLength: 3
+          maxLength: 30
+          example: narin_ku
+          description: Leading and trailing whitespace is trimmed before validation.
+      additionalProperties: false
+      example:
+        username: narin_ku
+    PaginatedUserProfiles:
+      type: object
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserProfile'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+      example:
+        items:
+        - id: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+          username: narin_ku
+          realName: Narin S.
+          email: narin@ku.th
+          emailVerified: true
+          hostedDomain: ku.th
+          avatarUrl: null
+          authProvider: GOOGLE
+          roles:
+          - REPORTER
+          departmentId: null
+          isActive: true
+          createdAt: '2026-11-27T08:30:00Z'
+        pagination:
+          page: 1
+          pageSize: 25
+          totalItems: 1
+          totalPages: 1
+    AdminUpdateUserRequest:
+      type: object
+      additionalProperties: false
+      description: Supply at least one field. Omitted fields retain their current values. An explicit null departmentId
+        clears the assignment.
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+        departmentId:
+          type: string
+          format: uuid
+          example: 037c5330-84e6-45f3-8830-1ea2f01e7813
+          nullable: true
+        isActive:
+          type: boolean
+      anyOf:
+      - required:
+        - roles
+      - required:
+        - departmentId
+      - required:
+        - isActive
+      example:
+        roles:
+        - REPORTER
+        - DEPARTMENT_STAFF
+        departmentId: 037c5330-84e6-45f3-8830-1ea2f01e7813
+        isActive: true
+    DepartmentSummary:
+      type: object
+      required:
+      - id
+      - name
+      - responsibilityScope
+      - isActive
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 037c5330-84e6-45f3-8830-1ea2f01e7813
+        name:
+          type: string
+        responsibilityScope:
+          type: string
+        isActive:
+          type: boolean
+      example:
+        id: 037c5330-84e6-45f3-8830-1ea2f01e7813
+        name: Campus Facilities
+        responsibilityScope: Building and walkway maintenance
+        isActive: true
+    PaginatedDepartments:
+      type: object
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DepartmentSummary'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+      example:
+        items:
+        - id: 037c5330-84e6-45f3-8830-1ea2f01e7813
+          name: Campus Facilities
+          responsibilityScope: Building and walkway maintenance
+          isActive: true
+        pagination:
+          page: 1
+          pageSize: 25
+          totalItems: 1
+          totalPages: 1
+    AuditEntityType:
+      type: string
+      enum:
+      - REPORT
+      - TICKET
+      - AI_RUN
+      - USER
+      - CATEGORY
+      - DEPARTMENT
+      - LOCATION
+      - RETENTION
+    AuditActorType:
+      type: string
+      enum:
+      - USER
+      - SYSTEM
+      - AI_SERVICE
+    AuditLogEntry:
+      type: object
+      required:
+      - id
+      - entityType
+      - entityId
+      - action
+      - actorType
+      - actorUserId
+      - actorRoles
+      - departmentId
+      - details
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: de166235-7136-4c00-9213-40668b4b626f
+        entityType:
+          $ref: '#/components/schemas/AuditEntityType'
+        entityId:
+          type: string
+          format: uuid
+          example: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+        action:
+          type: string
+        actorType:
+          $ref: '#/components/schemas/AuditActorType'
+        actorUserId:
+          type: string
+          format: uuid
+          example: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+          nullable: true
+          description: Present for USER actors; null otherwise.
+        actorRoles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+          description: Role snapshot at the time of the event.
+        departmentId:
+          type: string
+          format: uuid
+          example: 037c5330-84e6-45f3-8830-1ea2f01e7813
+          nullable: true
+        details:
+          type: object
+          additionalProperties: true
+          description: Action-specific audit metadata.
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-11-27T08:30:00Z'
+      example:
+        id: de166235-7136-4c00-9213-40668b4b626f
+        entityType: USER
+        entityId: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+        action: UPDATE_USERNAME
+        actorType: USER
+        actorUserId: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+        actorRoles:
+        - REPORTER
+        departmentId: null
+        details:
+          before: narin
+          after: narin_ku
+        createdAt: '2026-11-27T08:30:00Z'
+    PaginatedAuditLogs:
+      type: object
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogEntry'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+      example:
+        items:
+        - id: de166235-7136-4c00-9213-40668b4b626f
+          entityType: USER
+          entityId: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+          action: UPDATE_USERNAME
+          actorType: USER
+          actorUserId: 7e86a5db-d6c6-4157-af22-2efc48d2361b
+          actorRoles:
+          - REPORTER
+          departmentId: null
+          details:
+            before: narin
+            after: narin_ku
+          createdAt: '2026-11-27T08:30:00Z'
+        pagination:
+          page: 1
+          pageSize: 25
+          totalItems: 1
+          totalPages: 1

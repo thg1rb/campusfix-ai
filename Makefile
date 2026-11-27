@@ -30,7 +30,7 @@ check-web:
 	cd apps/web && bun install --frozen-lockfile && bun run format:check && bun run lint && bun run typecheck && bun run test && API_BASE_URL=http://127.0.0.1:8080 bun run build
 
 check-api:
-	cd apps/api && test -z "$$(gofmt -l cmd internal)" && go mod verify && go vet ./... && (if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run; fi) && go test -race ./... && go build ./...
+	cd apps/api && test -z "$$(gofmt -l cmd docs internal)" && go mod verify && go vet ./... && (if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run; fi) && go test -race ./... && go build ./...
 
 check-ai:
 	cd apps/ai && uv lock --check && uv sync --locked && uv run --locked ruff format --check . && uv run --locked ruff check . && uv run --locked pytest && uv run --locked python -c 'from ku_spot_ai.main import app_factory; app_factory()'
@@ -39,7 +39,7 @@ check: check-compose check-web check-api check-ai
 
 format:
 	cd apps/web && bun run format
-	cd apps/api && gofmt -w cmd internal
+	cd apps/api && gofmt -w cmd docs internal
 	cd apps/ai && uv run --locked ruff format .
 
 smoke:

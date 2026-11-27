@@ -155,7 +155,7 @@ jobs:
       - name: Check formatting (gofmt)
         if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'
         run: |
-          unformatted="$(gofmt -l cmd internal)"
+          unformatted="$(gofmt -l cmd docs internal)"
           if [ -n "$unformatted" ]; then
             echo "The following Go files are not gofmt-formatted:"
             echo "$unformatted"

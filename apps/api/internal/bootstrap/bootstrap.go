@@ -33,6 +33,9 @@ func New(settings config.Config) (*Application, error) {
 	}
 	app := http.NewServer(db, ai.NewClient(settings.AIURL))
 	registerIdentity(app, db, settings.Auth, auth.NewGoogle(settings.Auth), time.Now)
+	if settings.SwaggerEnabled {
+		http.RegisterSwagger(app)
+	}
 	return &Application{Server: app, Database: db}, nil
 }
 

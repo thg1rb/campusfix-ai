@@ -47,9 +47,7 @@ func loadAuth() (Auth, error) {
 	if base.Scheme == "https" && !a.CookieSecure {
 		return Auth{}, errors.New("HTTPS requires AUTH_COOKIE_SECURE=true")
 	}
-	host := base.Hostname()
-	loopback := host == "localhost" || host == "127.0.0.1" || host == "::1"
-	if a.GoogleEnabled() && base.Scheme != "https" && !loopback {
+	if a.GoogleEnabled() && base.Scheme != "https" && !isLoopbackHost(base.Hostname()) {
 		return Auth{}, errors.New("HTTPS is required outside localhost for Google OAuth")
 	}
 	a.GoogleRedirectURL = envDefault("GOOGLE_OAUTH_REDIRECT_URL", a.AppBaseURL+"/api/v1/auth/callback")
@@ -74,6 +72,10 @@ func loadAuth() (Auth, error) {
 		a.BootstrapAdminEmails = append(a.BootstrapAdminEmails, email)
 	}
 	return a, nil
+}
+
+func isLoopbackHost(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func envDefault(key, fallback string) string {
