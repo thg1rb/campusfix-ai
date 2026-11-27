@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | **Infrastructure, Compose & CI** | **Ready (Bootstrap + Path-Filtered CI)** | `compose.yaml`, `compose.dev.yaml`, `Makefile`, `scripts/smoke.sh`, and path-filtered GitHub Actions CI (`.github/workflows/ci.yml`: 3 clean jobs `CI / Web`, `CI / API`, `CI / AI` with per-service `paths-filter` gating) configured and verified. |
 | **`apps/web` (Next.js 16)** | **Prototype Migrated (Mock-Backed)** | Full UI prototype migrated to `apps/web` with App Router screens, Leaflet campus map, shadcn primitives, domain helpers (`src/lib/domain/`), and unit tests (`tests/*.test.ts`). Currently backed by in-browser `PrototypeStore.tsx` and `mockAiService.ts` — **not yet wired to `apps/api`** (except `/api/health`). |
-| **`apps/api` (Go / Fiber v3)** | **Bootstrap Skeleton** | `/healthz`, `/readyz` (PostgreSQL + AI check), config, and bootstrap wiring exist. `internal/modules/` and `migrations/` are currently empty. |
+| **`apps/api` (Go / Fiber v3)** | **Phase 0–1 implemented** | Health and readiness, Goose schema, record numbers, audit, Google OAuth sessions, profiles, and administrator user management are available. |
 | **`apps/ai` (Python / FastAPI)** | **Implemented (Ticket-level Severity Added)** | Pluggable Gemini Triage & Embedding Gateway (`contracts/ai-triage.v1.yaml` `v1.2.0`: `/v1/triage/rephrase`, `/v1/triage/analyze`, `/v1/triage/summarize-ticket` with deterministic 4-factor ticket-level severity per `BR-AI-013`, `/v1/triage/embed-ticket`, `X-API-Key` auth, unit-length vectors) with `pytest` suite (`apps/ai/tests/`) and cross-domain evaluation demo (`apps/ai/evaluation/demo_cross_domain.py`). |
 | **Documentation & Contracts** | **Aligned to Freeze 1 + PR #2** | Root/scoped `AGENTS.md`, BRD, Business Rules (`BR-*`), Use Cases (`UC-*`), Architecture (including Dependency Registry), Data Model, Design System, Contracts (`api-v1.md`, `ai-triage.v1.yaml`, `ai-gateway.md`), ADRs, and Testing specs are synchronized. |
 
@@ -21,7 +21,8 @@
 | Slice | Web UI | Go API | AI Gateway | DB Migrations | End-to-End |
 | --- | --- | --- | --- | --- | --- |
 | Health & Readiness (`/healthz`, `/readyz`, `/api/health`) | Done | Done | Done | N/A | Verified |
-| Auth & Username Profile (`UC-AUTH-001`, `UC-USR-001`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |
+| Auth & Username Profile (`UC-AUTH-001`, `UC-USR-001`) | Prototype Mock | Implemented | N/A | Applied in verification | Web integration pending |
+| Admin Users & Audit Logs | Prototype Mock | Implemented | N/A | Applied in verification | Web integration pending |
 | Master Data CRUD (`UC-ADM-002`..`004`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |
 | Media Upload & EXIF Stripping (`BR-RPT-003`..`005`) | Prototype DataURL | Not Started | N/A | Not Started | Not Started |
 | Report Draft / Submit / Edit / Cancel (`UC-RPT-001`..`005`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |
@@ -41,16 +42,15 @@
 ## 3. Known Prototype Gaps & Migration Tasks
 
 1. **Browser-only persistence & mock AI in `apps/web`:** `PrototypeStore.tsx`, `prototypeDatabase.ts`, `DemoSimulationBar.tsx`, and `mockAiService.ts` must be replaced incrementally via a typed HTTP API client in `apps/web/src/lib/api/` (tracked under planned ADR `0006`).
-2. **Mock Google OAuth account switcher in `apps/web`:** Replace the prototype account selector with live backend **Google OAuth 2.0 (`@ku.th`)** sessions behind the pluggable `AuthProvider` boundary in `apps/api/internal/adapters/auth/` ([ADR 0002](decisions/0002-auth-provider-and-resolved-only-final-state.md), planned ADR `0003`).
+2. **Mock Google OAuth account switcher in `apps/web`:** Replace the prototype account selector with live backend **Google OAuth 2.0 (`@ku.th`)** sessions behind the pluggable `AuthProvider` boundary in `apps/api/internal/adapters/auth/` ([ADR 0002](decisions/0002-auth-provider-and-resolved-only-final-state.md), [ADR 0003](decisions/0003-identity-session-and-auth-provider.md)).
 3. **EXIF stripping is not yet implemented:** `apps/web` stores uploaded images as local DataURLs in the prototype. Server-side validation and EXIF stripping must be enforced in `apps/api` before storing or serving any image.
 
 ---
 
 ## 4. Recommended Implementation Roadmap (Vertical Slices)
 
-1. **Phase 1 — Database Schema & Core Identity:**
-   - Create initial Goose SQL migrations from [docs/data-model.md](data-model.md) (`users`, `user_roles`, `categories`, `departments`, `campus_locations`, `record_sequences`, `audit_logs`).
-   - Implement `identity` and `masterdata` modules in `apps/api` + pluggable `AuthProvider` (initial provider: Google OAuth 2.0 `@ku.th`) + RBAC middleware ([ADR 0002](decisions/0002-auth-provider-and-resolved-only-final-state.md), planned ADR `0003`).
+1. **Phase 0–1 — Platform and Identity:** Implemented in the API. See [ADR 0003](decisions/0003-identity-session-and-auth-provider.md).
+   - Master Data CRUD, categories, and campus locations are deferred. The department list serves account assignment.
 2. **Phase 2 — Media Pipeline & Report Lifecycle:**
    - Implement `media` adapter with magic-byte validation, ≤10 MB limit, and EXIF stripping (planned ADR `0004`).
    - Implement `reports` module (`DRAFT`, `PENDING_REVIEW`, `CANCELLED`, version bumping, 30-day retention job).

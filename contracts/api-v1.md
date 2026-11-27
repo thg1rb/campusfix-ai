@@ -7,6 +7,7 @@ This document defines the HTTP contract between `apps/web` and `apps/api`. All t
 ## 1. Conventions
 
 * **Base Path:** `/api/v1` (except operational health endpoints `/healthz` and `/readyz`).
+* **Request ID:** Responses include `X-Request-Id`. Errors include the same value as `error.requestId`.
 * **Auth:** HTTP-only session cookie (`ku_spot_session`). Public endpoints work with or without a cookie; authenticated endpoints return `401 UNAUTHENTICATED` when missing/invalid.
 * **Pagination Envelope:**
   ```json
@@ -40,6 +41,10 @@ This document defines the HTTP contract between `apps/web` and `apps/api`. All t
 | `POST /api/v1/auth/logout` | Auth | Invalidates current session cookie. |
 | `GET /api/v1/me` | Auth | Returns current authenticated user profile (`id`, `username`, `roles`, `departmentId`, `isActive`; never exposed publicly). |
 | `PATCH /api/v1/me/username` | Auth | Updates unique `username` (`BR-AUTH-006`..`008`). Returns `409 USERNAME_TAKEN` on collision. |
+
+Login accepts an optional same-origin absolute path via `next`. It returns `302` on success and `503 SERVICE_UNAVAILABLE` when Google OAuth is disabled. The callback redirects to that path or defaults to `/admin` for exclusive administrators and `/feed` for other users. On failure it redirects to `/login?error=<code>` with a stable code such as `INVALID_OAUTH_STATE`, `OAUTH_DENIED`, `INVALID_OAUTH_IDENTITY`, `ACCOUNT_INACTIVE`, or `SERVICE_UNAVAILABLE`. Logout returns `204`.
+
+The private profile and successful username patch return `id`, `username`, `realName`, `email`, `emailVerified`, `hostedDomain`, `avatarUrl`, `authProvider`, `roles`, `departmentId`, `isActive`, and `createdAt`. The username patch takes `{"username":"name"}`. Invalid usernames return `422 VALIDATION_ERROR`.
 
 ---
 
@@ -135,3 +140,9 @@ All require exclusive `ADMINISTRATOR` role (`BR-ROLE-002`).
 | `GET / POST / PATCH /api/v1/admin/locations` | Create, update, soft-disable KU Bangkhen Campus Locations. |
 | `GET /api/v1/admin/analytics` | `UC-ADM-005`. System-wide KPIs (distinct Tickets, Reports, Affected Users), breakdowns, time metrics (`Review`, `Resolution`, `Total Lead`, `Aging`), satisfaction, and Department Performance table. |
 | `GET /api/v1/admin/audit-logs` | Paginated read-only audit log explorer for compliance verification (`BR-AUD-008`..`009`). |
+
+### Phase 1 admin responses
+
+* Users list uses the pagination envelope and supports `q` (username, real name or email), `role`, and `isActive`. Rows and successful updates use the private profile shape. PATCH accepts any combination of `roles`, `departmentId`, and `isActive`. An explicit `null` clears the department. The last active administrator is protected by `409 LAST_ACTIVE_ADMIN`.
+* The department list uses the pagination envelope with `id`, `name`, `responsibilityScope`, and `isActive` per item. Phase 1 serves it for user assignments.
+* Audit rows include `id`, `entityType`, `entityId`, `action`, `actorType`, `actorUserId`, `actorRoles`, `departmentId`, `details`, and `createdAt`. Filters are `entityType`, `action`, and `actorUserId`. Lists default to page 1 and page size 25, with 25, 50, and 100 supported.

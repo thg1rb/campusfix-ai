@@ -45,7 +45,7 @@ internal/modules/<module-name>/
 
 | Module | Owned Responsibilities | Key Tables |
 | --- | --- | --- |
-| `identity` | Auth callback, session issuance/validation, user provisioning, Username updates (`UC-AUTH-001`, `UC-USR-001`), Admin user/role management (`UC-ADM-001`). | `users`, `user_roles` |
+| `identity` | Auth callback, session issuance/validation, user provisioning, Username updates (`UC-AUTH-001`, `UC-USR-001`), Admin user/role management (`UC-ADM-001`). | `users`, `user_roles`, `sessions` |
 | `masterdata` | Categories, Departments, Campus Locations CRUD & soft-disable (`UC-ADM-002`..`004`). | `categories`, `departments`, `campus_locations` |
 | `media` | Upload validation (`.png`/`.jpg`/`.jpeg`, ≤10 MB, 1–5/report), EXIF stripping, object storage adapter, signed/public serving, purge cleanup. | `report_images`, `activity_evidence_images` |
 | `reports` | Draft save/resume, Report submission, Pending edit (`version++`), Cancel, AI analysis orchestration & storage (`UC-RPT-001`..`005`, `UC-AI-001`..`002`). | `reports`, `ai_analysis_runs`, `ticket_candidates` |
@@ -68,10 +68,10 @@ internal/modules/<module-name>/
 
 ## 3. Authentication, Sessions & Authorization
 
-* **Pluggable Provider Boundary (`BR-AUTH-001`, `BR-AUTH-004`):** Define an `AuthProvider` interface in `internal/adapters/auth/` returning normalized external identity claims (`provider`, `provider_subject_id`, `email`, `email_verified`, `hosted_domain`, `real_name`, `avatar_url`).
+* **Pluggable Provider Boundary (`BR-AUTH-001`, `BR-AUTH-004`):** Define the `AuthProvider` port in identity application and implement it in `internal/adapters/auth/` returning normalized external identity claims (`provider`, `provider_subject_id`, `email`, `email_verified`, `hosted_domain`, `real_name`, `avatar_url`).
   * **Initial MVP Provider:** **Google OAuth 2.0** restricted to `@ku.th` (`hosted_domain == "ku.th"`).
   * **Future Extensibility:** Designed behind the `AuthProvider` port so additional providers (such as KU-ALL SSO or another OIDC/SAML provider) can be plugged in with zero changes to `domain/` or business modules.
-* **Session Transport:** HTTP-only, `Secure` (in production), `SameSite=Lax` signed session cookie managed by `apps/api` (proxied or same-site with `apps/web`). Public read routes ignore missing cookies; write/private routes require a valid active session.
+* **Session Transport:** HTTP-only, `Secure` (in production), `SameSite=Lax` signed session cookie managed by `apps/api` (proxied or same-site with `apps/web`). The database stores only the token hash, checks expiry and revocation, and loads current access for every authenticated request. Public read routes ignore missing cookies. Write and private routes require a valid active session. See [ADR 0003](decisions/0003-identity-session-and-auth-provider.md).
 * **Defense-in-Depth RBAC & Separation of Duties:**
   1. HTTP middleware enforces authentication and coarse role membership.
   2. Application/Domain layer enforces resource-level invariants:
@@ -185,6 +185,10 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 
 | Library | Version | Purpose |
 | --- | --- | --- |
+| `github.com/coreos/go-oidc/v3` | `v3.21.0` | Google ID token and JWKS verification |
+| `golang.org/x/oauth2` | `v0.38.0` | OAuth authorization code and S256 PKCE exchange |
+| `github.com/google/uuid` | `v1.6.0` | UUID validation and HTTP request identifiers |
+| `github.com/jackc/pgx/v5` | `v5.10.0` | PostgreSQL driver and precise database constraint error mapping |
 | `github.com/gofiber/fiber/v3` | `v3.7.0` | HTTP router, server, and middleware |
 | `gorm.io/gorm` | `v1.31.2` | Persistence ORM inside `adapters/outbound/postgres/` only |
 | `gorm.io/driver/postgres` | `v1.6.3` | PostgreSQL driver for GORM (`pgx/v5`) |

@@ -12,10 +12,10 @@ Record significant architectural, protocol, security, and schema decisions here 
 | --- | --- | --- |
 | [0001-bootstrap.md](0001-bootstrap.md) | Bootstrap architecture and toolchains | Accepted |
 | [0002-auth-provider-and-resolved-only-final-state.md](0002-auth-provider-and-resolved-only-final-state.md) | MVP Auth Provider (Google OAuth `@ku.th`) and `RESOLVED`-only final Ticket state | Accepted |
+| [0003-identity-session-and-auth-provider.md](0003-identity-session-and-auth-provider.md) | Identity sessions and AuthProvider | Accepted |
 
 ## Planned ADRs (Create When Implementing)
 
-* `0003-auth-session-and-rbac-implementation.md` — Session cookie signing/storage, OAuth callback state/CSRF handling, and RBAC middleware wiring.
 * `0004-media-storage-and-exif.md` — Object storage choice, upload flow, EXIF stripping library, and 30-day purge media cleanup.
 * `0005-ai-triage-and-similarity.md` — JEV provider protocol, multimodal prompt strategy, candidate shortlist query, similarity weighting, and retry policy.
 * `0006-web-api-integration.md` — Replacing the in-browser `PrototypeStore` and `mockAiService` in `apps/web` with live Go API integration.

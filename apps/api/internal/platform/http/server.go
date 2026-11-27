@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -18,15 +17,9 @@ func NewServer(database, gateway Checker) *fiber.App {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
 		IdleTimeout:  30 * time.Second,
-		ErrorHandler: func(c fiber.Ctx, err error) error {
-			status := fiber.StatusInternalServerError
-			var httpError *fiber.Error
-			if errors.As(err, &httpError) {
-				status = httpError.Code
-			}
-			return c.Status(status).JSON(fiber.Map{"status": "error"})
-		},
+		ErrorHandler: handleError,
 	})
+	app.Use(requestContext)
 	app.Use(recover.New())
 	app.Get("/healthz", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
