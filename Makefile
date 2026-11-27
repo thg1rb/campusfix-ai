@@ -54,5 +54,6 @@ migration-create:
 
 migrate:
 	cd apps/api && if ! find migrations -name '*.sql' | grep -q .; then echo "No migrations to apply."; exit 0; fi; \
+		override="$${MIGRATION_DATABASE_URL:-}"; \
 		set -a; if [ -f .env ]; then . ./.env; fi; \
-		GOOSE_DRIVER=postgres GOOSE_DBSTRING="$${MIGRATION_DATABASE_URL:-$$DATABASE_URL}" $(GOOSE) -dir migrations up
+		GOOSE_DRIVER=postgres GOOSE_DBSTRING="$${override:-$${MIGRATION_DATABASE_URL:-$$DATABASE_URL}}" $(GOOSE) -dir migrations up

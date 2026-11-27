@@ -23,9 +23,9 @@ make smoke-outage   # Stops AI container, verifies degraded 503 readiness and au
 
 GitHub Actions runs automatically on Pull Requests targeting `develop` or `main` (open a **Draft PR** for continuous checks on feature-branch pushes without duplicate runs), on `push` to `develop`/`main`, and via `workflow_dispatch`:
 
-* **3 Clean Checks (`CI / Web`, `CI / API`, `CI / AI`):** Each job opens with a fast `dorny/paths-filter@v4` step (~5s). Web and AI skip work on unrelated changes. API race tests run on every workflow execution, and static API checks remain path-filtered.
+* **3 Clean Checks (`CI / Web`, `CI / API`, `CI / AI`):** Each job opens with a fast `dorny/paths-filter@v4` step (~5s). Service setup and tests are path-filtered. A manual workflow dispatch runs all services.
 * **`CI / Web`:** Prettier (`format:check`), ESLint, TypeScript (`typecheck`), Vitest (`test`), and Next.js (`build`) when `apps/web/**` changes.
-* **`CI / API`:** `gofmt`, `go mod verify`, `go vet`, `golangci-lint` v2 (`v2.15.0`), and `go build ./...` when `apps/api/**` changes. The `go test -race -count=1 ./...` step runs against a PostgreSQL service on every CI run. Run `docker compose config --quiet` when `compose*.yaml` or `apps/*/Dockerfile` changes.
+* **`CI / API`:** `gofmt`, `go mod verify`, `go vet`, `golangci-lint` v2 (`v2.15.0`), and `go build ./...` when `apps/api/**` changes. Go setup and `go test -race -count=1 ./...` against PostgreSQL 18.7 run when `apps/api/**` or `.github/workflows/ci.yml` changes, or on manual dispatch. Run `docker compose config --quiet` when `compose*.yaml` or `apps/*/Dockerfile` changes.
 * **`CI / AI`:** `uv lock --check`, `uv sync --locked`, Ruff (`format --check` & `check`), `pytest`, and `app_factory()` import verification when `apps/ai/**` changes. Changes to `.github/workflows/ci.yml` trigger all 3 jobs.
 
 ### Per-Service Test Commands
