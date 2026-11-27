@@ -24,13 +24,14 @@ const (
 type cookies struct {
 	secret []byte
 	secure bool
+	now    func() time.Time
 }
 
-func newCookies(secret string, secure bool) cookies {
+func newCookies(secret string, secure bool, now func() time.Time) cookies {
 	if secret == "" {
 		secret = application.RandomToken()
 	}
-	return cookies{secret: []byte(secret), secure: secure}
+	return cookies{secret: []byte(secret), secure: secure, now: now}
 }
 
 func (s cookies) sign(name, payload string) string {
@@ -55,7 +56,7 @@ func (s cookies) write(c fiber.Ctx, name, path, payload string, lifetime time.Du
 	if lifetime > 0 {
 		cookie.Value = payload + "." + s.sign(name, payload)
 		cookie.MaxAge = int(lifetime.Seconds())
-		cookie.Expires = time.Now().Add(lifetime).UTC()
+		cookie.Expires = s.now().Add(lifetime).UTC()
 	}
 	c.Response().Header.Add("Set-Cookie", cookie.String())
 }

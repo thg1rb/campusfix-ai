@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +29,7 @@ type Handler struct {
 
 func New(service *application.Service, provider application.AuthProvider, a config.Auth, clock func() time.Time) *Handler {
 	return &Handler{
-		service: service, provider: provider, cookies: newCookies(a.SessionSecret, a.CookieSecure),
+		service: service, provider: provider, cookies: newCookies(a.SessionSecret, a.CookieSecure, clock),
 		origin: a.AppBaseURL, now: clock,
 	}
 }
@@ -74,6 +75,10 @@ func (h *Handler) me(c fiber.Ctx) error {
 }
 
 func decode(c fiber.Ctx, target any) error {
+	mediaType, _, err := mime.ParseMediaType(c.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return apperror.New(415, "UNSUPPORTED_MEDIA_TYPE", "Use Content-Type application/json.")
+	}
 	parser := json.NewDecoder(bytes.NewReader(c.Body()))
 	parser.DisallowUnknownFields()
 	if err := parser.Decode(target); err != nil {
@@ -128,6 +133,13 @@ func (h *Handler) listUsers(c fiber.Ctx) error {
 	return c.JSON(pagination.Result[profile]{Items: profiles, Pagination: result.Pagination})
 }
 
+type departmentResponse struct {
+	ID                  string `json:"id"`
+	Name                string `json:"name"`
+	ResponsibilityScope string `json:"responsibilityScope"`
+	IsActive            bool   `json:"isActive"`
+}
+
 func (h *Handler) listDepartments(c fiber.Ctx) error {
 	page, err := pagination.Parse(c.Query("page"), c.Query("pageSize"))
 	if err != nil {
@@ -138,7 +150,11 @@ func (h *Handler) listDepartments(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(result)
+	items := make([]departmentResponse, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, departmentResponse(item))
+	}
+	return c.JSON(pagination.Result[departmentResponse]{Items: items, Pagination: result.Pagination})
 }
 
 func parsePatch(c fiber.Ctx) (application.UserPatch, error) {

@@ -59,8 +59,8 @@ func loadAuth() (Auth, error) {
 	if a.GoogleAllowedDomain != "ku.th" {
 		return Auth{}, errors.New("GOOGLE_OAUTH_ALLOWED_DOMAIN must be ku.th")
 	}
-	if a.GoogleEnabled() && len(strings.TrimSpace(a.SessionSecret)) < 32 {
-		return Auth{}, errors.New("AUTH_SESSION_SECRET must contain at least 32 characters when OAuth is enabled")
+	if (a.SessionSecret != "" || a.GoogleEnabled()) && len(strings.TrimSpace(a.SessionSecret)) < 32 {
+		return Auth{}, errors.New("AUTH_SESSION_SECRET must contain at least 32 characters when set or when OAuth is enabled")
 	}
 	for _, value := range strings.Split(os.Getenv("BOOTSTRAP_ADMIN_EMAILS"), ",") {
 		email := strings.ToLower(strings.TrimSpace(value))

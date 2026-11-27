@@ -111,10 +111,10 @@ func (r *Repository) UpdateSnapshot(ctx context.Context, id string, i domain.Ext
 		i.RealName, i.Email, i.EmailVerified, i.HostedDomain, i.AvatarURL, id).Error
 }
 
-func (r *Repository) BySession(ctx context.Context, hash string) (domain.User, error) {
+func (r *Repository) BySession(ctx context.Context, hash string, now time.Time) (domain.User, error) {
 	return findUser(r.db.DB(ctx).Table("users AS u").
 		Joins("JOIN sessions s ON s.user_id = u.id").
-		Where("s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > now() AND u.is_active", hash))
+		Where("s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.is_active", hash, now))
 }
 
 func (r *Repository) InsertSession(ctx context.Context, id, hash string, expires time.Time) error {

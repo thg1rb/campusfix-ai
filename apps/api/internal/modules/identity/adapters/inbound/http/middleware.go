@@ -2,6 +2,7 @@ package http
 
 import (
 	"errors"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -78,11 +79,43 @@ func RejectAdminOperational(c fiber.Ctx) error {
 }
 
 func (h *Handler) checkWriteOrigin(c fiber.Ctx) error {
-	origin := c.Get("Origin")
-	site := c.Get("Sec-Fetch-Site")
-	if (origin != "" && !strings.EqualFold(origin, h.origin)) ||
-		(origin == "" && site != "" && site != "same-origin") {
+	if site := c.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
+		return apperror.Forbidden
+	}
+	if origin := c.Get("Origin"); origin != "" {
+		if !sameWriteOrigin(origin, h.origin, false) {
+			return apperror.Forbidden
+		}
+	} else if referer := c.Get("Referer"); referer != "" {
+		if !sameWriteOrigin(referer, h.origin, true) {
+			return apperror.Forbidden
+		}
+	} else if c.Cookies(sessionCookie) != "" {
 		return apperror.Forbidden
 	}
 	return c.Next()
+}
+
+func sameWriteOrigin(value, appOrigin string, referer bool) bool {
+	candidate, err := url.Parse(value)
+	if err != nil || candidate.User != nil || candidate.Hostname() == "" || candidate.Fragment != "" {
+		return false
+	}
+	if !referer && (candidate.Path != "" || candidate.ForceQuery || candidate.RawQuery != "") {
+		return false
+	}
+	expected, err := url.Parse(appOrigin)
+	return err == nil && candidate.Scheme == expected.Scheme &&
+		strings.EqualFold(candidate.Hostname(), expected.Hostname()) &&
+		originPort(candidate) == originPort(expected)
+}
+
+func originPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	if u.Scheme == "https" {
+		return "443"
+	}
+	return "80"
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,7 +47,7 @@ type Repository interface {
 	InsertUser(context.Context, domain.ExternalIdentity, string, domain.Role) (domain.User, error)
 	UpdateSnapshot(context.Context, string, domain.ExternalIdentity) error
 	ByID(context.Context, string, bool) (domain.User, error)
-	BySession(context.Context, string) (domain.User, error)
+	BySession(context.Context, string, time.Time) (domain.User, error)
 	InsertSession(context.Context, string, string, time.Time) error
 	RevokeSession(context.Context, string) error
 	RevokeUserSessions(context.Context, string) error
@@ -139,8 +140,23 @@ func (s *Service) provision(ctx context.Context, external domain.ExternalIdentit
 	if external.Provider == "GOOGLE" && slices.Contains(s.bootstrapEmails, strings.ToLower(external.Email)) {
 		role = domain.Administrator
 	}
-	for attempt := 0; attempt < 10000; attempt++ {
-		user, err := s.repo.InsertUser(ctx, external, domain.InitialUsername(external.Email, attempt), role)
+	const sequentialAttempts = 10
+	const randomAttempts = 10
+	for attempt := range sequentialAttempts + randomAttempts {
+		if err := ctx.Err(); err != nil {
+			return domain.User{}, err
+		}
+		var suffix string
+		switch {
+		case attempt >= sequentialAttempts:
+			var entropy [5]byte
+			_, _ = rand.Read(entropy[:])
+			suffix = hex.EncodeToString(entropy[:])
+		case attempt > 0:
+			suffix = strconv.Itoa(attempt)
+		}
+		username := domain.InitialUsername(external.Email, suffix)
+		user, err := s.repo.InsertUser(ctx, external, username, role)
 		if !errors.Is(err, domain.ErrUsernameTaken) {
 			return user, err
 		}
@@ -152,7 +168,7 @@ func (s *Service) GetMe(ctx context.Context, token string) (domain.User, error) 
 	if token == "" {
 		return domain.User{}, apperror.Unauthenticated
 	}
-	u, err := s.repo.BySession(ctx, hashToken(token))
+	u, err := s.repo.BySession(ctx, hashToken(token), s.now())
 	if errors.Is(err, apperror.NotFound) {
 		return domain.User{}, apperror.Unauthenticated
 	}

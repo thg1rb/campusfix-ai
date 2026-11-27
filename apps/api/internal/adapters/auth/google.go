@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -40,7 +42,7 @@ func NewGoogle(settings config.Auth) *Google {
 				AuthStyle: oauth2.AuthStyleInParams,
 			},
 		},
-		verifier: oidc.NewVerifier(issuer, keys, &oidc.Config{ClientID: settings.GoogleClientID}),
+		verifier: oidc.NewVerifier(issuer, trackedKeySet{keys}, &oidc.Config{ClientID: settings.GoogleClientID}),
 		domain:   settings.GoogleAllowedDomain, client: client,
 	}
 }
@@ -81,8 +83,11 @@ func (g *Google) Exchange(ctx context.Context, code, verifier, nonce string) (do
 	if !ok {
 		return empty, application.ErrProviderIdentity
 	}
-	idToken, err := g.verifier.Verify(ctx, raw)
-	if err != nil || subtle.ConstantTimeCompare([]byte(nonce), []byte(idToken.Nonce)) != 1 {
+	idToken, err := g.verifyToken(ctx, raw)
+	if err != nil {
+		return empty, err
+	}
+	if subtle.ConstantTimeCompare([]byte(nonce), []byte(idToken.Nonce)) != 1 {
 		return empty, application.ErrProviderIdentity
 	}
 	var claims googleClaims
@@ -92,14 +97,49 @@ func (g *Google) Exchange(ctx context.Context, code, verifier, nonce string) (do
 	return g.normalize(idToken.Subject, claims)
 }
 
+type keyErrorContextKey struct{}
+
+type trackedKeySet struct{ oidc.KeySet }
+
+func (keys trackedKeySet) VerifySignature(ctx context.Context, jwt string) ([]byte, error) {
+	payload, err := keys.KeySet.VerifySignature(ctx, jwt)
+	if cause, ok := ctx.Value(keyErrorContextKey{}).(*error); ok {
+		*cause = err
+	}
+	return payload, err
+}
+
+func (g *Google) verifyToken(ctx context.Context, raw string) (*oidc.IDToken, error) {
+	var keyErr error
+	// go-oidc formats key errors with %v, so capture the original error at the key-set boundary.
+	token, err := g.verifier.Verify(context.WithValue(ctx, keyErrorContextKey{}, &keyErr), raw)
+	if err == nil {
+		return token, nil
+	}
+	if keyErr != nil {
+		var network net.Error
+		// The pinned RemoteKeySet uses this prefix for fetch and response parsing failures.
+		if errors.Is(keyErr, context.DeadlineExceeded) || errors.Is(keyErr, context.Canceled) ||
+			errors.As(keyErr, &network) || strings.HasPrefix(keyErr.Error(), "fetching keys ") {
+			return nil, fmt.Errorf("%w: %w", application.ErrProviderUnavailable, keyErr)
+		}
+	}
+	return nil, application.ErrProviderIdentity
+}
+
 func (g *Google) normalize(subject string, claims googleClaims) (domain.ExternalIdentity, error) {
-	local, domainName, valid := strings.Cut(claims.Email, "@")
+	email := strings.ToLower(strings.TrimSpace(claims.Email))
+	local, domainName, valid := strings.Cut(email, "@")
 	campus := valid && local != "" && strings.EqualFold(domainName, g.domain)
-	if subject == "" || !campus || !claims.Verified || claims.HostedDomain != g.domain {
+	if subject == "" || !campus || !claims.Verified || !strings.EqualFold(claims.HostedDomain, g.domain) {
 		return domain.ExternalIdentity{}, application.ErrProviderIdentity
 	}
+	name := strings.TrimSpace(claims.Name)
+	if name == "" {
+		name = local
+	}
 	return domain.ExternalIdentity{
-		Provider: "GOOGLE", SubjectID: subject, Email: claims.Email, EmailVerified: claims.Verified,
-		HostedDomain: claims.HostedDomain, RealName: claims.Name, AvatarURL: claims.Picture,
+		Provider: "GOOGLE", SubjectID: subject, Email: email, EmailVerified: claims.Verified,
+		HostedDomain: strings.ToLower(g.domain), RealName: name, AvatarURL: claims.Picture,
 	}, nil
 }

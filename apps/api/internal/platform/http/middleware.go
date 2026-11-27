@@ -17,26 +17,47 @@ var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
 func isAPI(path string) bool { return path == "/api/v1" || strings.HasPrefix(path, "/api/v1/") }
 
-func requestContext(c fiber.Ctx) error {
-	start := time.Now()
-	id := c.Get("X-Request-Id")
-	if !requestIDPattern.MatchString(id) {
-		id = uuid.NewString()
+const defaultAPITimeout = 15 * time.Second
+
+// RouteTimeout selects an API context budget before a deadline is installed.
+type RouteTimeout struct {
+	Method  string
+	Pattern string
+	Budget  time.Duration
+}
+
+func apiTimeout(c fiber.Ctx, overrides []RouteTimeout) time.Duration {
+	for _, override := range overrides {
+		if override.Budget > 0 && override.Method == c.Method() &&
+			fiber.RoutePatternMatch(c.Path(), override.Pattern, c.App().Config()) {
+			return override.Budget
+		}
 	}
-	c.Set("X-Request-Id", id)
-	if isAPI(c.Path()) {
-		ctx, cancel := context.WithTimeout(c.Context(), 4*time.Second)
-		defer cancel()
-		c.SetContext(ctx)
-		c.Set("Cache-Control", "no-store")
+	return defaultAPITimeout
+}
+
+func requestContext(overrides []RouteTimeout) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		start := time.Now()
+		id := c.Get("X-Request-Id")
+		if !requestIDPattern.MatchString(id) {
+			id = uuid.NewString()
+		}
+		c.Set("X-Request-Id", id)
+		if isAPI(c.Path()) {
+			ctx, cancel := context.WithTimeout(c.Context(), apiTimeout(c, overrides))
+			defer cancel()
+			c.SetContext(ctx)
+			c.Set("Cache-Control", "no-store")
+		}
+		err := c.Next()
+		if err != nil {
+			err = handleError(c, err)
+		}
+		slog.Info("http request", "request_id", id, "method", c.Method(), "route", c.Route().Path,
+			"status", c.Response().StatusCode(), "duration_ms", time.Since(start).Milliseconds())
+		return err
 	}
-	err := c.Next()
-	if err != nil {
-		err = handleError(c, err)
-	}
-	slog.Info("http request", "request_id", id, "method", c.Method(), "route", c.Route().Path,
-		"status", c.Response().StatusCode(), "duration_ms", time.Since(start).Milliseconds())
-	return err
 }
 
 func handleError(c fiber.Ctx, err error) error {
@@ -52,14 +73,15 @@ func handleError(c fiber.Ctx, err error) error {
 		apiError = apperror.Unavailable
 		status = apiError.Status
 	}
-	if !isAPI(c.Path()) {
-		return c.Status(status).JSON(fiber.Map{"status": "error"})
-	}
 	if apiError == nil {
 		apiError = standardError(status)
 	}
 	if status >= 500 {
-		slog.Warn("api request failed", "request_id", c.GetRespHeader("X-Request-Id"), "error_type", apiError.Code)
+		slog.Error("HTTP request failed", "request_id", c.GetRespHeader("X-Request-Id"),
+			"error_type", apiError.Code, "status", status, "error", apperror.Diagnostic(err))
+	}
+	if !isAPI(c.Path()) {
+		return c.Status(status).JSON(fiber.Map{"status": "error"})
 	}
 	return c.Status(status).JSON(fiber.Map{"error": fiber.Map{
 		"code": apiError.Code, "message": apiError.Message, "details": fiber.Map{},

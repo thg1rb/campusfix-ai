@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/url"
 	"path"
 	"strings"
@@ -97,6 +98,12 @@ func (h *Handler) callback(c fiber.Ctx) error {
 	case errors.Is(err, domain.ErrInactive):
 		return h.loginError(c, "ACCOUNT_INACTIVE")
 	case err != nil:
+		reason := "callback_failed"
+		if errors.Is(err, application.ErrProviderUnavailable) {
+			reason = "provider_unavailable"
+		}
+		slog.Error("OAuth callback failed", "request_id", c.GetRespHeader("X-Request-Id"),
+			"reason", reason, "error", apperror.Diagnostic(err))
 		return h.loginError(c, "SERVICE_UNAVAILABLE")
 	}
 	h.cookies.write(c, sessionCookie, sessionCookiePath, token, application.SessionLifetime)

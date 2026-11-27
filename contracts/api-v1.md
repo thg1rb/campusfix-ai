@@ -46,6 +46,8 @@ Login accepts an optional same-origin absolute path via `next`. It returns `302`
 
 The private profile and successful username patch return `id`, `username`, `realName`, `email`, `emailVerified`, `hostedDomain`, `avatarUrl`, `authProvider`, `roles`, `departmentId`, `isActive`, and `createdAt`. The username patch takes `{"username":"name"}`. Invalid usernames return `422 VALIDATION_ERROR`.
 
+Cookie-authenticated identity writes require a same-origin `Origin` or, when it is absent, a same-origin `Referer`. Conflicting Fetch Metadata or missing origin proof returns `403 FORBIDDEN`. Both identity PATCH endpoints require `Content-Type: application/json` (parameters allowed). A missing or unsupported media type returns `415 UNSUPPORTED_MEDIA_TYPE`.
+
 ---
 
 ## 4. Public Read Endpoints (No Login Required — `BR-AUTH-003`, `BR-PUB-*`)

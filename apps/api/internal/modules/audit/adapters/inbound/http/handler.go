@@ -7,9 +7,23 @@ import (
 	"github.com/thg1rb/ku-spot/apps/api/internal/modules/audit/domain"
 	"github.com/thg1rb/ku-spot/apps/api/internal/platform/apperror"
 	"github.com/thg1rb/ku-spot/apps/api/internal/platform/pagination"
+	"time"
 )
 
-func List(service *application.Service) fiber.Handler {
+type entryResponse struct {
+	ID           string         `json:"id"`
+	EntityType   string         `json:"entityType"`
+	EntityID     string         `json:"entityId"`
+	Action       string         `json:"action"`
+	ActorType    string         `json:"actorType"`
+	ActorUserID  *string        `json:"actorUserId"`
+	ActorRoles   []string       `json:"actorRoles"`
+	DepartmentID *string        `json:"departmentId"`
+	Details      map[string]any `json:"details"`
+	CreatedAt    time.Time      `json:"createdAt"`
+}
+
+func List(service *application.Service, actor func(fiber.Ctx) application.AdminActor) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		page, err := pagination.Parse(c.Query("page"), c.Query("pageSize"))
 		if err != nil {
@@ -28,10 +42,14 @@ func List(service *application.Service) fiber.Handler {
 			}
 			filter.ActorUserID = id.String()
 		}
-		result, err := service.List(c.Context(), filter, page)
+		result, err := service.List(c.Context(), actor(c), filter, page)
 		if err != nil {
 			return err
 		}
-		return c.JSON(result)
+		items := make([]entryResponse, 0, len(result.Items))
+		for _, item := range result.Items {
+			items = append(items, entryResponse(item))
+		}
+		return c.JSON(pagination.Result[entryResponse]{Items: items, Pagination: result.Pagination})
 	}
 }

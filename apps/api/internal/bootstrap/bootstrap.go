@@ -32,15 +32,18 @@ func New(settings config.Config) (*Application, error) {
 		slog.Info("Google OAuth is disabled because credentials are incomplete")
 	}
 	app := http.NewServer(db, ai.NewClient(settings.AIURL))
-	registerIdentity(app, db, settings.Auth, auth.NewGoogle(settings.Auth))
+	registerIdentity(app, db, settings.Auth, auth.NewGoogle(settings.Auth), time.Now)
 	return &Application{Server: app, Database: db}, nil
 }
 
-func registerIdentity(app *fiber.App, db *database.Connection, settings config.Auth, provider identity.AuthProvider) {
-	auditService := audit.New(auditDB.New(db))
-	identityService := identity.New(identityDB.New(db), db, auditService, settings.BootstrapAdminEmails, time.Now)
-	handler := identityHTTP.New(identityService, provider, settings, time.Now)
+func registerIdentity(app *fiber.App, db *database.Connection, settings config.Auth, provider identity.AuthProvider, clock func() time.Time) {
+	auditService := audit.New(auditDB.New(db), clock)
+	identityService := identity.New(identityDB.New(db), db, auditService, settings.BootstrapAdminEmails, clock)
+	handler := identityHTTP.New(identityService, provider, settings, clock)
 	api := app.Group("/api/v1")
 	handler.Register(api)
-	api.Get("/admin/audit-logs", handler.OptionalAuth, identityHTTP.RequireExclusiveAdmin, auditHTTP.List(auditService))
+	api.Get("/admin/audit-logs", handler.OptionalAuth, identityHTTP.RequireExclusiveAdmin, auditHTTP.List(auditService, func(c fiber.Ctx) audit.AdminActor {
+		actor, _ := identityHTTP.Actor(c)
+		return actor
+	}))
 }

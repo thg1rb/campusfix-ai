@@ -1,6 +1,9 @@
 package http
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestSafeNext(t *testing.T) {
 	for _, path := range []string{"https://example.com", "//example.com", "/%2Fexample.com", "/%252Fexample.com",
@@ -15,7 +18,7 @@ func TestSafeNext(t *testing.T) {
 }
 
 func TestSignSeparatesCookiePurposes(t *testing.T) {
-	signer := newCookies("test secret", false)
+	signer := newCookies("test secret", false, time.Now)
 	if signer.sign(sessionCookie, "payload") == signer.sign(stateCookie, "payload") {
 		t.Fatal("cookie purposes share signatures")
 	}

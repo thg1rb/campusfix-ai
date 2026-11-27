@@ -4,7 +4,6 @@ import (
 	"errors"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -56,10 +55,10 @@ type ExternalIdentity struct {
 }
 
 type Department struct {
-	ID                  string `json:"id"`
-	Name                string `json:"name"`
-	ResponsibilityScope string `json:"responsibilityScope"`
-	IsActive            bool   `json:"isActive"`
+	ID                  string
+	Name                string
+	ResponsibilityScope string
+	IsActive            bool
 }
 
 func ValidRole(role Role) bool {
@@ -115,15 +114,14 @@ func NormalizeUsername(input string) (string, error) {
 	return name, nil
 }
 
-func InitialUsername(email string, attempt int) string {
+func InitialUsername(email, suffix string) string {
 	prefix, _, _ := strings.Cut(strings.ToLower(email), "@")
 	base := strings.Trim(usernameUnsafe.ReplaceAllString(prefix, "_"), "_")
 	if len(base) < 3 {
 		base = "user_" + base
 	}
-	suffix := ""
-	if attempt > 0 {
-		suffix = "_" + strconv.Itoa(attempt)
+	if suffix != "" {
+		suffix = "_" + suffix
 	}
 	return base[:min(len(base), 30-len(suffix))] + suffix
 }

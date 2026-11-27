@@ -15,10 +15,10 @@ func TestUsername(t *testing.T) {
 			t.Errorf("normalize %q = %q, %v", tc.input, got, err)
 		}
 	}
-	if got := InitialUsername("First.Last@ku.th", 2); got != "first_last_2" {
+	if got := InitialUsername("First.Last@ku.th", "2"); got != "first_last_2" {
 		t.Fatal(got)
 	}
-	if len(InitialUsername(strings.Repeat("a", 90)+"@ku.th", 100)) != 30 {
+	if len(InitialUsername(strings.Repeat("a", 90)+"@ku.th", "1234567890")) != 30 {
 		t.Fatal("username exceeds limit")
 	}
 }

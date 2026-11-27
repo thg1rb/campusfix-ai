@@ -3,16 +3,16 @@ package domain
 import "time"
 
 type Entry struct {
-	ID           string         `json:"id"`
-	EntityType   string         `json:"entityType"`
-	EntityID     string         `json:"entityId"`
-	Action       string         `json:"action"`
-	ActorType    string         `json:"actorType"`
-	ActorUserID  *string        `json:"actorUserId"`
-	ActorRoles   []string       `json:"actorRoles"`
-	DepartmentID *string        `json:"departmentId"`
-	Details      map[string]any `json:"details"`
-	CreatedAt    time.Time      `json:"createdAt"`
+	ID           string
+	EntityType   string
+	EntityID     string
+	Action       string
+	ActorType    string
+	ActorUserID  *string
+	ActorRoles   []string
+	DepartmentID *string
+	Details      map[string]any
+	CreatedAt    time.Time
 }
 
 func ValidEntityType(value string) bool {

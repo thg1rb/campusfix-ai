@@ -10,7 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -79,18 +79,15 @@ func testDatabase(t *testing.T) *database.Connection {
 			t.Error(err)
 		}
 	})
-	migrations, err := filepath.Glob("../../migrations/*_platform_identity.sql")
-	if err != nil || len(migrations) != 1 {
-		t.Fatalf("migration: %v, %v", migrations, err)
+	migrationContext, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	command := exec.CommandContext(migrationContext, "make", "migrate")
+	command.Dir = "../../../.."
+	command.Env = append(os.Environ(), "MIGRATION_DATABASE_URL="+u.String())
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("apply schema migrations: %v\n%s", err, strings.ReplaceAll(string(output), u.String(), "[database URL]"))
 	}
-	data, err := os.ReadFile(migrations[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	up, _, _ := strings.Cut(string(data), "-- +goose Down")
-	if err := db.DB(ctx).Exec(up).Error; err != nil {
-		t.Fatal(err)
-	}
+
 	return db
 }
 
@@ -102,6 +99,9 @@ type response struct {
 func send(t *testing.T, app *fiber.App, method, path, body string, cookies ...*http.Cookie) response {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	if method == http.MethodPatch || method == http.MethodPost {
+		req.Header.Set("Origin", "http://localhost:3000")
+	}
 	for _, cookie := range cookies {
 		req.AddCookie(cookie)
 	}
@@ -177,7 +177,8 @@ func TestIdentityHTTPPostgres(t *testing.T) {
 		"first": account("left@ku.th", "first"), "sameEmail": account("left@ku.th", "second"),
 		"repeat": account("changed@ku.th", "first"),
 	}}
-	registerIdentity(app, db, settings, mock)
+	now := time.Date(2026, 11, 27, 1, 2, 3, 0, time.UTC)
+	registerIdentity(app, db, settings, mock, func() time.Time { return now })
 	for _, endpoint := range []string{"/me", "/admin/users", "/admin/audit-logs"} {
 		res := send(t, app, "GET", "/api/v1"+endpoint, "")
 		res.want(t, 401, `"code":"UNAUTHENTICATED"`)
@@ -240,6 +241,7 @@ func TestIdentityHTTPPostgres(t *testing.T) {
 	}
 	send(t, app, "GET", "/api/v1/admin/audit-logs?entityType=USER&action=MANAGE_USER&actorUserId="+adminID, "", admin).
 		want(t, 200, `"totalItems":2`)
+	send(t, app, "GET", "/api/v1/admin/audit-logs?action=LOGIN", "", admin).want(t, 200, `"createdAt":"2026-11-27T01:02:03Z"`)
 	_, otherAdmin := login(t, app, "otheradmin", "")
 	otherID, _ := me(t, app, otherAdmin)
 	got := make(chan int, 2)
@@ -251,6 +253,8 @@ func TestIdentityHTTPPostgres(t *testing.T) {
 		wg.Go(func() {
 			req := httptest.NewRequest("PATCH", "/api/v1/admin/users/"+tc.id, strings.NewReader(`{"isActive":false}`))
 			req.AddCookie(tc.cookie)
+			req.Header.Set("Origin", settings.AppBaseURL)
+			req.Header.Set("Content-Type", "application/json")
 			res, err := app.Test(req)
 			if err != nil {
 				t.Error(err)
@@ -273,6 +277,16 @@ func TestIdentityHTTPPostgres(t *testing.T) {
 	if counts[200] != 1 || counts[409] != 1 {
 		t.Fatalf("concurrent admin changes: %v", counts)
 	}
+	_, expiring := login(t, app, "sameEmail", "")
+	expires := now.Add(application.SessionLifetime)
+	if expiring == nil || !expiring.Expires.Equal(expires) {
+		t.Fatalf("session expiry cookie: %v, wanted %v", expiring, expires)
+	}
+	now = expires.Add(-time.Microsecond)
+	send(t, app, "GET", "/api/v1/me", "", expiring).want(t, 200, `"username":"left_1"`)
+	now = expires
+	send(t, app, "GET", "/api/v1/me", "", expiring).want(t, 401, "UNAUTHENTICATED")
+
 }
 
 func TestNumberingPostgres(t *testing.T) {

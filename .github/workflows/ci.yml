@@ -101,6 +101,20 @@ jobs:
   api:
     name: API
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.7-bookworm
+        env:
+          POSTGRES_USER: kuspot
+          POSTGRES_PASSWORD: kuspot-ci
+          POSTGRES_DB: kuspot_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U kuspot -d kuspot_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     defaults:
       run:
         working-directory: apps/api
@@ -132,7 +146,6 @@ jobs:
           docker compose -f compose.yaml -f compose.dev.yaml config --quiet
 
       - name: Set up Go
-        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'
         uses: actions/setup-go@v7
         with:
           go-version-file: apps/api/go.mod
@@ -163,9 +176,10 @@ jobs:
           version: v2.15.0
           working-directory: apps/api
 
-      - name: Unit tests (race detector)
-        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'
-        run: go test -race ./...
+      - name: Unit and PostgreSQL integration tests (race detector)
+        env:
+          KU_SPOT_TEST_DATABASE_URL: postgresql://kuspot:kuspot-ci@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/kuspot_test?sslmode=disable
+        run: go test -race -count=1 ./...
 
       - name: Build
         if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'

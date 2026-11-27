@@ -1,11 +1,18 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/gofiber/fiber/v3"
+	"io"
+	"log/slog"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 type checkFunc func(context.Context) error
@@ -49,5 +56,67 @@ func TestProbeAndAPIContracts(t *testing.T) {
 		if res.StatusCode != tc.status || string(want) != string(got) || res.Header.Get("X-Request-Id") != "test-id" {
 			t.Fatalf("%s: %d %s", tc.path, res.StatusCode, got)
 		}
+	}
+}
+
+func TestAPITimeoutOverride(t *testing.T) {
+	app := NewServer(nil, nil, RouteTimeout{Method: "POST", Pattern: "/api/v1/upload/:id", Budget: 23 * time.Second})
+	check := func(c fiber.Ctx) error {
+		deadline, ok := c.Context().Deadline()
+		want := defaultAPITimeout
+		if c.Method() == "POST" {
+			want = 23 * time.Second
+		}
+		if !ok || time.Until(deadline) < want-time.Second || time.Until(deadline) > want {
+			t.Errorf("bad deadline for %s: %s", c.Method(), time.Until(deadline))
+		}
+		return c.SendStatus(204)
+	}
+	app.Get("/api/v1/upload/:id", check)
+	app.Post("/api/v1/upload/:id", check)
+	for _, method := range []string{"GET", "POST"} {
+		res, err := app.Test(httptest.NewRequest(method, "/api/v1/upload/1", nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := res.Body.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if res.StatusCode != 204 {
+			t.Fatal(res.StatusCode)
+		}
+	}
+}
+
+func TestSafeErrorAndPanicDiagnostics(t *testing.T) {
+	var logs bytes.Buffer
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(original) })
+	app := NewServer(nil, nil)
+	private := "private test payload"
+	app.Get("/api/v1/error", func(fiber.Ctx) error { return fmt.Errorf("%s: %w", private, context.DeadlineExceeded) })
+	app.Get("/api/v1/panic", func(fiber.Ctx) error { panic(private) })
+	for _, tc := range []struct {
+		path   string
+		status int
+	}{{"/api/v1/error", 503}, {"/api/v1/panic", 500}} {
+		req := httptest.NewRequest("GET", tc.path, nil)
+		req.Header.Set("X-Request-Id", "test-request")
+		res, err := app.Test(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(res.Body)
+		if closeErr := res.Body.Close(); closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		if err != nil || res.StatusCode != tc.status || strings.Contains(string(body), private) {
+			t.Fatalf("unexpected error response: %d %s %v", res.StatusCode, body, err)
+		}
+	}
+	if strings.Contains(logs.String(), private) || !strings.Contains(logs.String(), `"reason":"deadline_exceeded"`) ||
+		!strings.Contains(logs.String(), `"request_id":"test-request"`) || !strings.Contains(logs.String(), `"stack":`) {
+		t.Fatalf("bad diagnostics: %s", logs.String())
 	}
 }

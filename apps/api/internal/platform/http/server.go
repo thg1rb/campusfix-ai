@@ -2,6 +2,10 @@ package http
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -12,15 +16,24 @@ type Checker interface {
 	Check(context.Context) error
 }
 
-func NewServer(database, gateway Checker) *fiber.App {
+var errRecoveredPanic = errors.New("handler panicked")
+
+func NewServer(database, gateway Checker, overrides ...RouteTimeout) *fiber.App {
 	app := fiber.New(fiber.Config{
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  30 * time.Second,
 		ErrorHandler: handleError,
 	})
-	app.Use(requestContext)
-	app.Use(recover.New())
+	app.Use(requestContext(overrides))
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+		StackTraceHandler: func(c fiber.Ctx, value any) {
+			slog.Error("recovered HTTP panic", "request_id", c.GetRespHeader("X-Request-Id"),
+				"panic_type", fmt.Sprintf("%T", value), "stack", string(debug.Stack()))
+		},
+		PanicHandler: func(fiber.Ctx, any) error { return errRecoveredPanic },
+	}))
 	app.Get("/healthz", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})

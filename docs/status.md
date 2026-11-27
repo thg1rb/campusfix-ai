@@ -8,9 +8,9 @@
 
 | Component | Current Status | Reality Check |
 | --- | --- | --- |
-| **Infrastructure, Compose & CI** | **Ready (Bootstrap + Path-Filtered CI)** | `compose.yaml`, `compose.dev.yaml`, `Makefile`, `scripts/smoke.sh`, and path-filtered GitHub Actions CI (`.github/workflows/ci.yml`: 3 clean jobs `CI / Web`, `CI / API`, `CI / AI` with per-service `paths-filter` gating) configured and verified. |
+| **Infrastructure, Compose & CI** | **Ready (Bootstrap + Path-Filtered CI)** | `compose.yaml`, `compose.dev.yaml`, `Makefile`, `scripts/smoke.sh`, and path-filtered GitHub Actions CI (`.github/workflows/ci.yml`: 3 clean jobs `CI / Web`, `CI / API`, `CI / AI` with path-filtered static checks and PostgreSQL-backed API race tests on every CI run) configured. |
 | **`apps/web` (Next.js 16)** | **Phase 1 identity integrated** | Full UI prototype migrated to `apps/web` with App Router screens, Leaflet campus map, shadcn primitives, domain helpers (`src/lib/domain/`), and unit tests (`tests/*.test.ts`). Authentication, username settings, Admin Users, and Audit Logs use the Go API. Public browsing uses labeled prototype data. Mock account selection and operational actions are available in development. |
-| **`apps/api` (Go / Fiber v3)** | **Phase 0–1 implemented** | Health and readiness, Goose schema, record numbers, audit, Google OAuth sessions, profiles, and administrator user management are available. |
+| **`apps/api` (Go / Fiber v3)** | **Phase 0–1 implemented** | Health and readiness, Goose schema, record numbers, audit, Google OAuth sessions, profiles, and administrator user management are available. Identity writes enforce origin and media type, and session expiry is tested against PostgreSQL. |
 | **`apps/ai` (Python / FastAPI)** | **Implemented (Ticket-level Severity Added)** | Pluggable Gemini Triage & Embedding Gateway (`contracts/ai-triage.v1.yaml` `v1.2.0`: `/v1/triage/rephrase`, `/v1/triage/analyze`, `/v1/triage/summarize-ticket` with deterministic 4-factor ticket-level severity per `BR-AI-013`, `/v1/triage/embed-ticket`, `X-API-Key` auth, unit-length vectors) with `pytest` suite (`apps/ai/tests/`) and cross-domain evaluation demo (`apps/ai/evaluation/demo_cross_domain.py`). |
 | **Documentation & Contracts** | **Aligned to Freeze 1 + PR #2** | Root/scoped `AGENTS.md`, BRD, Business Rules (`BR-*`), Use Cases (`UC-*`), Architecture (including Dependency Registry), Data Model, Design System, Contracts (`api-v1.md`, `ai-triage.v1.yaml`, `ai-gateway.md`), ADRs, and Testing specs are synchronized. |
 
@@ -50,7 +50,7 @@
 ## 4. Recommended Implementation Roadmap (Vertical Slices)
 
 1. **Phase 0–1 — Platform and Identity:** Implemented in the API. See [ADR 0003](decisions/0003-identity-session-and-auth-provider.md).
-   - Master Data CRUD, categories, and campus locations are deferred. The department list serves account assignment.
+   - Master Data CRUD, categories, and campus locations are deferred. The department list serves account assignment. Expired session row cleanup is deferred to Phase 2 retention work.
 2. **Phase 2 — Media Pipeline & Report Lifecycle:**
    - Implement `media` adapter with magic-byte validation, ≤10 MB limit, and EXIF stripping (planned ADR `0004`).
    - Implement `reports` module (`DRAFT`, `PENDING_REVIEW`, `CANCELLED`, version bumping, 30-day retention job).

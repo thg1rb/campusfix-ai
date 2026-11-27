@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/thg1rb/ku-spot/apps/api/internal/modules/audit/domain"
+	"github.com/thg1rb/ku-spot/apps/api/internal/platform/apperror"
 	"github.com/thg1rb/ku-spot/apps/api/internal/platform/pagination"
 )
 
@@ -15,9 +16,12 @@ type Repository interface {
 	List(context.Context, Filter, pagination.Query) ([]domain.Entry, int64, error)
 }
 
-type Service struct{ repo Repository }
+type Service struct {
+	repo Repository
+	now  func() time.Time
+}
 
-func New(repo Repository) *Service { return &Service{repo: repo} }
+func New(repo Repository, clock func() time.Time) *Service { return &Service{repo: repo, now: clock} }
 
 func (s *Service) Record(ctx context.Context, entry domain.Entry) error {
 	if entry.ActorRoles == nil {
@@ -27,12 +31,17 @@ func (s *Service) Record(ctx context.Context, entry domain.Entry) error {
 		entry.Details = map[string]any{}
 	}
 	if entry.CreatedAt.IsZero() {
-		entry.CreatedAt = time.Now().UTC()
+		entry.CreatedAt = s.now().UTC()
 	}
 	return s.repo.Insert(ctx, entry)
 }
 
-func (s *Service) List(ctx context.Context, filter Filter, page pagination.Query) (pagination.Result[domain.Entry], error) {
+type AdminActor interface{ IsExclusiveAdmin() bool }
+
+func (s *Service) List(ctx context.Context, actor AdminActor, filter Filter, page pagination.Query) (pagination.Result[domain.Entry], error) {
+	if actor == nil || !actor.IsExclusiveAdmin() {
+		return pagination.Result[domain.Entry]{}, apperror.Forbidden
+	}
 	items, total, err := s.repo.List(ctx, filter, page)
 	return pagination.New(page, items, total), err
 }
