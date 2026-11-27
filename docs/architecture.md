@@ -179,6 +179,7 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 | `next-themes` | `^0.4.6` | Theme provider support (light-mode first) |
 | `vitest` / `fake-indexeddb` | `^5.1.1` / `^6.2.8` | Unit testing and prototype IndexedDB test doubles |
 | `eslint` / `eslint-config-next` | `^9` / `16.4.6` | Static linting |
+| `prettier` / `eslint-config-prettier` | `^3.10.1` / `^10.1.8` | Automated code formatting (`apps/web`) and ESLint formatting conflict prevention |
 
 ### 8.2 Go API (`apps/api` — `go.mod`)
 
@@ -188,6 +189,7 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 | `gorm.io/gorm` | `v1.31.2` | Persistence ORM inside `adapters/outbound/postgres/` only |
 | `gorm.io/driver/postgres` | `v1.6.3` | PostgreSQL driver for GORM (`pgx/v5`) |
 | `github.com/pressly/goose/v3` *(CLI via `Makefile`)* | `v3.30.1` | Explicit SQL schema migrations (`make migration-create`, `make migrate`) |
+| `golangci-lint` *(CI / CLI via `.golangci.yml`)* | `v2` (`2.15.0`) | Go static analysis and linting (`errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`, `misspell`) |
 
 ### 8.3 AI Gateway (`apps/ai` — `pyproject.toml`)
 
@@ -199,3 +201,4 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 | `hatchling` *(build backend)* | `1.33.0` | Python src-layout packaging (`ku_spot_ai`) |
 | `pytest` *(dev)* | `>=9.2.0` | Automated Python unit and API contract test runner (`apps/ai/tests/`) |
 | `httpx` *(dev)* | `>=0.28.1` | ASGI HTTP test client support for FastAPI tests |
+| `ruff` *(dev)* | `>=0.17.6` | Fast Python linter, import sorter, and formatter (`ruff check` / `ruff format`) |

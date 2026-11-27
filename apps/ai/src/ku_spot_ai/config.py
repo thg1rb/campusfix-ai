@@ -43,9 +43,7 @@ class Settings:
             raise ValueError("AI_MAX_REQUEST_BODY_BYTES must be positive")
         for key in self.client_api_keys:
             if not key or not key.isascii():
-                raise ValueError(
-                    "AI_CLIENT_API_KEYS entries must be non-empty ASCII strings"
-                )
+                raise ValueError("AI_CLIENT_API_KEYS entries must be non-empty ASCII strings")
         if self.gemini_api_key and not self.client_api_keys and not self.allow_anonymous:
             raise ValueError(
                 "AI_CLIENT_API_KEYS must be set when GEMINI_API_KEY is configured "
@@ -53,7 +51,7 @@ class Settings:
             )
 
     @classmethod
-    def load(cls) -> "Settings":
+    def load(cls) -> Settings:
         try:
             port = int(os.environ.get("AI_PORT", "8000"))
         except ValueError as exc:
@@ -71,9 +69,7 @@ class Settings:
 
         try:
             max_request_body_bytes = int(
-                os.environ.get(
-                    "AI_MAX_REQUEST_BODY_BYTES", str(DEFAULT_MAX_REQUEST_BODY_BYTES)
-                )
+                os.environ.get("AI_MAX_REQUEST_BODY_BYTES", str(DEFAULT_MAX_REQUEST_BODY_BYTES))
             )
         except ValueError as exc:
             raise ValueError("AI_MAX_REQUEST_BODY_BYTES must be positive") from exc
@@ -89,9 +85,7 @@ class Settings:
             or "gemini-embedding-2"
         )
         client_api_keys = _parse_csv(os.environ.get("AI_CLIENT_API_KEYS", ""))
-        allow_anonymous = _parse_bool(
-            os.environ.get("AI_ALLOW_ANONYMOUS", "false"), default=False
-        )
+        allow_anonymous = _parse_bool(os.environ.get("AI_ALLOW_ANONYMOUS", "false"), default=False)
         enable_docs = _parse_bool(os.environ.get("AI_ENABLE_DOCS", "true"), default=True)
 
         return cls(

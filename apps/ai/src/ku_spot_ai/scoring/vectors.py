@@ -80,8 +80,5 @@ def weighted_blend(
     if len(centroid) != len(norm_summary):
         raise ValueError("summary_vector and report_vectors must share the same dimension")
 
-    blended = [
-        norm_sw * s + norm_rw * r
-        for s, r in zip(norm_summary, centroid, strict=True)
-    ]
+    blended = [norm_sw * s + norm_rw * r for s, r in zip(norm_summary, centroid, strict=True)]
     return l2_normalize(blended)

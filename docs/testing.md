@@ -9,19 +9,33 @@ This document defines the verification commands, test pyramid, mandatory domain 
 Always run the repository-wide check before finishing code changes:
 
 ```sh
-make check          # Validates Compose configs + Web lint/typecheck/build + Go fmt/vet/test/build + AI lock/import
+make check          # Validates Compose configs + Web format/lint/typecheck/test/build + Go fmt/vet/lint/test/build + AI lock/ruff/pytest/import
+make check-web      # Runs apps/web checks only (Prettier, ESLint, TypeScript, Vitest, Next.js build)
+make check-api      # Runs apps/api checks only (gofmt, go mod verify, go vet, golangci-lint if installed, go test -race, go build)
+make check-ai       # Runs apps/ai checks only (uv lock, Ruff format/lint, pytest, app_factory import)
+make check-compose  # Validates compose.yaml and compose.dev.yaml syntax
+make format         # Auto-formats apps/web (Prettier), apps/api (gofmt), and apps/ai (Ruff)
 make smoke          # Full running stack HTTP + dependency readiness verification
 make smoke-outage   # Stops AI container, verifies degraded 503 readiness and automatic 200 recovery
 ```
+
+### Automated Path-Filtered CI (`.github/workflows/ci.yml`)
+
+GitHub Actions runs automatically on Pull Requests targeting `develop` or `main` (open a **Draft PR** for continuous checks on feature-branch pushes without duplicate runs), on `push` to `develop`/`main`, and via `workflow_dispatch`:
+
+* **3 Clean Checks (`CI / Web`, `CI / API`, `CI / AI`):** Each job opens with a fast `dorny/paths-filter@v4` step (~5s). Untouched services skip setup/lint/test/build and report green immediately, so all 3 checks can be configured directly as **Required Status Checks** on `develop` and `main` without deadlocking PRs.
+* **`CI / Web`:** Prettier (`format:check`), ESLint, TypeScript (`typecheck`), Vitest (`test`), and Next.js (`build`) when `apps/web/**` changes.
+* **`CI / API`:** `gofmt`, `go mod verify`, `go vet`, `golangci-lint` v2 (`v2.15.0`), `go test -race ./...`, and `go build ./...` when `apps/api/**` changes, plus `docker compose config --quiet` when `compose*.yaml` or `apps/*/Dockerfile` changes.
+* **`CI / AI`:** `uv lock --check`, `uv sync --locked`, Ruff (`format --check` & `check`), `pytest`, and `app_factory()` import verification when `apps/ai/**` changes. Changes to `.github/workflows/ci.yml` trigger all 3 jobs.
 
 ### Per-Service Test Commands
 
 | Service | Command | Scope |
 | --- | --- | --- |
-| **Web (`apps/web`)** | `cd apps/web && bun run test` | Pure domain unit tests (`tests/*.test.ts` via Vitest), component logic tests |
+| **Web (`apps/web`)** | `cd apps/web && bun run format:check && bun run lint && bun run typecheck && bun run test` | Prettier formatting, ESLint, TypeScript, and pure domain/store unit tests (`tests/*.test.ts` via Vitest) |
 | **Web E2E** | `cd apps/web && bunx playwright test` *(when E2E suite added)* | Full browser journeys across Public, Reporter, Reviewer, Department, Admin |
-| **API (`apps/api`)** | `cd apps/api && go test -race ./...` | Domain state machines, authorization, HTTP handlers, PostgreSQL integration tests |
-| **AI (`apps/ai`)** | `cd apps/ai && uv run --locked pytest` | FastAPI API contract tests (`tests/test_triage_api.py`), provider unit/mock tests (`tests/test_gemini_provider.py`), deterministic severity, vector blending, and error handling (also executed inside `make check`). |
+| **API (`apps/api`)** | `cd apps/api && go test -race ./...` | Domain state machines, authorization, HTTP handlers, PostgreSQL integration tests (paired with `gofmt`, `go vet`, and `golangci-lint` v2 via `.golangci.yml`) |
+| **AI (`apps/ai`)** | `cd apps/ai && uv run --locked ruff check . && uv run --locked ruff format --check . && uv run --locked pytest` | Ruff Python lint/format, FastAPI API contract tests (`tests/test_triage_api.py`), provider unit/mock tests (`tests/test_gemini_provider.py`), deterministic severity, vector blending, and error handling. |
 
 ---
 

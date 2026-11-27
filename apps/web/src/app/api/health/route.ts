@@ -15,8 +15,7 @@ export async function GET() {
       const ai = body?.checks?.ai;
       const values = ["ok", "unavailable"];
       const ready = db === "ok" && ai === "ok";
-      if (values.includes(db) && values.includes(ai) &&
-          upstream.status === (ready ? 200 : 503)) {
+      if (values.includes(db) && values.includes(ai) && upstream.status === (ready ? 200 : 503)) {
         return Response.json(
           { status: ready ? "ok" : "unavailable", checks: { db, ai } },
           { status: upstream.status, headers },

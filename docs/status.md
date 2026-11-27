@@ -8,7 +8,7 @@
 
 | Component | Current Status | Reality Check |
 | --- | --- | --- |
-| **Infrastructure & Compose** | **Ready (Bootstrap Verified)** | `compose.yaml`, `compose.dev.yaml`, `Makefile`, and `scripts/smoke.sh` verified (see [docs/verification.md](verification.md)). |
+| **Infrastructure, Compose & CI** | **Ready (Bootstrap + Path-Filtered CI)** | `compose.yaml`, `compose.dev.yaml`, `Makefile`, `scripts/smoke.sh`, and path-filtered GitHub Actions CI (`.github/workflows/ci.yml`: 3 clean jobs `CI / Web`, `CI / API`, `CI / AI` with per-service `paths-filter` gating) configured and verified. |
 | **`apps/web` (Next.js 16)** | **Prototype Migrated (Mock-Backed)** | Full UI prototype migrated to `apps/web` with App Router screens, Leaflet campus map, shadcn primitives, domain helpers (`src/lib/domain/`), and unit tests (`tests/*.test.ts`). Currently backed by in-browser `PrototypeStore.tsx` and `mockAiService.ts` — **not yet wired to `apps/api`** (except `/api/health`). |
 | **`apps/api` (Go / Fiber v3)** | **Bootstrap Skeleton** | `/healthz`, `/readyz` (PostgreSQL + AI check), config, and bootstrap wiring exist. `internal/modules/` and `migrations/` are currently empty. |
 | **`apps/ai` (Python / FastAPI)** | **Implemented (Ticket Severity + Multi-Dept Recommendation)** | Pluggable Gemini Triage & Embedding Gateway (`contracts/ai-triage.v1.yaml` `v1.2.0`: `/v1/triage/rephrase`, `/v1/triage/analyze`, `/v1/triage/summarize-ticket` with deterministic 4-factor ticket-level severity per `BR-AI-013` and multi-department recommendation per `BR-AI-010`, `/v1/triage/embed-ticket`, `X-API-Key` auth, unit-length vectors) with `pytest` suite (`apps/ai/tests/`) and cross-domain evaluation demo (`apps/ai/evaluation/demo_cross_domain.py`). |

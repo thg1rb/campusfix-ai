@@ -229,9 +229,7 @@ class GeminiTriageProvider:
                     "upstream_code": exc.code,
                 },
             )
-            raise ProviderUpstreamError(
-                "AI embedding provider is temporarily unavailable"
-            ) from exc
+            raise ProviderUpstreamError("AI embedding provider is temporarily unavailable") from exc
         except Exception as exc:
             logger.warning(
                 "Gemini embed_content failed",
@@ -240,18 +238,14 @@ class GeminiTriageProvider:
                     "error_type": type(exc).__name__,
                 },
             )
-            raise ProviderUpstreamError(
-                "AI embedding provider is temporarily unavailable"
-            ) from exc
+            raise ProviderUpstreamError("AI embedding provider is temporarily unavailable") from exc
 
         embeddings = response.embeddings or []
         if not embeddings or not embeddings[0].values:
             raise ProviderUpstreamError("AI provider returned an empty embedding vector")
 
         values = [float(v) for v in embeddings[0].values]
-        if len(values) != self._embedding_dimensions or not all(
-            math.isfinite(v) for v in values
-        ):
+        if len(values) != self._embedding_dimensions or not all(math.isfinite(v) for v in values):
             raise ProviderUpstreamError("AI provider returned an invalid embedding vector")
 
         return EmbeddingProviderResult(

@@ -55,7 +55,7 @@ class MaxBodySizeMiddleware:
             if header_name.lower() == b"content-length":
                 try:
                     declared_length = int(header_value.decode("ascii").strip())
-                except (UnicodeDecodeError, ValueError):
+                except UnicodeDecodeError, ValueError:
                     declared_length = -1
                 if declared_length > self.max_body_bytes:
                     await self._send_413(scope, receive, send)
@@ -115,9 +115,7 @@ def create_app(
     provider: TriageProvider | None = None,
 ) -> FastAPI:
     owned_provider = provider is None
-    active_provider: Any = (
-        provider if provider is not None else _build_default_provider(settings)
-    )
+    active_provider: Any = provider if provider is not None else _build_default_provider(settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

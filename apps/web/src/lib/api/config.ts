@@ -1,8 +1,13 @@
 export function readinessURL(): URL {
   try {
     const url = new URL(process.env.API_BASE_URL ?? "");
-    if (["http:", "https:"].includes(url.protocol) &&
-        !url.username && !url.password && !url.search && !url.hash) {
+    if (
+      ["http:", "https:"].includes(url.protocol) &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+    ) {
       return new URL("readyz", url.href.endsWith("/") ? url : url.href + "/");
     }
   } catch {

@@ -1,3 +1,3 @@
-import Screen from "@/features/department/screens/DepartmentDashboardScreen"
+import Screen from "@/features/department/screens/DepartmentDashboardScreen";
 
-export default Screen
+export default Screen;

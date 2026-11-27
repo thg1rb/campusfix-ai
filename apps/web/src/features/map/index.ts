@@ -1,2 +1,2 @@
-export { CampusMap } from "./components/CampusMap"
-export { CampusMapPicker } from "./components/CampusMapPicker"
+export { CampusMap } from "./components/CampusMap";
+export { CampusMapPicker } from "./components/CampusMapPicker";

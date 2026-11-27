@@ -35,15 +35,11 @@ class SeverityThresholds:
 
     def validate(self) -> None:
         if not (
-            math.isfinite(self.medium)
-            and math.isfinite(self.high)
-            and math.isfinite(self.critical)
+            math.isfinite(self.medium) and math.isfinite(self.high) and math.isfinite(self.critical)
         ):
             raise ValueError("severity thresholds must be finite numbers")
         if not (0.0 < self.medium < self.high < self.critical <= 3.0):
-            raise ValueError(
-                "severity thresholds must satisfy 0 < medium < high < critical <= 3.0"
-            )
+            raise ValueError("severity thresholds must satisfy 0 < medium < high < critical <= 3.0")
 
 
 @dataclass(frozen=True)

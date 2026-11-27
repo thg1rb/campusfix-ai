@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar
+from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -29,10 +29,10 @@ class ProviderUpstreamError(ProviderError):
 
 
 @dataclass(frozen=True)
-class StructuredProviderResult(Generic[SchemaT]):
+class StructuredProviderResult[T: BaseModel]:
     provider: str
     model: str
-    output: SchemaT
+    output: T
 
 
 @dataclass(frozen=True)

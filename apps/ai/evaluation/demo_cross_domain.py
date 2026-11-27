@@ -29,6 +29,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     norm_b = math.sqrt(sum(y * y for y in b))
     return dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
 
+
 CAMPUS_CATEGORIES = [
     {"code": "ELECTRICAL", "name": "ไฟฟ้าและแสงสว่าง"},
     {"code": "BUILDING", "name": "อาคารและสถานที่"},
@@ -130,7 +131,9 @@ async def main() -> None:
         )
 
         # 3. Summarize Ticket from all reports + Ticket-level Severity + Departments + Weighted-Blend Vector
-        print("\n=== Step 3: /v1/triage/summarize-ticket (Ticket Severity + Departments + Blended Vector) ===")
+        print(
+            "\n=== Step 3: /v1/triage/summarize-ticket (Ticket Severity + Departments + Blended Vector) ==="
+        )
         assert report1_res.embedding is not None and report2_res.embedding is not None
         assert report1_res.severity is not None and report2_res.severity is not None
         ticket_res = await service.summarize_ticket(
@@ -219,7 +222,9 @@ async def main() -> None:
         )
         assert ticket_res.blended_embedding is not None
         assert dup_probe.embedding is not None and it_res.embedding is not None
-        sim_dup = _cosine_similarity(dup_probe.embedding.values, ticket_res.blended_embedding.values)
+        sim_dup = _cosine_similarity(
+            dup_probe.embedding.values, ticket_res.blended_embedding.values
+        )
         sim_diff = _cosine_similarity(it_res.embedding.values, ticket_res.blended_embedding.values)
         print(f"\nCosine vs Blended Ticket Vector (Duplicate ศร.3 report): {sim_dup:.4f}")
         print(f"Cosine vs Blended Ticket Vector (Unrelated IT Wi-Fi):    {sim_diff:.4f}")
