@@ -15,6 +15,7 @@ import {
   demoRejectionReportId,
   type PrototypeState,
 } from "../../data/seed";
+import { useLiveSession } from "../../features/auth/LiveSession";
 import { brandEmailSubject } from "../brand";
 import type { User } from "../../types/domain";
 import { DomainError, isUniversityEmail } from "../domain/validation";
@@ -231,6 +232,21 @@ export function PrototypeStoreProvider({ children }: { children: ReactNode }) {
 export function usePrototype() {
   const store = useContext(Context);
   if (!store) throw new Error("PrototypeStoreProvider is required");
-  const state = useSyncExternalStore(store.subscribe, store.snapshot, serverSnapshot);
-  return { state, user: state ? currentUser(state) : null, dispatch: store.dispatch };
+  const snapshot = useSyncExternalStore(store.subscribe, store.snapshot, serverSnapshot);
+  const { session } = useLiveSession();
+  const demoAvailable = process.env.NODE_ENV === "development" && session.status === "guest";
+  const state =
+    snapshot && !demoAvailable && snapshot.currentUserId
+      ? { ...snapshot, currentUserId: null }
+      : snapshot;
+  const dispatch = (action: StoreAction): Promise<Result> => {
+    if (demoAvailable || (action.type === "login" && action.userId === null))
+      return store.dispatch(action);
+    return Promise.resolve({
+      ok: false,
+      errorCode: "DEMO_UNAVAILABLE",
+      message: "โหมดจำลองใช้ได้ด้วยบัญชีทดสอบเท่านั้น",
+    });
+  };
+  return { state, user: state ? currentUser(state) : null, dispatch, demoAvailable };
 }

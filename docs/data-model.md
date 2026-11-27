@@ -36,7 +36,7 @@ Matches `apps/web/src/lib/domain/numbers.ts`:
 
 ```mermaid
 erDiagram
-  users ||--o{ user_roles : has
+  users ||--|{ user_roles : has
   departments ||--o{ users : "employs (0..1 per user)"
   users ||--o{ reports : submits
   campus_locations ||--o{ reports : "optional master ref"
@@ -61,7 +61,7 @@ erDiagram
 
 ## 4. Logical PostgreSQL Schema
 
-All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` (UTC stored, rendered in `Asia/Bangkok` as needed), and schema changes are managed exclusively via Goose SQL migrations in `apps/api/migrations/`.
+Entity primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` (UTC stored, rendered in `Asia/Bangkok` as needed), and schema changes are managed exclusively via Goose SQL migrations in `apps/api/migrations/`.
 
 ### 4.1 Identity & Master Data
 
@@ -69,7 +69,7 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
   * `id` UUID PK
   * `auth_provider` TEXT NOT NULL *(initial MVP value: `GOOGLE`; stored as extensible string to support future providers such as `KU_ALL`)*
   * `provider_subject_id` TEXT NOT NULL *(private, immutable; `UNIQUE(auth_provider, provider_subject_id)`)*
-  * `username` TEXT NOT NULL UNIQUE *(public identity; mutable; case-insensitive unique index on `LOWER(username)`)*
+  * `username` TEXT NOT NULL *(public identity; mutable; case-insensitive unique index on `LOWER(username)`)*
   * `real_name` TEXT NOT NULL *(private)*
   * `email` TEXT NOT NULL *(private; used for Major Event Emails)*
   * `email_verified` BOOLEAN NOT NULL DEFAULT FALSE
@@ -81,8 +81,11 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
 * **`user_roles`**
   * `user_id` UUID NOT NULL REFERENCES `users(id)` ON DELETE CASCADE
   * `role` TEXT NOT NULL (`REPORTER` | `REVIEWER` | `DEPARTMENT_STAFF` | `ADMINISTRATOR`)
+  * `assigned_at` TIMESTAMPTZ NOT NULL, `assigned_by` UUID NULL REFERENCES `users(id)`
   * `PRIMARY KEY (user_id, role)`
-  * *Invariant enforced in application + trigger/constraint:* If `ADMINISTRATOR` exists for `user_id`, count of roles MUST be `1` and `users.department_id` MUST be `NULL` (`BR-ROLE-002`).
+  * The application and deferred constraints enforce at least one role per user at commit (`BR-ROLE-001`). If `ADMINISTRATOR` exists for `user_id`, the role count MUST be `1` and `users.department_id` MUST be `NULL` (`BR-ROLE-002`).
+* **`sessions`**
+  * `id` UUID PK, `token_hash` TEXT NOT NULL UNIQUE, `user_id` UUID NOT NULL REFERENCES `users(id)` ON DELETE CASCADE, `expires_at`, `revoked_at` (nullable), and `created_at`
 * **`categories`**
   * `id` UUID PK, `name` TEXT NOT NULL UNIQUE, `description` TEXT NOT NULL DEFAULT `''`, `is_active` BOOLEAN NOT NULL DEFAULT TRUE, `created_at`, `updated_at`
 * **`departments`**
@@ -210,7 +213,7 @@ All primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPTZ` 
   * `UNIQUE (ticket_id, reporter_id)` (`BR-FBK-003`)
 * **`email_notification_logs`** & **`audit_logs`**
   * `email_notification_logs`: `id`, `event_type` (`MajorEmailEventType`), `ticket_id`, `report_id`, `recipient_user_id`, `recipient_email`, `subject`, `body_preview`, `status` (`SENT` | `FAILED`), `error_message`, `created_at`.
-  * `audit_logs`: `id`, `entity_type` (`REPORT` | `TICKET` | `AI_RUN` | `USER` | `CATEGORY` | `DEPARTMENT` | `LOCATION` | `RETENTION`), `entity_id`, `action`, `actor_id` (nullable for `SYSTEM`/`AI_SERVICE`), `actor_roles` JSONB, `department_id`, `details` JSONB, `created_at` (append-only; never updated or deleted).
+  * `audit_logs`: `id`, `entity_type` (`REPORT` | `TICKET` | `AI_RUN` | `USER` | `CATEGORY` | `DEPARTMENT` | `LOCATION` | `RETENTION`), `entity_id`, `action`, `actor_type` (`USER` | `SYSTEM` | `AI_SERVICE`), `actor_user_id` (required for `USER`), `actor_roles` JSONB, `department_id`, `details` JSONB, `created_at` (append-only; never updated or deleted).
 
 ---
 

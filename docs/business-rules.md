@@ -31,7 +31,7 @@ BR-<DOMAIN>-<NUMBER>
 
 | Rule ID | Business Rule |
 | --- | --- |
-| `BR-ROLE-001` | A single non-admin user account may hold multiple roles simultaneously. |
+| `BR-ROLE-001` | Every user account must hold at least one role. A non-admin account may hold multiple roles simultaneously. |
 | `BR-ROLE-002` | `ADMINISTRATOR` is an **exclusive role** and cannot be combined with any other role on the same account. |
 | `BR-ROLE-003` | A user may belong to **at most one** Department (applicable to `DEPARTMENT_STAFF` only). |
 | `BR-ROLE-004` | A user who is a Reporter of a Report or Ticket must **never** use the `REVIEWER` role to act on that Report or Ticket. |

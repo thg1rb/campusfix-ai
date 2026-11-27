@@ -23,9 +23,9 @@ make smoke-outage   # Stops AI container, verifies degraded 503 readiness and au
 
 GitHub Actions runs automatically on Pull Requests targeting `develop` or `main` (open a **Draft PR** for continuous checks on feature-branch pushes without duplicate runs), on `push` to `develop`/`main`, and via `workflow_dispatch`:
 
-* **3 Clean Checks (`CI / Web`, `CI / API`, `CI / AI`):** Each job opens with a fast `dorny/paths-filter@v4` step (~5s). Untouched services skip setup/lint/test/build and report green immediately, so all 3 checks can be configured directly as **Required Status Checks** on `develop` and `main` without deadlocking PRs.
+* **3 Clean Checks (`CI / Web`, `CI / API`, `CI / AI`):** Each job opens with a fast `dorny/paths-filter@v4` step (~5s). Service setup and tests are path-filtered. A manual workflow dispatch runs all services.
 * **`CI / Web`:** Prettier (`format:check`), ESLint, TypeScript (`typecheck`), Vitest (`test`), and Next.js (`build`) when `apps/web/**` changes.
-* **`CI / API`:** `gofmt`, `go mod verify`, `go vet`, `golangci-lint` v2 (`v2.15.0`), `go test -race ./...`, and `go build ./...` when `apps/api/**` changes, plus `docker compose config --quiet` when `compose*.yaml` or `apps/*/Dockerfile` changes.
+* **`CI / API`:** `gofmt`, `go mod verify`, `go vet`, `golangci-lint` v2 (`v2.15.0`), and `go build ./...` when `apps/api/**` changes. Go setup and `go test -race -count=1 ./...` against PostgreSQL 18.7 run when `apps/api/**` or `.github/workflows/ci.yml` changes, or on manual dispatch. Run `docker compose config --quiet` when `compose*.yaml` or `apps/*/Dockerfile` changes.
 * **`CI / AI`:** `uv lock --check`, `uv sync --locked`, Ruff (`format --check` & `check`), `pytest`, and `app_factory()` import verification when `apps/ai/**` changes. Changes to `.github/workflows/ci.yml` trigger all 3 jobs.
 
 ### Per-Service Test Commands
@@ -45,7 +45,7 @@ GitHub Actions runs automatically on Pull Requests targeting `develop` or `main`
 
 1. **`apps/api` (Go):**
    - **Domain Unit Tests (`internal/modules/*/domain/`):** Pure Go table-driven tests with zero DB/network dependencies covering all state transitions, Separation of Duties, Exclusive Admin, multi-department auto-resolve, and record numbering.
-   - **Integration Tests (`adapters/outbound/postgres/` & HTTP handlers):** Run against a disposable PostgreSQL instance migrated with Goose (`make migrate`), verifying SQL constraints, optimistic version conflicts, transaction atomicity, and public DTO redaction.
+   - **Integration Tests (`adapters/outbound/postgres/` & HTTP handlers):** Set `KU_SPOT_TEST_DATABASE_URL` to a local PostgreSQL database with schema creation privileges. Tests use per-run disposable schemas and invoke the pinned Goose migrations with `make migrate`, verifying SQL constraints, optimistic version conflicts, transaction atomicity, and public DTO redaction.
 2. **`apps/ai` (Python):**
    - **Unit & Contract Tests (`apps/ai/tests/`):** FastAPI `TestClient` + mocked JEV provider verifying request/response schemas against [contracts/ai-gateway.md](../contracts/ai-gateway.md), invalid model output rejection, and timeout/error handling.
    - **Offline Evaluation (`apps/ai/evaluation/`):** Golden benchmark suite measuring AI quality metrics (see Section 4).

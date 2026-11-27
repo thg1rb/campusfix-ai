@@ -15,7 +15,7 @@ export function isFinalTicket(status: unknown): status is FinalTicketStatus {
   return status === "RESOLVED";
 }
 
-export function isExclusiveAdmin(user: User | null): boolean {
+export function isExclusiveAdmin(user: Pick<User, "roles"> | null): boolean {
   return !!user && user.roles.includes("ADMINISTRATOR");
 }
 

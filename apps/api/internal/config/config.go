@@ -12,6 +12,7 @@ type Config struct {
 	Address     string
 	DatabaseURL string
 	AIURL       string
+	Auth        Auth
 }
 
 func Load() (Config, error) {
@@ -27,9 +28,14 @@ func Load() (Config, error) {
 	if err != nil || (aiURL.Scheme != "http" && aiURL.Scheme != "https") || aiURL.Hostname() == "" || aiURL.User != nil || aiURL.RawQuery != "" || aiURL.Fragment != "" {
 		return Config{}, fmt.Errorf("AI_BASE_URL must be an HTTP(S) base URL")
 	}
+	auth, err := loadAuth()
+	if err != nil {
+		return Config{}, err
+	}
 	return Config{
 		Address:     net.JoinHostPort("0.0.0.0", strconv.Itoa(port)),
 		DatabaseURL: databaseURL.String(),
 		AIURL:       aiURL.JoinPath("healthz").String(),
+		Auth:        auth,
 	}, nil
 }

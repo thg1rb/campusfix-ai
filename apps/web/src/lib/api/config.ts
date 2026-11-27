@@ -1,4 +1,4 @@
-export function readinessURL(): URL {
+export function apiURL(path: string): URL {
   try {
     const url = new URL(process.env.API_BASE_URL ?? "");
     if (
@@ -8,10 +8,14 @@ export function readinessURL(): URL {
       !url.search &&
       !url.hash
     ) {
-      return new URL("readyz", url.href.endsWith("/") ? url : url.href + "/");
+      return new URL(path, url.href.endsWith("/") ? url : url.href + "/");
     }
   } catch {
-    // Report a configuration error without including the input.
+    // Report configuration errors without including the input.
   }
   throw new Error("API_BASE_URL must be a valid HTTP(S) base URL");
+}
+
+export function readinessURL(): URL {
+  return apiURL("readyz");
 }

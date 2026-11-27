@@ -17,8 +17,18 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { platformName } from "@/lib/brand";
 import { usePrototype } from "@/lib/store/PrototypeStore";
+import { useLiveSession } from "../LiveSession";
+import { oauthErrorMessage } from "../authErrors";
+import { ErrorNotice } from "@/components/shared/Controls";
+import { getBrowserLoginUrl } from "@/lib/api/identity";
 import { cn } from "@/lib/utils";
-import { accountChooserPath, authLink, googleSignInLabel, publicFeedPath } from "../authRoutes";
+import {
+  accountChooserPath,
+  authLink,
+  googleSignInLabel,
+  publicFeedPath,
+  safeReturnPath,
+} from "../authRoutes";
 import { CampusPlan, CampusPortalBrand } from "../components/CampusPortalBrand";
 import { GoogleMark } from "../components/GoogleMark";
 import { LoginTicketPreview } from "../components/LoginTicketPreview";
@@ -36,10 +46,13 @@ const overview = [
   { label: "ติดตามความคืบหน้า", value: "4 สถานะของเรื่อง" },
 ];
 
-export default function LoginScreen({ next }: { next?: string }) {
-  const { user } = usePrototype();
-  useAuthRedirect(user, next);
-  if (user) return null;
+export default function LoginScreen({ next, error }: { next?: string; error?: string }) {
+  const { user: demoUser } = usePrototype();
+  const { session } = useLiveSession();
+  const user = session.user ?? demoUser;
+  const start = getBrowserLoginUrl(safeReturnPath(next));
+  useAuthRedirect(error ? null : user, next);
+  if (user && !error) return null;
 
   return (
     <div className="relative isolate grid min-w-0 grid-rows-[auto_auto_1fr] lg:grid-cols-2 lg:grid-rows-[1fr_auto_auto_1fr]">
@@ -107,11 +120,12 @@ export default function LoginScreen({ next }: { next?: string }) {
             </p>
           </CardHeader>
           <CardContent className="grid gap-3.5">
+            {error && <ErrorNotice message={oauthErrorMessage(error)} />}
             <Button
               asChild
               className="group/sign-in min-h-12 w-full gap-2.5 hover:shadow-lg hover:shadow-emerald-900/20"
             >
-              <Link href={authLink(accountChooserPath, next)} prefetch={false}>
+              <a href={start}>
                 <span className="grid size-7 shrink-0 place-items-center rounded-md bg-white">
                   <GoogleMark />
                 </span>
@@ -120,7 +134,7 @@ export default function LoginScreen({ next }: { next?: string }) {
                   aria-hidden="true"
                   className="hidden transition-transform duration-150 motion-safe:group-hover/sign-in:translate-x-0.5 sm:block"
                 />
-              </Link>
+              </a>
             </Button>
             <ul className="flex flex-wrap gap-1.5">
               <li>
@@ -151,9 +165,13 @@ export default function LoginScreen({ next }: { next?: string }) {
                 <span>เข้าชมรายการปัญหาสาธารณะ (ไม่ต้องเข้าสู่ระบบ)</span>
               </Link>
             </Button>
-            <p className="mt-1 text-center text-xs leading-relaxed text-muted-foreground">
-              ต้นแบบจำลองระบบยืนยันตัวตนด้วยบัญชี Google (@ku.th)
-            </p>
+            {process.env.NODE_ENV === "development" && (
+              <Button asChild variant="ghost">
+                <Link href={authLink(accountChooserPath, next)} prefetch={false}>
+                  ทดลองใช้บัญชีจำลอง (สำหรับนักพัฒนา)
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>

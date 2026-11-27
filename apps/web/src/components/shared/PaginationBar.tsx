@@ -19,12 +19,14 @@ export function PaginationBar({
   total,
   onPage,
   onSize,
+  disabled = false,
 }: {
   page: number;
   size: PageSize;
   total: number;
   onPage: (page: number) => void;
   onSize: (size: PageSize) => void;
+  disabled?: boolean;
 }) {
   return (
     <nav aria-label="หน้ารายการ" className="flex flex-wrap items-center justify-between gap-3">
@@ -33,6 +35,7 @@ export function PaginationBar({
       </span>
       <div className="flex flex-wrap items-center gap-2">
         <Select
+          disabled={disabled}
           value={String(size)}
           onValueChange={(value) => onSize(value === "100" ? 100 : value === "50" ? 50 : 25)}
         >
@@ -53,7 +56,7 @@ export function PaginationBar({
           type="button"
           variant="outline"
           size="icon"
-          disabled={page <= 1}
+          disabled={disabled || page <= 1}
           onClick={() => onPage(page - 1)}
           aria-label="หน้าก่อนหน้า"
         >
@@ -63,7 +66,7 @@ export function PaginationBar({
           type="button"
           variant="outline"
           size="icon"
-          disabled={page * size >= total}
+          disabled={disabled || page * size >= total}
           onClick={() => onPage(page + 1)}
           aria-label="หน้าถัดไป"
         >
