@@ -59,7 +59,8 @@ BEGIN
     SELECT count(*), coalesce(bool_or(role = 'ADMINISTRATOR'), false),
         coalesce(bool_or(role = 'DEPARTMENT_STAFF'), false)
     INTO role_count, has_admin, has_staff FROM user_roles WHERE user_id = account_id;
-    IF (has_admin AND (role_count <> 1 OR department IS NOT NULL))
+    IF role_count = 0
+        OR (has_admin AND (role_count <> 1 OR department IS NOT NULL))
         OR has_staff <> (department IS NOT NULL) THEN
         RAISE EXCEPTION 'inconsistent account roles and department' USING ERRCODE = '23514';
     END IF;

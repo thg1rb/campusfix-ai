@@ -314,6 +314,26 @@ export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const mode = getRouteMode(path);
   const portal = mode === "login" || mode === "demo-login";
+  const loading = (
+    <div className="mx-auto grid max-w-[1200px] gap-4 px-4 py-10" role="status">
+      <span className="sr-only">กำลังโหลดข้อมูล…</span>
+      <Skeleton className="h-10 w-56" />
+      <Skeleton className="h-44 w-full" />
+    </div>
+  );
+  let content: ReactNode = loading;
+  if (mode === "prototype-only" && !demoAvailable) {
+    if (process.env.NODE_ENV !== "development" || session.status !== "loading") {
+      content = (
+        <PageFrame>
+          <p className="campus-panel p-4">ส่วนนี้อยู่ระหว่างเชื่อมต่อกับระบบจริง</p>
+        </PageFrame>
+      );
+    }
+  } else if (mode === "login" || mode === "live" || state) {
+    content = children;
+  }
+
   return (
     <div className="flex min-h-dvh flex-col">
       <a
@@ -329,19 +349,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </p>
       )}
       <main id="main" tabIndex={-1} className={cn("flex-1", portal && "grid")}>
-        {mode === "prototype-only" && !demoAvailable && session.status !== "loading" ? (
-          <PageFrame>
-            <p className="campus-panel p-4">ส่วนนี้อยู่ระหว่างเชื่อมต่อกับระบบจริง</p>
-          </PageFrame>
-        ) : mode === "login" || mode === "live" || state ? (
-          children
-        ) : (
-          <div className="mx-auto grid max-w-[1200px] gap-4 px-4 py-10" role="status">
-            <span className="sr-only">กำลังโหลดข้อมูล…</span>
-            <Skeleton className="h-10 w-56" />
-            <Skeleton className="h-44 w-full" />
-          </div>
-        )}
+        {content}
       </main>
       {demoAvailable && <DemoSimulationBar compact={portal} />}
     </div>

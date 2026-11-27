@@ -36,7 +36,7 @@ Matches `apps/web/src/lib/domain/numbers.ts`:
 
 ```mermaid
 erDiagram
-  users ||--o{ user_roles : has
+  users ||--|{ user_roles : has
   departments ||--o{ users : "employs (0..1 per user)"
   users ||--o{ reports : submits
   campus_locations ||--o{ reports : "optional master ref"
@@ -83,7 +83,7 @@ Entity primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPT
   * `role` TEXT NOT NULL (`REPORTER` | `REVIEWER` | `DEPARTMENT_STAFF` | `ADMINISTRATOR`)
   * `assigned_at` TIMESTAMPTZ NOT NULL, `assigned_by` UUID NULL REFERENCES `users(id)`
   * `PRIMARY KEY (user_id, role)`
-  * *Invariant enforced in application + trigger/constraint:* If `ADMINISTRATOR` exists for `user_id`, count of roles MUST be `1` and `users.department_id` MUST be `NULL` (`BR-ROLE-002`).
+  * The application and deferred constraints enforce at least one role per user at commit (`BR-ROLE-001`). If `ADMINISTRATOR` exists for `user_id`, the role count MUST be `1` and `users.department_id` MUST be `NULL` (`BR-ROLE-002`).
 * **`sessions`**
   * `id` UUID PK, `token_hash` TEXT NOT NULL UNIQUE, `user_id` UUID NOT NULL REFERENCES `users(id)` ON DELETE CASCADE, `expires_at`, `revoked_at` (nullable), and `created_at`
 * **`categories`**
