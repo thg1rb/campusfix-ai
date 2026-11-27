@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: KU Spot Pluggable AI Triage API
-  version: 1.2.0
+  version: 1.3.0
   description: |
     Stateless, domain-agnostic multimodal incident AI API for KU Spot and
     other university reporting/helpdesk systems.
@@ -14,8 +14,8 @@ info:
 
     Provides 4 composable capabilities:
     1. POST /v1/triage/rephrase         — Optional report title & description rephrasing
-    2. POST /v1/triage/analyze          — Category classification, deterministic severity, keyword extraction, and report embedding vector
-    3. POST /v1/triage/summarize-ticket — Multi-report ticket title/description/keywords synthesis, deterministic ticket-level severity (BR-AI-013), and weighted-blend ticket vector
+    2. POST /v1/triage/analyze          — Category classification, deterministic severity, multi-department recommendation (BR-AI-010), keyword extraction, and report embedding vector
+    3. POST /v1/triage/summarize-ticket — Multi-report ticket title/description/keywords synthesis, optional category classification, deterministic ticket-level severity (BR-AI-013), optional multi-department recommendation (BR-AI-010), and weighted-blend ticket vector
     4. POST /v1/triage/embed-ticket     — Embed-only weighted-blend ticket vector (no LLM call; used when Reviewer edits final ticket text)
 paths:
   /healthz:
@@ -76,15 +76,17 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /v1/triage/analyze:
     post:
-      summary: Analyze a submitted report (category, severity, keywords, and embedding vector)
+      summary: Analyze a submitted report (category, severity, departments, keywords, and embedding vector)
       description: |
         Accepts report title, description, optional images (up to 5 PNG/JPEG,
         <=10 MiB each and <=15 MiB aggregate decoded payload to fit within
         Gemini's 20 MB inline budget; magic bytes must match declared mime_type),
-        optional location, and caller-defined categories/rubric. Returns advisory
-        classification, deterministic severity assessment (thresholds compared
-        against the 4-decimal rounded risk_score), keywords, and a unit-length
-        semantic embedding vector for downstream cosine similarity matching.
+        optional location, and caller-defined categories/departments/rubric.
+        Returns advisory classification, deterministic severity assessment
+        (thresholds compared against the 4-decimal rounded risk_score), optional
+        multi-department recommendations (BR-AI-010, BR-TKT-011), keywords, and
+        a unit-length semantic embedding vector for downstream cosine similarity
+        matching.
       security:
         - ClientApiKey: []
       requestBody:
@@ -95,7 +97,7 @@ paths:
               $ref: "#/components/schemas/TriageAnalyzeRequest"
       responses:
         "200":
-          description: Advisory classification, severity, keywords, and/or embedding vector
+          description: Advisory classification, severity, optional multi-department recommendations, keywords, and/or embedding vector
           content:
             application/json:
               schema:
@@ -126,15 +128,18 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /v1/triage/summarize-ticket:
     post:
-      summary: Synthesize ticket title, description, keywords, and deterministic ticket-level severity from all reports in a ticket
+      summary: Synthesize ticket title, description, keywords, deterministic ticket-level severity, and optional category/department recommendations from all reports in a ticket
       description: |
         Combines all reports belonging to a ticket to propose an updated
-        ticket_title, ticket_description, keywords, and deterministic 4-factor
-        ticket-level severity (thresholds compared against the 4-decimal rounded
-        risk_score with optional safety_override; grounded strictly in physical
-        and operational evidence and never auto-escalated solely from report
-        count per BR-AI-013) for Reviewer confirmation. Optionally returns a
-        weighted-blend ticket vector
+        ticket_title, ticket_description, keywords, optional canonical ticket
+        classification (when caller supplies categories, e.g. creating a ticket
+        from multiple reports), deterministic 4-factor ticket-level severity
+        (thresholds compared against the 4-decimal rounded risk_score with
+        optional safety_override; grounded strictly in physical and operational
+        evidence and never auto-escalated solely from report count per
+        BR-AI-013), and optional multi-department recommendations (when caller
+        supplies departments, per BR-AI-010 and BR-TKT-011) for Reviewer
+        confirmation. Optionally returns a weighted-blend ticket vector
         (0.6 * summary_vector + 0.4 * centroid(report_embeddings)) for cosine
         similarity matching. When report_embeddings are supplied,
         report_embedding_meta is required and must match the active embedding
@@ -149,7 +154,7 @@ paths:
               $ref: "#/components/schemas/SummarizeTicketRequest"
       responses:
         "200":
-          description: Advisory ticket title, description, deterministic ticket-level severity, keywords, and optional weighted-blend ticket vector
+          description: Advisory ticket title, description, optional canonical classification, deterministic ticket-level severity, optional multi-department recommendations, keywords, and optional weighted-blend ticket vector
           content:
             application/json:
               schema:
@@ -242,7 +247,7 @@ components:
           const: ok
     AnalyzeTask:
       type: string
-      enum: [classify, severity, keywords, embed]
+      enum: [classify, severity, keywords, departments, embed]
     SeverityLevel:
       type: string
       enum: [LOW, MEDIUM, HIGH, CRITICAL]
@@ -366,6 +371,38 @@ components:
         description:
           type: [string, "null"]
           maxLength: 400
+    DepartmentOption:
+      type: object
+      required: [code, name, responsibility_scope]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "\\S"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: "\\S"
+        responsibility_scope:
+          type: string
+          minLength: 1
+          maxLength: 600
+          pattern: "\\S"
+          description: Grounding definition of what issues/assets this department owns (UC-ADM-003)
+        supported_categories:
+          type: array
+          maxItems: 20
+          default: []
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: "\\S"
+        location_scope:
+          type: [string, "null"]
+          maxLength: 200
     SeverityRubricInput:
       type: object
       description: Optional custom severity definitions (defaults to KU Spot campus rubric for campus_facilities, or generic rubric for other domains)
@@ -432,8 +469,28 @@ components:
           type: array
           maxItems: 50
           default: []
+          description: Candidate categories (duplicate codes are rejected case-insensitively with 422)
           items:
             $ref: "#/components/schemas/CategoryOption"
+        departments:
+          type: array
+          maxItems: 50
+          default: []
+          description: Candidate responsible departments (duplicate codes are rejected case-insensitively with 422)
+          items:
+            $ref: "#/components/schemas/DepartmentOption"
+        department_min_confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.45
+          description: Minimum confidence cutoff for secondary department recommendations (top-1 valid recommendation is always kept as fallback)
+        max_recommended_departments:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 3
+          description: Maximum number of responsible departments returned (1..10)
         severity_rubric:
           $ref: "#/components/schemas/SeverityRubricInput"
         severity_weights:
@@ -463,7 +520,7 @@ components:
         tasks:
           type: array
           minItems: 1
-          maxItems: 4
+          maxItems: 5
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AnalyzeTask"
@@ -472,20 +529,34 @@ components:
           $ref: "#/components/schemas/ReportItemInput"
         taxonomy:
           $ref: "#/components/schemas/TaxonomyInput"
-      anyOf:
-        - required: [tasks]
-          properties:
-            tasks:
-              not:
-                contains:
-                  const: classify
-        - required: [taxonomy]
-          properties:
-            taxonomy:
-              required: [categories]
+      allOf:
+        - anyOf:
+            - required: [tasks]
               properties:
-                categories:
-                  minItems: 1
+                tasks:
+                  not:
+                    contains:
+                      const: classify
+            - required: [taxonomy]
+              properties:
+                taxonomy:
+                  required: [categories]
+                  properties:
+                    categories:
+                      minItems: 1
+        - anyOf:
+            - properties:
+                tasks:
+                  not:
+                    contains:
+                      const: departments
+            - required: [taxonomy]
+              properties:
+                taxonomy:
+                  required: [departments]
+                  properties:
+                    departments:
+                      minItems: 1
     AlternativeCategory:
       type: object
       required: [category_code, category_name, confidence]
@@ -557,6 +628,21 @@ components:
           maximum: 1
         reason:
           type: string
+    DepartmentRecommendation:
+      type: object
+      required: [department_code, department_name, confidence, reason]
+      description: Advisory Responsible Department recommendation (multi-label, equal responsibility per BR-AI-010 and BR-TKT-011)
+      properties:
+        department_code:
+          type: string
+        department_name:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reason:
+          type: string
     EmbeddingIdentity:
       type: object
       required: [model, dimensions]
@@ -613,6 +699,11 @@ components:
           oneOf:
             - $ref: "#/components/schemas/SeverityResult"
             - type: "null"
+        recommended_departments:
+          type: array
+          default: []
+          items:
+            $ref: "#/components/schemas/DepartmentRecommendation"
         keywords:
           type: array
           default: []
@@ -666,6 +757,16 @@ components:
             - $ref: "#/components/schemas/SeverityLevel"
             - type: "null"
           description: Optional current severity level of the ticket as advisory re-evaluation context
+        department_codes:
+          type: array
+          maxItems: 20
+          default: []
+          description: Optional currently assigned department codes as advisory re-evaluation context
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: "\\S"
     SummarizeTicketRequest:
       type: object
       required: [reports]
@@ -698,6 +799,32 @@ components:
           maxItems: 50
           items:
             $ref: "#/components/schemas/TicketReportSource"
+        categories:
+          type: array
+          maxItems: 50
+          default: []
+          description: Optional active candidate categories (duplicate codes are rejected case-insensitively with 422); when non-empty, returns canonical ticket-level classification with confidence, alternatives, and reason
+          items:
+            $ref: "#/components/schemas/CategoryOption"
+        departments:
+          type: array
+          maxItems: 50
+          default: []
+          description: Optional active candidate departments (duplicate codes are rejected case-insensitively with 422); when non-empty, the endpoint recommends 1..max_recommended_departments responsible departments with confidence and per-department reason (BR-AI-010, BR-TKT-011)
+          items:
+            $ref: "#/components/schemas/DepartmentOption"
+        department_min_confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.45
+          description: Minimum confidence cutoff for secondary department recommendations (top-1 valid recommendation is always kept as fallback)
+        max_recommended_departments:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 3
+          description: Maximum number of responsible departments returned (1..10)
         severity_rubric:
           $ref: "#/components/schemas/SeverityRubricInput"
         severity_weights:
@@ -761,8 +888,17 @@ components:
           type: string
         ticket_description:
           type: string
+        classification:
+          oneOf:
+            - $ref: "#/components/schemas/ClassificationResult"
+            - type: "null"
         severity:
           $ref: "#/components/schemas/SeverityResult"
+        recommended_departments:
+          type: array
+          default: []
+          items:
+            $ref: "#/components/schemas/DepartmentRecommendation"
         keywords:
           type: array
           default: []

@@ -13,13 +13,18 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from ku_spot_ai.api.schemas import (
+    EmbedTicketRequest,
     ImageInput,
     ProviderAlternativeCategory,
     ProviderAnalyzeOutput,
     ProviderClassification,
+    ProviderDepartmentRecommendation,
     ProviderRephraseOutput,
     ProviderSeverity,
     ProviderSummarizeTicketOutput,
+    RephraseRequest,
+    SummarizeTicketRequest,
+    TriageAnalyzeRequest,
 )
 from ku_spot_ai.bootstrap import API_TITLE, API_VERSION, create_app
 from ku_spot_ai.config import Settings
@@ -979,6 +984,812 @@ def test_summarize_ticket_severity_validation_and_provider_error_handling() -> N
     assert missing_sev_provider.embed_calls == 0
 
 
+SAMPLE_DEPARTMENTS = [
+    {
+        "code": "BUILDINGS_UTILITIES",
+        "name": "กองอาคารสถานที่และสาธารณูปโภค",
+        "responsibility_scope": "ซ่อมบำรุงระบบไฟฟ้า ตู้ควบคุมไฟ ประปา และโครงสร้างอาคารส่วนกลาง",
+        "supported_categories": ["ELECTRICAL", "BUILDING", "WATER"],
+        "location_scope": "อาคารและพื้นที่ส่วนกลาง มก. บางเขน",
+    },
+    {
+        "code": "SAFETY_SECURITY",
+        "name": "งานรักษาความปลอดภัยและจราจร",
+        "responsibility_scope": "กั้นพื้นที่อันตราย ระงับเหตุฉุกเฉินเบื้องต้น อัคคีภัย และความปลอดภัย",
+        "supported_categories": ["SAFETY", "ELECTRICAL"],
+        "location_scope": "ทุกพื้นที่ภายใน มก. บางเขน",
+    },
+    {
+        "code": "LANDSCAPE_GROUNDS",
+        "name": "งานภูมิทัศน์และสิ่งแวดล้อม",
+        "responsibility_scope": "ดูแลต้นไม้ใหญ่ พื้นที่สีเขียว และการตัดแต่งกิ่งไม้หักโค่น",
+        "supported_categories": ["SAFETY", "BUILDING"],
+    },
+    {
+        "code": "OCS_NETWORK",
+        "name": "สำนักบริการคอมพิวเตอร์ (เครือข่าย)",
+        "responsibility_scope": "ดูแลระบบอินเทอร์เน็ต Wi-Fi KUWIN และเครือข่ายภายในมหาวิทยาลัย",
+        "supported_categories": ["INTERNET"],
+    },
+]
+
+
+def test_analyze_departments_recommendation_deduplicates_filters_and_caps() -> None:
+    fake = FakeProvider(
+        outputs={
+            ProviderAnalyzeOutput: ProviderAnalyzeOutput(
+                classification=ProviderClassification(
+                    category_code="ELECTRICAL",
+                    confidence=0.93,
+                    reason="ต้นไม้ล้มทับเสาไฟและตู้ควบคุมไฟฟ้า",
+                ),
+                severity=ProviderSeverity(
+                    safety_risk=3,
+                    operational_impact=2,
+                    affected_scope=2,
+                    urgency=3,
+                    confidence=0.91,
+                    reason="มีความเสี่ยงไฟฟ้ารั่วและกีดขวางทางสัญจร",
+                ),
+                recommended_departments=[
+                    ProviderDepartmentRecommendation(
+                        department_code="HALLUCINATED_DEPT",
+                        confidence=0.99,
+                        reason="ไม่มีอยู่ในระบบ",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="safety_security",  # case-insensitive match
+                        confidence=0.78,
+                        reason="กั้นพื้นที่อันตรายและจัดการจราจรชั่วคราว",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="BUILDINGS_UTILITIES",
+                        confidence=0.60,  # duplicate with lower confidence
+                        reason="ตรวจสอบเบื้องต้น",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="BUILDINGS_UTILITIES",
+                        confidence=1.25,  # clamped to 1.0, beats 0.60
+                        reason="ตัดไฟและซ่อมบำรุงเสาไฟ/สายไฟที่ชำรุด",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="OCS_NETWORK",
+                        confidence=0.18,  # below 0.45 threshold -> filtered out
+                        reason="อาจกระทบสายสื่อสารเล็กน้อย",
+                    ),
+                ],
+                keywords=["ต้นไม้ล้ม", "เสาไฟฟ้า", "ถนนหน้าอาคาร"],
+            )
+        },
+        embedding_values=[1.0, 0.0, 0.0],
+    )
+    client = TestClient(create_app(_anon_settings(), provider=fake))
+
+    res = client.post(
+        "/v1/triage/analyze",
+        json={
+            "tasks": ["classify", "severity", "departments", "keywords", "embed"],
+            "item": {
+                "title": "ต้นไม้ล้มทับเสาไฟฟ้าหน้าอาคาร ศร.3",
+                "description": "ต้นไม้ใหญ่โค่นทับเสาไฟฟ้ามีประกายไฟและขวางถนน",
+                "location": {"name": "หน้าอาคาร ศร.3"},
+            },
+            "taxonomy": {
+                "categories": [
+                    {"code": "ELECTRICAL", "name": "ไฟฟ้าและแสงสว่าง"},
+                    {"code": "SAFETY", "name": "ความปลอดภัยและการจราจร"},
+                ],
+                "departments": SAMPLE_DEPARTMENTS,
+            },
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    depts = body["recommended_departments"]
+    assert len(depts) == 2
+    assert depts[0] == {
+        "department_code": "BUILDINGS_UTILITIES",
+        "department_name": "กองอาคารสถานที่และสาธารณูปโภค",
+        "confidence": 1.0,
+        "reason": "ตัดไฟและซ่อมบำรุงเสาไฟ/สายไฟที่ชำรุด",
+    }
+    assert depts[1] == {
+        "department_code": "SAFETY_SECURITY",
+        "department_name": "งานรักษาความปลอดภัยและจราจร",
+        "confidence": 0.78,
+        "reason": "กั้นพื้นที่อันตรายและจัดการจราจรชั่วคราว",
+    }
+    assert "BR-AI-010" in fake.last_system
+    assert "responsibility_scope" in fake.last_system
+    assert "BUILDINGS_UTILITIES" in fake.last_user
+
+    # Cap at 3 departments even when 4 valid recommendations exceed threshold
+    four_dept_provider = FakeProvider(
+        outputs={
+            ProviderAnalyzeOutput: ProviderAnalyzeOutput(
+                recommended_departments=[
+                    ProviderDepartmentRecommendation(
+                        department_code="BUILDINGS_UTILITIES",
+                        confidence=0.95,
+                        reason="ซ่อมระบบไฟฟ้า",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="SAFETY_SECURITY",
+                        confidence=0.88,
+                        reason="กั้นพื้นที่อันตราย",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="LANDSCAPE_GROUNDS",
+                        confidence=0.82,
+                        reason="ตัดและเคลื่อนย้ายต้นไม้",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="OCS_NETWORK",
+                        confidence=0.60,
+                        reason="ตรวจสอบสายไฟเบอร์ใกล้จุดเกิดเหตุ",
+                    ),
+                ]
+            )
+        }
+    )
+    res_cap = TestClient(create_app(_anon_settings(), provider=four_dept_provider)).post(
+        "/v1/triage/analyze",
+        json={
+            "tasks": ["departments"],
+            "item": {
+                "title": "ต้นไม้ล้มทับเสาไฟและสายสื่อสาร",
+                "description": "ต้นไม้ใหญ่ล้มทับเสาไฟและสายเคเบิลขวางทางเดิน",
+            },
+            "taxonomy": {"departments": SAMPLE_DEPARTMENTS},
+        },
+    )
+    assert res_cap.status_code == 200
+    capped = res_cap.json()["recommended_departments"]
+    assert [d["department_code"] for d in capped] == [
+        "BUILDINGS_UTILITIES",
+        "SAFETY_SECURITY",
+        "LANDSCAPE_GROUNDS",
+    ]
+    assert "1 to 3 department_code" in four_dept_provider.last_system
+
+    # Custom department_min_confidence and max_recommended_departments on /analyze
+    res_custom = TestClient(create_app(_anon_settings(), provider=four_dept_provider)).post(
+        "/v1/triage/analyze",
+        json={
+            "tasks": ["departments"],
+            "item": {
+                "title": "ต้นไม้ล้มทับเสาไฟและสายสื่อสาร",
+                "description": "ต้นไม้ใหญ่ล้มทับเสาไฟและสายเคเบิลขวางทางเดิน",
+            },
+            "taxonomy": {
+                "departments": SAMPLE_DEPARTMENTS,
+                "department_min_confidence": 0.50,
+                "max_recommended_departments": 4,
+            },
+        },
+    )
+    assert res_custom.status_code == 200
+    assert [d["department_code"] for d in res_custom.json()["recommended_departments"]] == [
+        "BUILDINGS_UTILITIES",
+        "SAFETY_SECURITY",
+        "LANDSCAPE_GROUNDS",
+        "OCS_NETWORK",
+    ]
+    assert "1 to 4 department_code" in four_dept_provider.last_system
+
+
+def test_summarize_ticket_departments_recommendation_and_low_confidence_fallback() -> None:
+    fake = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="ต้นไม้ล้มทับเสาไฟฟ้าหน้าอาคาร ศร.3 มีประกายไฟ",
+                ticket_description="พบต้นไม้ใหญ่ล้มทับเสาไฟฟ้าและขวางถนนหน้าอาคาร ศร.3 มีประกายไฟจากสายไฟ",
+                severity=ProviderSeverity(
+                    safety_risk=3,
+                    operational_impact=2,
+                    affected_scope=2,
+                    urgency=3,
+                    confidence=0.94,
+                    reason="อันตรายร้ายแรงจากไฟฟ้าลัดวงจรและสิ่งกีดขวางทางสัญจร",
+                ),
+                recommended_departments=[
+                    ProviderDepartmentRecommendation(
+                        department_code="LANDSCAPE_GROUNDS",
+                        confidence=0.84,
+                        reason="ตัดและเคลียร์กิ่งไม้ที่หักโค่นออกจากพื้นที่",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="BUILDINGS_UTILITIES",
+                        confidence=0.95,
+                        reason="ตัดกระแสไฟและซ่อมแซมเสาไฟฟ้า/สายไฟ",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="SAFETY_SECURITY",
+                        confidence=0.79,
+                        reason="ปิดกั้นพื้นที่และอำนวยความสะดวกจราจรชั่วคราว",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="OCS_NETWORK",
+                        confidence=0.10,
+                        reason="ไม่เกี่ยวข้องโดยตรง",
+                    ),
+                ],
+                keywords=["ต้นไม้ล้ม", "เสาไฟฟ้า", "ศร.3"],
+            )
+        }
+    )
+    client = TestClient(create_app(_anon_settings(), provider=fake))
+
+    res = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "location_name": "หน้าอาคาร ศร.3",
+            "category_name": "ไฟฟ้าและแสงสว่าง",
+            "current_ticket": {
+                "title": "กิ่งไม้พาดสายไฟหน้า ศร.3",
+                "description": "มีกิ่งไม้พาดสายไฟ",
+                "severity": "HIGH",
+                "department_codes": ["BUILDINGS_UTILITIES"],
+            },
+            "reports": [
+                {
+                    "report_id": "R-001",
+                    "title": "กิ่งไม้หักพาดสายไฟ",
+                    "description": "กิ่งไม้ใหญ่หักลงมาพาดสายไฟหน้า ศร.3",
+                    "observed_severity": "HIGH",
+                },
+                {
+                    "report_id": "R-002",
+                    "title": "ต้นไม้โค่นทับเสาไฟมีประกายไฟ",
+                    "description": "ตอนนี้ต้นไม้ล้มทับเสาไฟเต็มต้น มีประกายไฟและขวางถนน",
+                    "observed_severity": "CRITICAL",
+                },
+            ],
+            "departments": SAMPLE_DEPARTMENTS,
+            "include_embedding": False,
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert [d["department_code"] for d in body["recommended_departments"]] == [
+        "BUILDINGS_UTILITIES",
+        "LANDSCAPE_GROUNDS",
+        "SAFETY_SECURITY",
+    ]
+    assert "department_codes" in fake.last_user
+    assert "BUILDINGS_UTILITIES" in fake.last_user
+    assert "BR-AI-010" in fake.last_system
+
+    # Custom department_min_confidence (0.85) & max_recommended_departments (2) on /summarize-ticket
+    res_strict = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ต้นไม้ล้มทับเสาไฟ", "description": "มีประกายไฟและขวางถนน"}],
+            "departments": SAMPLE_DEPARTMENTS,
+            "department_min_confidence": 0.85,
+            "max_recommended_departments": 2,
+            "include_embedding": False,
+        },
+    )
+    assert res_strict.status_code == 200
+    assert [d["department_code"] for d in res_strict.json()["recommended_departments"]] == [
+        "BUILDINGS_UTILITIES"
+    ]
+    assert "1 to 2 department_code" in fake.last_system
+
+    # When all valid confidences are below threshold (0.45), still keep the top-1 match
+    low_conf_provider = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="พบกลิ่นผิดปกติบริเวณโถงอาคาร",
+                ticket_description="ยังไม่ทราบแหล่งที่มาชัดเจน",
+                severity=ProviderSeverity(
+                    safety_risk=1,
+                    operational_impact=1,
+                    affected_scope=1,
+                    urgency=1,
+                    confidence=0.6,
+                    reason="ยังต้องตรวจสอบแหล่งที่มาเพิ่มเติม",
+                ),
+                recommended_departments=[
+                    ProviderDepartmentRecommendation(
+                        department_code="SAFETY_SECURITY",
+                        confidence=0.30,
+                        reason="ตรวจสอบความปลอดภัยเบื้องต้น",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="BUILDINGS_UTILITIES",
+                        confidence=0.41,
+                        reason="ตรวจสอบระบบอาคารและท่อระบายอากาศ",
+                    ),
+                ],
+            )
+        }
+    )
+    res_low = TestClient(create_app(_anon_settings(), provider=low_conf_provider)).post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "กลิ่นแปลก ๆ", "description": "มีกลิ่นผิดปกติตรงทางเดิน"}],
+            "departments": SAMPLE_DEPARTMENTS,
+            "include_embedding": False,
+        },
+    )
+    assert res_low.status_code == 200
+    assert len(res_low.json()["recommended_departments"]) == 1
+    assert res_low.json()["recommended_departments"][0]["department_code"] == "BUILDINGS_UTILITIES"
+
+    # Without departments in request -> recommended_departments is empty []
+    res_no_depts = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินชั้น 2 ดับ"}],
+            "include_embedding": False,
+        },
+    )
+    assert res_no_depts.status_code == 200
+    assert res_no_depts.json()["recommended_departments"] == []
+
+
+def test_department_recommendation_validation_and_provider_error_handling() -> None:
+    fake = FakeProvider()
+    client = TestClient(create_app(_anon_settings(), provider=fake))
+
+    # 1. /analyze with 'departments' task but missing taxonomy.departments -> 422
+    missing_depts = client.post(
+        "/v1/triage/analyze",
+        json={
+            "tasks": ["departments"],
+            "item": {"title": "ไฟดับ", "description": "ไฟทางเดินดับ"},
+        },
+    )
+    assert missing_depts.status_code == 422
+    assert missing_depts.json()["error"]["code"] == "validation_error"
+
+    # 2. Blank responsibility_scope or blank current_ticket.department_codes -> 422
+    blank_scope = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+            "departments": [{"code": "D1", "name": "หน่วยงาน 1", "responsibility_scope": "   "}],
+            "include_embedding": False,
+        },
+    )
+    assert blank_scope.status_code == 422
+
+    blank_dept_code = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "current_ticket": {
+                "title": "ไฟดับ",
+                "description": "ไฟทางเดินดับ",
+                "department_codes": ["   "],
+            },
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+            "include_embedding": False,
+        },
+    )
+    assert blank_dept_code.status_code == 422
+
+    # Out-of-range department_min_confidence / max_recommended_departments -> 422
+    assert (
+        client.post(
+            "/v1/triage/summarize-ticket",
+            json={
+                "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+                "departments": SAMPLE_DEPARTMENTS,
+                "department_min_confidence": 1.5,
+                "include_embedding": False,
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/v1/triage/analyze",
+            json={
+                "tasks": ["departments"],
+                "item": {"title": "ไฟดับ", "description": "ไฟทางเดินดับ"},
+                "taxonomy": {
+                    "departments": SAMPLE_DEPARTMENTS,
+                    "max_recommended_departments": 0,
+                },
+            },
+        ).status_code
+        == 422
+    )
+    # Duplicate category/department codes (case-insensitive) -> 422
+    assert (
+        client.post(
+            "/v1/triage/summarize-ticket",
+            json={
+                "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+                "departments": [
+                    {"code": "D1", "name": "หน่วยงาน 1", "responsibility_scope": "ดูแลไฟฟ้า"},
+                    {"code": "d1", "name": "หน่วยงานซ้ำ", "responsibility_scope": "ดูแลน้ำ"},
+                ],
+                "include_embedding": False,
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/v1/triage/analyze",
+            json={
+                "tasks": ["classify"],
+                "item": {"title": "ไฟดับ", "description": "ไฟทางเดินดับ"},
+                "taxonomy": {
+                    "categories": [
+                        {"code": "ELECTRICAL", "name": "ไฟฟ้า"},
+                        {"code": "electrical", "name": "ไฟฟ้าซ้ำ"},
+                    ]
+                },
+            },
+        ).status_code
+        == 422
+    )
+    assert fake.generate_calls == 0
+
+    # 3. Provider returns all hallucinated / empty departments when requested -> 503 + skips embed
+    bad_dept_provider = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="ไฟดับ",
+                ticket_description="ไฟทางเดินดับ",
+                severity=ProviderSeverity(
+                    safety_risk=1,
+                    operational_impact=1,
+                    affected_scope=1,
+                    urgency=1,
+                    confidence=0.8,
+                    reason="มีเหตุผล",
+                ),
+                recommended_departments=[
+                    ProviderDepartmentRecommendation(
+                        department_code="UNKNOWN_DEPT",
+                        confidence=0.9,
+                        reason="หน่วยงานที่ไม่มีจริง",
+                    )
+                ],
+            )
+        }
+    )
+    res_hallucinated = TestClient(create_app(_anon_settings(), provider=bad_dept_provider)).post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+            "departments": SAMPLE_DEPARTMENTS,
+            "include_embedding": True,
+        },
+    )
+    assert res_hallucinated.status_code == 503
+    assert res_hallucinated.json()["error"]["code"] == "provider_upstream_error"
+    assert bad_dept_provider.embed_calls == 0
+
+    # 4. Provider returns blank reason for matched department -> 503 + skips embed
+    blank_reason_dept_provider = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="ไฟดับ",
+                ticket_description="ไฟทางเดินดับ",
+                severity=ProviderSeverity(
+                    safety_risk=1,
+                    operational_impact=1,
+                    affected_scope=1,
+                    urgency=1,
+                    confidence=0.8,
+                    reason="มีเหตุผล",
+                ),
+                recommended_departments=[
+                    ProviderDepartmentRecommendation(
+                        department_code="BUILDINGS_UTILITIES",
+                        confidence=0.9,
+                        reason="   ",
+                    )
+                ],
+            )
+        }
+    )
+    res_blank_reason = TestClient(
+        create_app(_anon_settings(), provider=blank_reason_dept_provider)
+    ).post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+            "departments": SAMPLE_DEPARTMENTS,
+            "include_embedding": True,
+        },
+    )
+    assert res_blank_reason.status_code == 503
+    assert blank_reason_dept_provider.embed_calls == 0
+
+    # 5. Provider returns NaN confidence on /analyze departments -> 503
+    nan_dept_provider = FakeProvider(
+        outputs={
+            ProviderAnalyzeOutput: ProviderAnalyzeOutput(
+                recommended_departments=[
+                    ProviderDepartmentRecommendation(
+                        department_code="BUILDINGS_UTILITIES",
+                        confidence=float("nan"),
+                        reason="ดูแลระบบไฟฟ้า",
+                    )
+                ]
+            )
+        }
+    )
+    res_nan = TestClient(create_app(_anon_settings(), provider=nan_dept_provider)).post(
+        "/v1/triage/analyze",
+        json={
+            "tasks": ["departments"],
+            "item": {"title": "ไฟดับ", "description": "ไฟทางเดินดับ"},
+            "taxonomy": {"departments": SAMPLE_DEPARTMENTS},
+        },
+    )
+    assert res_nan.status_code == 503
+
+
+def test_department_edge_cases_below_threshold_blank_reason_name_match_tie_break_and_prompt_minimization() -> (
+    None
+):
+    # 1. Below-threshold irrelevant department with blank reason must NOT fail the request with 503,
+    #    matching by Thai department.name works, and equal-confidence ties sort deterministically by code.
+    fake = FakeProvider(
+        outputs={
+            ProviderAnalyzeOutput: ProviderAnalyzeOutput(
+                recommended_departments=[
+                    ProviderDepartmentRecommendation(
+                        department_code="งานรักษาความปลอดภัยและจราจร",  # match by department.name
+                        confidence=0.85,
+                        reason="กั้นพื้นที่อันตรายและจัดการจราจร",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="BUILDINGS_UTILITIES",
+                        confidence=0.85,  # tie with SAFETY_SECURITY -> BUILDINGS_UTILITIES comes first
+                        reason="ซ่อมระบบไฟฟ้าและตู้ควบคุม",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="OCS_NETWORK",
+                        confidence=0.05,  # below threshold 0.45 with empty reason -> filtered out safely
+                        reason="",
+                    ),
+                ],
+                keywords=["ตู้ควบคุมไฟ", "ศร.3"],
+            )
+        }
+    )
+    client = TestClient(create_app(_anon_settings(), provider=fake))
+
+    res = client.post(
+        "/v1/triage/analyze",
+        json={
+            "tasks": ["departments"],
+            "item": {"title": "ตู้ไฟมีประกายไฟ", "description": "ตู้ไฟชั้น 2 มีประกายไฟ"},
+            "taxonomy": {"departments": SAMPLE_DEPARTMENTS},
+        },
+    )
+    assert res.status_code == 200
+    depts = res.json()["recommended_departments"]
+    assert [d["department_code"] for d in depts] == ["BUILDINGS_UTILITIES", "SAFETY_SECURITY"]
+    assert depts[1]["department_name"] == "งานรักษาความปลอดภัยและจราจร"
+
+    # 2. Prompt minimization: when departments and severity are omitted from tasks,
+    #    neither candidate departments nor severity rubric/guide are sent to the LLM.
+    res_min = client.post(
+        "/v1/triage/analyze",
+        json={
+            "tasks": ["keywords"],
+            "item": {"title": "ตู้ไฟมีประกายไฟ", "description": "ตู้ไฟชั้น 2 มีประกายไฟ"},
+            "taxonomy": {
+                "departments": SAMPLE_DEPARTMENTS,
+                "severity_rubric": {"CRITICAL": "CUSTOM_UNUSED_RUBRIC_TOKEN"},
+            },
+        },
+    )
+    assert res_min.status_code == 200
+    assert res_min.json()["recommended_departments"] == []
+    assert "BUILDINGS_UTILITIES" not in fake.last_user
+    assert "severity_factor_guide" not in fake.last_user
+    assert "severity_rubric_context" not in fake.last_user
+    assert "CUSTOM_UNUSED_RUBRIC_TOKEN" not in fake.last_user
+
+    # 3. Item-level raw length (> 64 chars even when whitespace-padded) rejected with 422
+    padded_over_64 = " " * 60 + "ELEC" + " " * 10
+    assert (
+        client.post(
+            "/v1/triage/summarize-ticket",
+            json={
+                "current_ticket": {
+                    "title": "ไฟดับ",
+                    "description": "ไฟทางเดินดับ",
+                    "department_codes": [padded_over_64],
+                },
+                "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+                "include_embedding": False,
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/v1/triage/analyze",
+            json={
+                "tasks": ["departments"],
+                "item": {"title": "ไฟดับ", "description": "ไฟทางเดินดับ"},
+                "taxonomy": {
+                    "departments": [
+                        {
+                            "code": "D1",
+                            "name": "หน่วยงาน 1",
+                            "responsibility_scope": "ดูแลไฟฟ้า",
+                            "supported_categories": [padded_over_64],
+                        }
+                    ]
+                },
+            },
+        ).status_code
+        == 422
+    )
+
+
+def test_summarize_ticket_optional_categories_classification_and_error_handling() -> None:
+    sample_categories = [
+        {"code": "ELECTRICAL", "name": "ไฟฟ้าและแสงสว่าง"},
+        {"code": "SAFETY", "name": "ความปลอดภัยและการจราจร"},
+        {"code": "BUILDING", "name": "อาคารและสถานที่"},
+    ]
+    fake = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="ตู้ควบคุมไฟหน้าลิฟต์ชั้น 2 อาคาร ศร.3 มีกลิ่นไหม้และควัน",
+                ticket_description="รวมรายงานหลายฉบับพบกลิ่นไหม้และควันจากตู้ไฟหน้าลิฟต์ชั้น 2 อาคาร ศร.3",
+                classification=ProviderClassification(
+                    category_code="electrical",  # case-insensitive canonical resolve
+                    confidence=1.2,  # clamped to 1.0
+                    alternatives=[
+                        ProviderAlternativeCategory(category_code="SAFETY", confidence=0.35),
+                        ProviderAlternativeCategory(category_code="UNKNOWN", confidence=0.5),
+                    ],
+                    reason="ต้นเหตุหลักเกิดจากระบบตู้ควบคุมไฟฟ้าที่ลัดวงจร",
+                ),
+                severity=ProviderSeverity(
+                    safety_risk=3,
+                    operational_impact=2,
+                    affected_scope=2,
+                    urgency=3,
+                    confidence=0.95,
+                    reason="มีความเสี่ยงอันตรายร้ายแรงจากไฟฟ้าลัดวงจร",
+                ),
+            )
+        },
+        embedding_values=[1.0, 0.0, 0.0],
+    )
+    client = TestClient(create_app(_anon_settings(), provider=fake))
+
+    # 1. Creating a new ticket from multiple reports (no current_ticket, no category_name)
+    res = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "location_name": "อาคารศูนย์เรียนรวม 3 (ศร.3)",
+            "reports": [
+                {"report_id": "R-001", "title": "ตู้ไฟมีกลิ่นไหม้", "description": "ตู้ไฟชั้น 2 เหม็นไหม้"},
+                {"report_id": "R-002", "title": "โถงลิฟต์มีควัน", "description": "เห็นควันลอยจากตู้ไฟชั้น 2"},
+            ],
+            "categories": sample_categories,
+            "include_embedding": True,
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["classification"] == {
+        "category_code": "ELECTRICAL",
+        "category_name": "ไฟฟ้าและแสงสว่าง",
+        "confidence": 1.0,
+        "alternatives": [
+            {
+                "category_code": "SAFETY",
+                "category_name": "ความปลอดภัยและการจราจร",
+                "confidence": 0.35,
+            }
+        ],
+        "reason": "ต้นเหตุหลักเกิดจากระบบตู้ควบคุมไฟฟ้าที่ลัดวงจร",
+    }
+    # Classified category_name enriches ticket embedding text when caller omitted category_name
+    assert "category: ไฟฟ้าและแสงสว่าง" in fake.last_embed_text
+    assert '"categories":' in fake.last_user
+
+    # 1b. Whitespace-only category_name normalizes to None and still falls back to classification
+    res_blank_cat = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "category_name": "   ",
+            "location_name": "   ",
+            "reports": [
+                {"report_id": "R-001", "title": "ตู้ไฟมีกลิ่นไหม้", "description": "ตู้ไฟชั้น 2 เหม็นไหม้"},
+            ],
+            "categories": sample_categories,
+            "include_embedding": True,
+        },
+    )
+    assert res_blank_cat.status_code == 200
+    assert "category: ไฟฟ้าและแสงสว่าง" in fake.last_embed_text
+    assert "location:" not in fake.last_embed_text
+
+    # 2. Without categories -> classification is null
+    res_no_cats = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินชั้น 2 ดับ"}],
+            "include_embedding": False,
+        },
+    )
+    assert res_no_cats.status_code == 200
+    assert res_no_cats.json()["classification"] is None
+
+    # 3. When categories are provided, omitted or hallucinated classification -> 503 + skips embed
+    missing_cls_provider = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="ไฟดับ",
+                ticket_description="ไฟทางเดินชั้น 2 ดับ",
+                classification=None,
+                severity=ProviderSeverity(
+                    safety_risk=1,
+                    operational_impact=1,
+                    affected_scope=1,
+                    urgency=1,
+                    confidence=0.8,
+                    reason="มีเหตุผล",
+                ),
+            )
+        }
+    )
+    res_missing = TestClient(create_app(_anon_settings(), provider=missing_cls_provider)).post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินชั้น 2 ดับ"}],
+            "categories": sample_categories,
+            "include_embedding": True,
+        },
+    )
+    assert res_missing.status_code == 503
+    assert res_missing.json()["error"]["code"] == "provider_upstream_error"
+    assert missing_cls_provider.embed_calls == 0
+
+    hallucinated_cls_provider = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="ไฟดับ",
+                ticket_description="ไฟทางเดินชั้น 2 ดับ",
+                classification=ProviderClassification(
+                    category_code="NOT_A_REAL_CATEGORY",
+                    confidence=0.9,
+                    reason="หมวดหมู่ที่ไม่มีจริง",
+                ),
+                severity=ProviderSeverity(
+                    safety_risk=1,
+                    operational_impact=1,
+                    affected_scope=1,
+                    urgency=1,
+                    confidence=0.8,
+                    reason="มีเหตุผล",
+                ),
+            )
+        }
+    )
+    res_hallucinated = TestClient(
+        create_app(_anon_settings(), provider=hallucinated_cls_provider)
+    ).post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินชั้น 2 ดับ"}],
+            "categories": sample_categories,
+            "include_embedding": True,
+        },
+    )
+    assert res_hallucinated.status_code == 503
+    assert hallucinated_cls_provider.embed_calls == 0
+
+
 # ---------------------------------------------------------------------------
 # Incomplete / Invalid Upstream Outputs -> 503 + Sibling Cancellation
 # ---------------------------------------------------------------------------
@@ -1317,6 +2128,10 @@ def test_validation_and_runtime_openapi_parity() -> None:
     schemas = spec["components"]["schemas"]
     summarize_req_props = schemas["SummarizeTicketRequest"]["properties"]
     for field_name in (
+        "categories",
+        "departments",
+        "department_min_confidence",
+        "max_recommended_departments",
         "severity_rubric",
         "severity_weights",
         "severity_thresholds",
@@ -1324,13 +2139,42 @@ def test_validation_and_runtime_openapi_parity() -> None:
     ):
         assert field_name in summarize_req_props
     assert "severity" in schemas["CurrentTicketInput"]["properties"]
+    assert "department_codes" in schemas["CurrentTicketInput"]["properties"]
     assert "observed_severity" in schemas["TicketReportSource"]["properties"]
+    assert "departments" in schemas["TaxonomyInput"]["properties"]
+    assert "department_min_confidence" in schemas["TaxonomyInput"]["properties"]
+    assert "max_recommended_departments" in schemas["TaxonomyInput"]["properties"]
+    assert "DepartmentOption" in schemas
+    assert "DepartmentRecommendation" in schemas
+    dept_sup_items = schemas["DepartmentOption"]["properties"]["supported_categories"]["items"]
+    assert dept_sup_items["minLength"] == 1
+    assert dept_sup_items["maxLength"] == 64
+    assert dept_sup_items["pattern"] == r"\S"
+    ticket_dept_items = schemas["CurrentTicketInput"]["properties"]["department_codes"]["items"]
+    assert ticket_dept_items["minLength"] == 1
+    assert ticket_dept_items["maxLength"] == 64
+    assert ticket_dept_items["pattern"] == r"\S"
+    assert "recommended_departments" in schemas["TriageAnalyzeResponse"]["properties"]
+    assert "classification" in schemas["SummarizeTicketResponse"]["properties"]
+    assert "recommended_departments" in schemas["SummarizeTicketResponse"]["properties"]
     assert "severity" in schemas["SummarizeTicketResponse"]["required"]
     assert schemas["SummarizeTicketResponse"]["properties"]["severity"]["$ref"].endswith(
         "/SeverityResult"
     )
     assert "summary_embedding" not in schemas["SummarizeTicketResponse"]["properties"]
     assert "summary_embedding" not in schemas["EmbedTicketResponse"]["properties"]
+
+    # Every Swagger request example must be complete and pass Pydantic validation out of the box
+    for schema_name, model_cls in (
+        ("RephraseRequest", RephraseRequest),
+        ("TriageAnalyzeRequest", TriageAnalyzeRequest),
+        ("SummarizeTicketRequest", SummarizeTicketRequest),
+        ("EmbedTicketRequest", EmbedTicketRequest),
+    ):
+        example = schemas[schema_name].get("example")
+        assert isinstance(example, dict), f"{schema_name} missing Swagger example"
+        model_cls.model_validate(example)
+        assert set(example.keys()) == set(model_cls.model_fields.keys())
 
     yaml_path = Path(__file__).resolve().parents[3] / "contracts" / "ai-triage.v1.yaml"
     yaml_text = yaml_path.read_text(encoding="utf-8")
@@ -1339,6 +2183,9 @@ def test_validation_and_runtime_openapi_parity() -> None:
     assert f"version: {API_VERSION}" in yaml_text
     assert '"413":' in yaml_text
     assert "EmbeddingIdentity:" in yaml_text
+    assert "DepartmentOption:" in yaml_text
+    assert "DepartmentRecommendation:" in yaml_text
+    assert "recommended_departments:" in yaml_text
     assert "minItems: 1" in yaml_text
     assert "observed_severity:" in yaml_text
     assert (
