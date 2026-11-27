@@ -1,11 +1,11 @@
 name: CI
 
 on:
-  push:
-    branches-ignore:
+  pull_request:
+    branches:
       - develop
       - main
-  pull_request:
+  push:
     branches:
       - develop
       - main
@@ -15,49 +15,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  detect-changes:
-    name: Detect Changed Services
-    runs-on: ubuntu-latest
-    outputs:
-      web: ${{ steps.filter.outputs.web }}
-      api: ${{ steps.filter.outputs.api }}
-      ai: ${{ steps.filter.outputs.ai }}
-      compose: ${{ steps.filter.outputs.compose }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: ${{ github.event_name == 'push' && 0 || 1 }}
-
-      - name: Detect changed paths
-        id: filter
-        uses: dorny/paths-filter@v4
-        with:
-          base: develop
-          filters: |
-            web:
-              - 'apps/web/**'
-              - '.github/workflows/ci.yml'
-            api:
-              - 'apps/api/**'
-              - '.github/workflows/ci.yml'
-            ai:
-              - 'apps/ai/**'
-              - '.github/workflows/ci.yml'
-            compose:
-              - 'compose.yaml'
-              - 'compose.dev.yaml'
-              - 'apps/*/Dockerfile'
-              - '.github/workflows/ci.yml'
-
-  web-ci:
-    name: Web (Next.js / Prettier / ESLint / Test)
-    needs: detect-changes
-    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.web == 'true'
+  web:
+    name: Web
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -65,18 +28,32 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: ${{ github.event_name == 'push' && 2 || 1 }}
+
+      - name: Detect Web changes
+        id: changes
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+              - '.github/workflows/ci.yml'
 
       - name: Set up Node.js
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.web == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: "24.22.3"
 
       - name: Set up Bun
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.web == 'true'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.5"
 
       - name: Cache Bun dependencies
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.web == 'true'
         uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
@@ -85,22 +62,27 @@ jobs:
             ${{ runner.os }}-bun-
 
       - name: Install dependencies
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.web == 'true'
         run: bun install --frozen-lockfile
 
       - name: Check formatting (Prettier)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.web == 'true'
         run: bun run format:check
 
       - name: Lint (ESLint)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.web == 'true'
         run: bun run lint
 
       - name: Typecheck (TypeScript)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.web == 'true'
         run: bun run typecheck
 
       - name: Unit tests (Vitest)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.web == 'true'
         run: bun run test
 
       - name: Cache Next.js build
-        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.web == 'true'
         uses: actions/cache@v6
         with:
           path: apps/web/.next/cache
@@ -109,17 +91,15 @@ jobs:
             ${{ runner.os }}-nextjs-${{ hashFiles('apps/web/bun.lock') }}-
             ${{ runner.os }}-nextjs-
 
-      - name: Build (Next.js — PR / manual only)
-        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+      - name: Build (Next.js)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.web == 'true'
         env:
           API_BASE_URL: http://127.0.0.1:8080
           NEXT_TELEMETRY_DISABLED: "1"
         run: bun run build
 
-  api-ci:
-    name: API (Go / gofmt / golangci-lint / Test)
-    needs: detect-changes
-    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.api == 'true'
+  api:
+    name: API
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -127,14 +107,39 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: ${{ github.event_name == 'push' && 2 || 1 }}
+
+      - name: Detect API & Compose changes
+        id: changes
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+              - '.github/workflows/ci.yml'
+            compose:
+              - 'compose.yaml'
+              - 'compose.dev.yaml'
+              - 'apps/*/Dockerfile'
+              - '.github/workflows/ci.yml'
+
+      - name: Validate Compose configurations
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.compose == 'true'
+        working-directory: .
+        run: |
+          docker compose config --quiet
+          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
 
       - name: Set up Go
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'
         uses: actions/setup-go@v7
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
 
       - name: Check formatting (gofmt)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'
         run: |
           unformatted="$(gofmt -l cmd internal)"
           if [ -n "$unformatted" ]; then
@@ -144,27 +149,30 @@ jobs:
           fi
 
       - name: Verify Go modules
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'
         run: go mod verify
 
       - name: Static analysis (go vet)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'
         run: go vet ./...
 
       - name: Lint (golangci-lint)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
           working-directory: apps/api
 
       - name: Unit tests (race detector)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'
         run: go test -race ./...
 
       - name: Build
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.api == 'true'
         run: go build ./...
 
-  ai-ci:
-    name: AI (Python / Ruff / Pytest)
-    needs: detect-changes
-    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.ai == 'true'
+  ai:
+    name: AI
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -172,8 +180,20 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: ${{ github.event_name == 'push' && 2 || 1 }}
+
+      - name: Detect AI changes
+        id: changes
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            ai:
+              - 'apps/ai/**'
+              - '.github/workflows/ci.yml'
 
       - name: Set up uv
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.ai == 'true'
         uses: astral-sh/setup-uv@v10.4.0
         with:
           version: "0.13.9"
@@ -181,68 +201,29 @@ jobs:
           cache-dependency-glob: "apps/ai/uv.lock"
 
       - name: Install Python from .python-version
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.ai == 'true'
         run: uv python install
 
       - name: Check lockfile
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.ai == 'true'
         run: uv lock --check
 
       - name: Sync environment
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.ai == 'true'
         run: uv sync --locked
 
       - name: Check formatting (Ruff)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.ai == 'true'
         run: uv run --locked ruff format --check .
 
       - name: Lint (Ruff)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.ai == 'true'
         run: uv run --locked ruff check .
 
       - name: Unit & contract tests (Pytest)
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.ai == 'true'
         run: uv run --locked pytest
 
       - name: Verify app factory import
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.ai == 'true'
         run: uv run --locked python -c 'from ku_spot_ai.main import app_factory; app_factory()'
-
-  compose-ci:
-    name: Compose Config Syntax
-    needs: detect-changes
-    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.compose == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Validate Compose configurations
-        run: |
-          docker compose config --quiet
-          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
-
-  ci-gate:
-    name: CI Gate
-    needs:
-      - detect-changes
-      - web-ci
-      - api-ci
-      - ai-ci
-      - compose-ci
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Verify all triggered service checks passed
-        env:
-          RESULTS: >-
-            detect-changes=${{ needs.detect-changes.result }}
-            web-ci=${{ needs.web-ci.result }}
-            api-ci=${{ needs.api-ci.result }}
-            ai-ci=${{ needs.ai-ci.result }}
-            compose-ci=${{ needs.compose-ci.result }}
-        run: |
-          echo "Job results: $RESULTS"
-          failed=0
-          for entry in $RESULTS; do
-            name="${entry%%=*}"
-            status="${entry#*=}"
-            if [ "$status" != "success" ] && [ "$status" != "skipped" ]; then
-              echo "::error::Job '$name' finished with status '$status'"
-              failed=1
-            fi
-          done
-          exit "$failed"

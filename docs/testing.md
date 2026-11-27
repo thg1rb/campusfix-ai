@@ -21,11 +21,12 @@ make smoke-outage   # Stops AI container, verifies degraded 503 readiness and au
 
 ### Automated Path-Filtered CI (`.github/workflows/ci.yml`)
 
-GitHub Actions runs automatically on feature-branch pushes (`branches-ignore: [develop, main]`) and on Pull Requests targeting `develop` or `main`:
+GitHub Actions runs automatically on Pull Requests targeting `develop` or `main` (open a **Draft PR** for continuous checks on feature-branch pushes without duplicate runs), on `push` to `develop`/`main`, and via `workflow_dispatch`:
 
-* **Path detection (`detect-changes`):** Uses `dorny/paths-filter` against `develop` (on push) or the PR base branch (on PR) so only modified services run (`apps/web/**`, `apps/api/**`, `apps/ai/**`, `compose*.yaml` / `Dockerfiles`). Changes to `.github/workflows/ci.yml` trigger all jobs.
-* **Hybrid Web Build:** `apps/web` runs Prettier (`format:check`), ESLint, TypeScript (`typecheck`), and Vitest on every push; `next build` runs on `pull_request` (and `workflow_dispatch`) to keep feature-branch push feedback fast while blocking broken builds before merge.
-* **Branch Protection Gate (`CI Gate`):** The final `ci-gate` job passes when all triggered service jobs succeed and untouched service jobs are skipped, providing a single required status check for `develop` and `main`.
+* **3 Clean Checks (`CI / Web`, `CI / API`, `CI / AI`):** Each job opens with a fast `dorny/paths-filter@v4` step (~5s). Untouched services skip setup/lint/test/build and report green immediately, so all 3 checks can be configured directly as **Required Status Checks** on `develop` and `main` without deadlocking PRs.
+* **`CI / Web`:** Prettier (`format:check`), ESLint, TypeScript (`typecheck`), Vitest (`test`), and Next.js (`build`) when `apps/web/**` changes.
+* **`CI / API`:** `gofmt`, `go mod verify`, `go vet`, `golangci-lint` v2 (`v2.15.0`), `go test -race ./...`, and `go build ./...` when `apps/api/**` changes, plus `docker compose config --quiet` when `compose*.yaml` or `apps/*/Dockerfile` changes.
+* **`CI / AI`:** `uv lock --check`, `uv sync --locked`, Ruff (`format --check` & `check`), `pytest`, and `app_factory()` import verification when `apps/ai/**` changes. Changes to `.github/workflows/ci.yml` trigger all 3 jobs.
 
 ### Per-Service Test Commands
 
