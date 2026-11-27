@@ -145,7 +145,9 @@ class TriageService:
     def __init__(self, provider: TriageProvider) -> None:
         self._provider = provider
 
-    def _normalize_upstream_embedding(self, embed_result: EmbeddingProviderResult) -> EmbeddingResult:
+    def _normalize_upstream_embedding(
+        self, embed_result: EmbeddingProviderResult
+    ) -> EmbeddingResult:
         expected_dim = self._provider.embedding_dimensions
         if expected_dim > 0 and len(embed_result.values) != expected_dim:
             raise ProviderUpstreamError(
@@ -154,9 +156,7 @@ class TriageService:
         try:
             normalized = l2_normalize(embed_result.values)
         except ValueError as exc:
-            raise ProviderUpstreamError(
-                "AI provider returned an invalid embedding vector"
-            ) from exc
+            raise ProviderUpstreamError("AI provider returned an invalid embedding vector") from exc
         return EmbeddingResult(
             model=embed_result.model,
             dimensions=len(normalized),
@@ -179,9 +179,7 @@ class TriageService:
         rephrased_title = result.output.rephrased_title.strip()
         rephrased_description = result.output.rephrased_description.strip()
         if not rephrased_title or not rephrased_description:
-            raise ProviderUpstreamError(
-                "AI provider returned an incomplete rephrase response"
-            )
+            raise ProviderUpstreamError("AI provider returned an incomplete rephrase response")
 
         return RephraseResponse(
             request_id=request_id,
@@ -285,9 +283,7 @@ class TriageService:
         ticket_title = llm_result.output.ticket_title.strip()
         ticket_description = llm_result.output.ticket_description.strip()
         if not ticket_title or not ticket_description:
-            raise ProviderUpstreamError(
-                "AI provider returned an incomplete ticket summary"
-            )
+            raise ProviderUpstreamError("AI provider returned an incomplete ticket summary")
         severity = _build_severity_result(
             llm_result.output.severity,
             weights_input=request.severity_weights,
@@ -446,30 +442,22 @@ class TriageService:
         classification: ClassificationResult | None = None
         if "classify" in requested:
             if raw is None or raw.classification is None:
-                raise ProviderUpstreamError(
-                    "AI provider omitted required classification output"
-                )
+                raise ProviderUpstreamError("AI provider omitted required classification output")
             matched = _resolve_category(
                 raw.classification.category_code, request.taxonomy.categories
             )
             if matched is None:
-                raise ProviderUpstreamError(
-                    "AI provider returned an unrecognized category code"
-                )
+                raise ProviderUpstreamError("AI provider returned an unrecognized category code")
             confidence = _clamp_confidence(
                 raw.classification.confidence, field_name="classification.confidence"
             )
             reason = raw.classification.reason.strip()
             if not reason:
-                raise ProviderUpstreamError(
-                    "AI provider returned an empty classification reason"
-                )
+                raise ProviderUpstreamError("AI provider returned an empty classification reason")
             alternatives: list[AlternativeCategory] = []
             seen_codes = {matched.code}
             for alt in raw.classification.alternatives:
-                resolved_alt = _resolve_category(
-                    alt.category_code, request.taxonomy.categories
-                )
+                resolved_alt = _resolve_category(alt.category_code, request.taxonomy.categories)
                 if resolved_alt is None or resolved_alt.code in seen_codes:
                     continue
                 seen_codes.add(resolved_alt.code)
@@ -502,17 +490,13 @@ class TriageService:
         keywords: list[str] = []
         if "keywords" in requested:
             if raw is None:
-                raise ProviderUpstreamError(
-                    "AI provider omitted required keywords output"
-                )
+                raise ProviderUpstreamError("AI provider omitted required keywords output")
             keywords = _clean_keywords(raw.keywords)
 
         embedding: EmbeddingResult | None = None
         if "embed" in requested:
             if embed_result is None:
-                raise ProviderUpstreamError(
-                    "AI provider omitted required embedding output"
-                )
+                raise ProviderUpstreamError("AI provider omitted required embedding output")
             embedding = self._normalize_upstream_embedding(embed_result)
 
         return TriageAnalyzeResponse(

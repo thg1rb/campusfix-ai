@@ -1,1 +1,1 @@
-export { CategoryBadge, TicketCard, ticketGrid } from "./components/TicketCard"
+export { CategoryBadge, TicketCard, ticketGrid } from "./components/TicketCard";

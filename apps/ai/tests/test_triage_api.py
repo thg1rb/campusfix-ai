@@ -34,7 +34,6 @@ from ku_spot_ai.providers.base import (
 )
 from ku_spot_ai.scoring.severity import (
     SeverityFactors,
-    SeverityThresholds,
     SeverityWeights,
     compute_severity,
 )
@@ -738,8 +737,9 @@ def test_summarize_ticket_always_returns_deterministic_severity_and_supports_saf
     )
     assert res_five_reports.status_code == 200
     assert res_five_reports.json()["severity"]["level"] == body_no_override["severity"]["level"]
-    assert res_five_reports.json()["severity"]["risk_score"] == (
-        body_no_override["severity"]["risk_score"]
+    assert (
+        res_five_reports.json()["severity"]["risk_score"]
+        == (body_no_override["severity"]["risk_score"])
     )
 
 
@@ -966,12 +966,8 @@ def test_summarize_ticket_severity_validation_and_provider_error_handling() -> N
         severity=None,
         keywords=[],
     )
-    missing_sev_provider = FakeProvider(
-        outputs={ProviderSummarizeTicketOutput: missing_sev_output}
-    )
-    res_missing_sev = TestClient(
-        create_app(_anon_settings(), provider=missing_sev_provider)
-    ).post(
+    missing_sev_provider = FakeProvider(outputs={ProviderSummarizeTicketOutput: missing_sev_output})
+    res_missing_sev = TestClient(create_app(_anon_settings(), provider=missing_sev_provider)).post(
         "/v1/triage/summarize-ticket",
         json={
             "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
@@ -1190,14 +1186,18 @@ def test_deterministic_severity_formula_boundaries_override_and_large_weights() 
     # 0.79994 rounds to 0.7999 -> LOW; 0.79996 rounds to 0.8000 -> MEDIUM
     below = compute_severity(
         SeverityFactors(0, 1, 0, 0),
-        weights=SeverityWeights(safety_risk=0.20006, operational_impact=0.79994, affected_scope=0.0, urgency=0.0),
+        weights=SeverityWeights(
+            safety_risk=0.20006, operational_impact=0.79994, affected_scope=0.0, urgency=0.0
+        ),
     )
     assert below.risk_score == 0.7999
     assert below.level == "LOW"
 
     at_cutoff = compute_severity(
         SeverityFactors(0, 1, 0, 0),
-        weights=SeverityWeights(safety_risk=0.20004, operational_impact=0.79996, affected_scope=0.0, urgency=0.0),
+        weights=SeverityWeights(
+            safety_risk=0.20004, operational_impact=0.79996, affected_scope=0.0, urgency=0.0
+        ),
     )
     assert at_cutoff.risk_score == 0.8
     assert at_cutoff.level == "MEDIUM"

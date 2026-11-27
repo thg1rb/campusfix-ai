@@ -1,1 +1,1 @@
-export { default } from "@/features/public-feed/screens/PublicFeedScreen"
+export { default } from "@/features/public-feed/screens/PublicFeedScreen";

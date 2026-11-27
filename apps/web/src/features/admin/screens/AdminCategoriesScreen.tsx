@@ -1,5 +1,5 @@
-import { MasterDataScreen } from "../components/MasterDataScreen"
+import { MasterDataScreen } from "../components/MasterDataScreen";
 
 export default function AdminCategoriesScreen() {
-  return <MasterDataScreen collection="categories" />
+  return <MasterDataScreen collection="categories" />;
 }
