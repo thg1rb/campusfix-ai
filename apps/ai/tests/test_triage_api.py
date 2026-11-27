@@ -224,6 +224,14 @@ def test_authentication_fail_closed_and_across_all_endpoints(
             ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
                 ticket_title="สรุปเรื่อง",
                 ticket_description="รายละเอียดสรุป",
+                severity=ProviderSeverity(
+                    safety_risk=1,
+                    operational_impact=1,
+                    affected_scope=1,
+                    urgency=1,
+                    confidence=0.85,
+                    reason="กระทบการใช้งานบางส่วนในพื้นที่ทางเดิน",
+                ),
             ),
         }
     )
@@ -538,6 +546,14 @@ def test_summarize_ticket_and_embed_ticket_require_matching_embedding_identity()
             ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
                 ticket_title="ตู้ควบคุมไฟหน้าลิฟต์ชั้น 2 อาคาร ศร.3 มีกลิ่นไหม้และเสียงช็อต",
                 ticket_description="ได้รับรายงานหลายรายการว่าตู้ควบคุมไฟบริเวณโถงลิฟต์ชั้น 2 อาคาร ศร.3 มีกลิ่นไหม้",
+                severity=ProviderSeverity(
+                    safety_risk=3,
+                    operational_impact=2,
+                    affected_scope=2,
+                    urgency=3,
+                    confidence=0.92,
+                    reason="มีความเสี่ยงไฟฟ้าลัดวงจรและกลิ่นไหม้จากตู้ควบคุมไฟฟ้า",
+                ),
             )
         },
         embedding_values=[1.0, 0.0, 0.0],
@@ -574,6 +590,25 @@ def test_summarize_ticket_and_embed_ticket_require_matching_embedding_identity()
     assert mismatched_model.json()["error"]["code"] == "invalid_request"
     assert fake.embed_calls == 0
 
+    # /summarize-ticket also fails fast BEFORE calling LLM when report_embedding_meta mismatches
+    mismatched_summarize = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ตู้ไฟร้อน", "description": "ตู้ไฟชั้น 2 ร้อนผิดปกติ"}],
+            "include_embedding": True,
+            "report_embeddings": [[0.0, 1.0, 0.0]],
+            "report_embedding_meta": {
+                "model": "legacy-embed-v0",
+                "dimensions": 3,
+                "text_version": EMBEDDING_TEXT_VERSION,
+            },
+        },
+    )
+    assert mismatched_summarize.status_code == 422
+    assert mismatched_summarize.json()["error"]["code"] == "invalid_request"
+    assert fake.generate_calls == 0
+    assert fake.embed_calls == 0
+
     # Matching metadata succeeds for both summarize-ticket and embed-ticket
     res = client.post(
         "/v1/triage/summarize-ticket",
@@ -595,7 +630,11 @@ def test_summarize_ticket_and_embed_ticket_require_matching_embedding_identity()
     assert res.status_code == 200
     body = res.json()
     assert EMBEDDING_TASK_INSTRUCTION in fake.last_embed_text
-    assert body["summary_embedding"]["text_version"] == EMBEDDING_TEXT_VERSION
+    assert body["severity"]["level"] == "CRITICAL"
+    assert body["severity"]["safety_override_triggered"] is True
+    assert math.isclose(body["severity"]["risk_score"], 2.55, rel_tol=1e-6)
+    assert "summary_embedding" not in body
+    assert body["blended_embedding"]["text_version"] == EMBEDDING_TEXT_VERSION
     expected = weighted_blend([1.0, 0.0, 0.0], [[0.0, 1.0, 0.0], [0.0, 1.0, 0.0]])
     assert all(
         math.isclose(a, b, rel_tol=1e-6)
@@ -617,7 +656,331 @@ def test_summarize_ticket_and_embed_ticket_require_matching_embedding_identity()
         },
     )
     assert res_embed.status_code == 200
+    assert "summary_embedding" not in res_embed.json()
     assert res_embed.json()["blended_embedding"]["dimensions"] == 3
+
+
+def test_summarize_ticket_always_returns_deterministic_severity_and_supports_safety_override() -> (
+    None
+):
+    fake = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="ตู้ควบคุมไฟมีประกายไฟ ชั้น 2 อาคาร ศร.3",
+                ticket_description="พบประกายไฟและกลิ่นไหม้จากตู้ควบคุมไฟใกล้โถงลิฟต์ชั้น 2 อาคาร ศร.3",
+                severity=ProviderSeverity(
+                    safety_risk=3,
+                    operational_impact=0,
+                    affected_scope=0,
+                    urgency=0,
+                    confidence=1.3,  # clamped to 1.0
+                    reason="มีความเสี่ยงอันตรายต่อความปลอดภัยโดยตรงจากไฟฟ้าลัดวงจร",
+                ),
+                keywords=["ตู้ควบคุมไฟ", "ประกายไฟ", "ศร.3"],
+            )
+        }
+    )
+    client = TestClient(create_app(_anon_settings(), provider=fake))
+
+    # Minimal request still returns deterministic ticket-level severity with safety_override=True by default
+    res_default = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ตู้ไฟมีประกายไฟ", "description": "มีประกายไฟจากตู้ไฟชั้น 2"}],
+            "include_embedding": False,
+        },
+    )
+    assert res_default.status_code == 200
+    body_default = res_default.json()
+    assert body_default["severity"]["level"] == "CRITICAL"
+    assert body_default["severity"]["safety_override_triggered"] is True
+    assert math.isclose(body_default["severity"]["risk_score"], 1.2, rel_tol=1e-6)
+    assert body_default["severity"]["confidence"] == 1.0
+    assert body_default["severity"]["factors"] == {
+        "safety_risk": 3,
+        "operational_impact": 0,
+        "affected_scope": 0,
+        "urgency": 0,
+    }
+    assert "BR-AI-013" in fake.last_system
+    assert "ฝาท่อเผยอ" in fake.last_user  # campus_facilities default factor guide
+
+    # Disabling safety_override falls back strictly to weighted score (1.2 -> MEDIUM)
+    res_no_override = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ตู้ไฟมีประกายไฟ", "description": "มีประกายไฟจากตู้ไฟชั้น 2"}],
+            "safety_override": False,
+            "include_embedding": False,
+        },
+    )
+    assert res_no_override.status_code == 200
+    body_no_override = res_no_override.json()
+    assert body_no_override["severity"]["level"] == "MEDIUM"
+    assert body_no_override["severity"]["safety_override_triggered"] is False
+    assert math.isclose(body_no_override["severity"]["risk_score"], 1.2, rel_tol=1e-6)
+
+    # BR-AI-013: multiple reports with identical factors never auto-inflate deterministic score/level
+    res_five_reports = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [
+                {
+                    "report_id": f"R-00{i}",
+                    "title": "ตู้ไฟมีประกายไฟ",
+                    "description": "มีประกายไฟจากตู้ไฟชั้น 2",
+                }
+                for i in range(1, 6)
+            ],
+            "safety_override": False,
+            "include_embedding": False,
+        },
+    )
+    assert res_five_reports.status_code == 200
+    assert res_five_reports.json()["severity"]["level"] == body_no_override["severity"]["level"]
+    assert res_five_reports.json()["severity"]["risk_score"] == (
+        body_no_override["severity"]["risk_score"]
+    )
+
+
+def test_summarize_ticket_custom_rubric_weights_thresholds_and_context_forwarding() -> None:
+    fake = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="Wi-Fi outage on Library Floor 4",
+                ticket_description="Multiple users on Floor 4 cannot obtain DHCP leases on KUWIN.",
+                severity=ProviderSeverity(
+                    safety_risk=0,
+                    operational_impact=2,
+                    affected_scope=2,
+                    urgency=1,
+                    confidence=0.88,
+                    reason="Floor-wide connectivity disruption affecting classes and study areas.",
+                ),
+                keywords=["KUWIN", "DHCP", "Library Floor 4"],
+            )
+        }
+    )
+    client = TestClient(create_app(_anon_settings(), provider=fake))
+
+    res = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "domain": "ku_it_helpdesk",
+            "language": "en",
+            "location_name": "Main Library Floor 4",
+            "category_name": "Network & Wi-Fi",
+            "current_ticket": {
+                "title": "Wi-Fi slow on Floor 4",
+                "description": "Intermittent connection drops on Floor 4",
+                "severity": "MEDIUM",
+            },
+            "reports": [
+                {
+                    "report_id": "IT-001",
+                    "title": "Wi-Fi disconnected",
+                    "description": "Cannot get IP address on Floor 4 east wing",
+                    "observed_severity": "MEDIUM",
+                },
+                {
+                    "report_id": "IT-002",
+                    "title": "Entire Floor 4 Wi-Fi down",
+                    "description": "All study rooms on Floor 4 lost KUWIN connectivity",
+                    "observed_severity": "HIGH",
+                },
+            ],
+            "severity_rubric": {
+                "HIGH": "Core campus network outage across an entire floor or building."
+            },
+            "severity_weights": {
+                "safety_risk": 0.10,
+                "operational_impact": 0.50,
+                "affected_scope": 0.30,
+                "urgency": 0.10,
+            },
+            "severity_thresholds": {
+                "medium": 0.75,
+                "high": 1.50,
+                "critical": 2.40,
+            },
+            "include_embedding": False,
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    # 0.10*0 + 0.50*2 + 0.30*2 + 0.10*1 = 1.70 >= high (1.50) -> HIGH
+    assert math.isclose(body["severity"]["risk_score"], 1.7, rel_tol=1e-6)
+    assert body["severity"]["level"] == "HIGH"
+    assert body["severity"]["safety_override_triggered"] is False
+
+    # Context & custom rubric are forwarded into prompt; non-campus domain uses generic factor guide
+    assert '"severity": "MEDIUM"' in fake.last_user
+    assert '"observed_severity": "HIGH"' in fake.last_user
+    assert "Core campus network outage across an entire floor or building." in fake.last_user
+    assert "No safety, security, or data/property hazard." in fake.last_user
+    assert "ฝาท่อเผยอ" not in fake.last_user
+
+    # Partial custom rubric on campus_facilities preserves Thai campus defaults & ignores blank values
+    res_campus_partial = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "domain": "campus_facilities",
+            "reports": [{"title": "ตู้ไฟร้อน", "description": "ตู้ไฟชั้น 2 มีกลิ่นไหม้"}],
+            "severity_rubric": {
+                "CRITICAL": "ไฟไหม้หรือสารเคมีรั่วในห้องปฏิบัติการ",
+                "LOW": "   ",
+            },
+            "include_embedding": False,
+        },
+    )
+    assert res_campus_partial.status_code == 200
+    assert "ไฟไหม้หรือสารเคมีรั่วในห้องปฏิบัติการ" in fake.last_user
+    assert "ผลกระทบจำกัด ไม่กระทบความปลอดภัยหรือการใช้งานหลัก" in fake.last_user
+    assert "ฝาท่อเผยอ" in fake.last_user
+
+
+def test_summarize_ticket_severity_validation_and_provider_error_handling() -> None:
+    fake = FakeProvider()
+    client = TestClient(create_app(_anon_settings(), provider=fake))
+
+    # 1. Invalid current_ticket.severity -> 422 before calling provider
+    bad_current_sev = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "current_ticket": {
+                "title": "ไฟดับ",
+                "description": "ไฟทางเดินดับ",
+                "severity": "EXTREME",
+            },
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+            "include_embedding": False,
+        },
+    )
+    assert bad_current_sev.status_code == 422
+    assert bad_current_sev.json()["error"]["code"] == "validation_error"
+
+    # 2. Invalid reports[].observed_severity -> 422
+    bad_report_sev = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [
+                {
+                    "title": "ไฟดับ",
+                    "description": "ไฟทางเดินดับ",
+                    "observed_severity": "SEVERE",
+                }
+            ],
+            "include_embedding": False,
+        },
+    )
+    assert bad_report_sev.status_code == 422
+
+    # 3. Invalid severity_weights (all zeros / > 1e6) & invalid severity_thresholds -> 422
+    bad_weights = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+            "severity_weights": {
+                "safety_risk": 0.0,
+                "operational_impact": 0.0,
+                "affected_scope": 0.0,
+                "urgency": 0.0,
+            },
+            "include_embedding": False,
+        },
+    )
+    assert bad_weights.status_code == 422
+
+    bad_thresholds = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+            "severity_thresholds": {"medium": 1.8, "high": 1.6, "critical": 2.4},
+            "include_embedding": False,
+        },
+    )
+    assert bad_thresholds.status_code == 422
+    assert fake.generate_calls == 0
+
+    # 4. Blank severity.reason -> 503 and skips embedding call
+    blank_reason_provider = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="ไฟดับ",
+                ticket_description="ไฟทางเดินดับ",
+                severity=ProviderSeverity(
+                    safety_risk=1,
+                    operational_impact=1,
+                    affected_scope=1,
+                    urgency=1,
+                    confidence=0.8,
+                    reason="   ",
+                ),
+            )
+        }
+    )
+    res_blank_reason = TestClient(
+        create_app(_anon_settings(), provider=blank_reason_provider)
+    ).post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+            "include_embedding": True,
+        },
+    )
+    assert res_blank_reason.status_code == 503
+    assert res_blank_reason.json()["error"]["code"] == "provider_upstream_error"
+    assert blank_reason_provider.embed_calls == 0
+
+    # 5. Non-finite severity.confidence -> 503 and skips embedding call
+    nan_conf_provider = FakeProvider(
+        outputs={
+            ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
+                ticket_title="ไฟดับ",
+                ticket_description="ไฟทางเดินดับ",
+                severity=ProviderSeverity(
+                    safety_risk=1,
+                    operational_impact=1,
+                    affected_scope=1,
+                    urgency=1,
+                    confidence=float("nan"),
+                    reason="มีเหตุผลชัดเจน",
+                ),
+            )
+        }
+    )
+    res_nan_conf = TestClient(create_app(_anon_settings(), provider=nan_conf_provider)).post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+            "include_embedding": True,
+        },
+    )
+    assert res_nan_conf.status_code == 503
+    assert nan_conf_provider.embed_calls == 0
+
+    # 6. Defensive check: provider bypassing validation with severity=None -> 503
+    missing_sev_output = ProviderSummarizeTicketOutput.model_construct(
+        ticket_title="ไฟดับ",
+        ticket_description="ไฟทางเดินดับ",
+        severity=None,
+        keywords=[],
+    )
+    missing_sev_provider = FakeProvider(
+        outputs={ProviderSummarizeTicketOutput: missing_sev_output}
+    )
+    res_missing_sev = TestClient(
+        create_app(_anon_settings(), provider=missing_sev_provider)
+    ).post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+            "include_embedding": True,
+        },
+    )
+    assert res_missing_sev.status_code == 503
+    assert res_missing_sev.json()["error"]["code"] == "provider_upstream_error"
+    assert missing_sev_provider.embed_calls == 0
 
 
 # ---------------------------------------------------------------------------
@@ -694,7 +1057,16 @@ def test_incomplete_provider_outputs_return_503() -> None:
                 rephrased_title="   ", rephrased_description="รายละเอียด"
             ),
             ProviderSummarizeTicketOutput: ProviderSummarizeTicketOutput(
-                ticket_title="หัวข้อ", ticket_description="   "
+                ticket_title="หัวข้อ",
+                ticket_description="   ",
+                severity=ProviderSeverity(
+                    safety_risk=1,
+                    operational_impact=1,
+                    affected_scope=1,
+                    urgency=1,
+                    confidence=0.8,
+                    reason="มีเหตุผล",
+                ),
             ),
         }
     )
@@ -942,10 +1314,34 @@ def test_validation_and_runtime_openapi_parity() -> None:
             ref = responses[err_code]["content"]["application/json"]["schema"]["$ref"]
             assert ref.endswith("/ErrorResponse")
 
+    schemas = spec["components"]["schemas"]
+    summarize_req_props = schemas["SummarizeTicketRequest"]["properties"]
+    for field_name in (
+        "severity_rubric",
+        "severity_weights",
+        "severity_thresholds",
+        "safety_override",
+    ):
+        assert field_name in summarize_req_props
+    assert "severity" in schemas["CurrentTicketInput"]["properties"]
+    assert "observed_severity" in schemas["TicketReportSource"]["properties"]
+    assert "severity" in schemas["SummarizeTicketResponse"]["required"]
+    assert schemas["SummarizeTicketResponse"]["properties"]["severity"]["$ref"].endswith(
+        "/SeverityResult"
+    )
+    assert "summary_embedding" not in schemas["SummarizeTicketResponse"]["properties"]
+    assert "summary_embedding" not in schemas["EmbedTicketResponse"]["properties"]
+
     yaml_path = Path(__file__).resolve().parents[3] / "contracts" / "ai-triage.v1.yaml"
     yaml_text = yaml_path.read_text(encoding="utf-8")
     assert "CampusFix" not in yaml_text
+    assert "summary_embedding:" not in yaml_text
     assert f"version: {API_VERSION}" in yaml_text
     assert '"413":' in yaml_text
     assert "EmbeddingIdentity:" in yaml_text
     assert "minItems: 1" in yaml_text
+    assert "observed_severity:" in yaml_text
+    assert (
+        "required: [request_id, provider, model, latency_ms, ticket_title, ticket_description, severity]"
+        in yaml_text
+    )

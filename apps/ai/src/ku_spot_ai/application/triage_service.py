@@ -15,11 +15,14 @@ from ku_spot_ai.api.schemas import (
     EmbedTicketResponse,
     ProviderAnalyzeOutput,
     ProviderRephraseOutput,
+    ProviderSeverity,
     ProviderSummarizeTicketOutput,
     RephraseRequest,
     RephraseResponse,
     SeverityFactorsResult,
     SeverityResult,
+    SeverityThresholdsInput,
+    SeverityWeightsInput,
     SummarizeTicketRequest,
     SummarizeTicketResponse,
     TriageAnalyzeRequest,
@@ -86,6 +89,56 @@ def _resolve_category(
         if cat.name.strip().lower() == needle:
             return cat
     return None
+
+
+def _build_severity_result(
+    raw_severity: ProviderSeverity | None,
+    *,
+    weights_input: SeverityWeightsInput,
+    thresholds_input: SeverityThresholdsInput,
+    safety_override: bool,
+) -> SeverityResult:
+    if raw_severity is None:
+        raise ProviderUpstreamError("AI provider omitted required severity output")
+    severity_confidence = _clamp_confidence(
+        raw_severity.confidence, field_name="severity.confidence"
+    )
+    severity_reason = raw_severity.reason.strip()
+    if not severity_reason:
+        raise ProviderUpstreamError("AI provider returned an empty severity reason")
+    computed = compute_severity(
+        SeverityFactors(
+            safety_risk=raw_severity.safety_risk,
+            operational_impact=raw_severity.operational_impact,
+            affected_scope=raw_severity.affected_scope,
+            urgency=raw_severity.urgency,
+        ),
+        weights=SeverityWeights(
+            safety_risk=weights_input.safety_risk,
+            operational_impact=weights_input.operational_impact,
+            affected_scope=weights_input.affected_scope,
+            urgency=weights_input.urgency,
+        ),
+        thresholds=SeverityThresholds(
+            medium=thresholds_input.medium,
+            high=thresholds_input.high,
+            critical=thresholds_input.critical,
+        ),
+        safety_override=safety_override,
+    )
+    return SeverityResult(
+        level=computed.level,
+        risk_score=computed.risk_score,
+        factors=SeverityFactorsResult(
+            safety_risk=computed.factors.safety_risk,
+            operational_impact=computed.factors.operational_impact,
+            affected_scope=computed.factors.affected_scope,
+            urgency=computed.factors.urgency,
+        ),
+        safety_override_triggered=computed.safety_override_triggered,
+        confidence=severity_confidence,
+        reason=severity_reason,
+    )
 
 
 class TriageService:
@@ -216,6 +269,11 @@ class TriageService:
         request: SummarizeTicketRequest,
     ) -> SummarizeTicketResponse:
         request_id = f"ticket_{uuid.uuid4().hex[:12]}"
+        if request.include_embedding:
+            self._validate_report_embedding_space(
+                request.report_embeddings,
+                request.report_embedding_meta,
+            )
         built = build_summarize_ticket_prompts(request)
 
         started = time.perf_counter()
@@ -230,13 +288,18 @@ class TriageService:
             raise ProviderUpstreamError(
                 "AI provider returned an incomplete ticket summary"
             )
+        severity = _build_severity_result(
+            llm_result.output.severity,
+            weights_input=request.severity_weights,
+            thresholds_input=request.severity_thresholds,
+            safety_override=request.safety_override,
+        )
         keywords = _clean_keywords(llm_result.output.keywords)
 
-        summary_embedding: EmbeddingResult | None = None
         blended_embedding: EmbeddingResult | None = None
 
         if request.include_embedding:
-            summary_embedding, blended_embedding = await self._compute_ticket_embeddings(
+            blended_embedding = await self._compute_ticket_embedding(
                 domain=request.domain,
                 title=ticket_title,
                 description=ticket_description,
@@ -257,8 +320,8 @@ class TriageService:
             latency_ms=latency_ms,
             ticket_title=ticket_title,
             ticket_description=ticket_description,
+            severity=severity,
             keywords=keywords,
-            summary_embedding=summary_embedding,
             blended_embedding=blended_embedding,
         )
 
@@ -266,7 +329,7 @@ class TriageService:
         request_id = f"embed_ticket_{uuid.uuid4().hex[:12]}"
         started = time.perf_counter()
 
-        summary_embedding, blended_embedding = await self._compute_ticket_embeddings(
+        blended_embedding = await self._compute_ticket_embedding(
             domain=request.domain,
             title=request.title,
             description=request.description,
@@ -284,11 +347,35 @@ class TriageService:
             request_id=request_id,
             provider=self._provider.name,
             latency_ms=latency_ms,
-            summary_embedding=summary_embedding,
             blended_embedding=blended_embedding,
         )
 
-    async def _compute_ticket_embeddings(
+    def _validate_report_embedding_space(
+        self,
+        report_embeddings: list[list[float]],
+        report_embedding_meta: EmbeddingIdentity | None,
+    ) -> EmbeddingIdentity | None:
+        if not report_embeddings:
+            return None
+        if report_embedding_meta is None:
+            raise ValueError(
+                "report_embedding_meta is required when report_embeddings are provided"
+            )
+        expected_model = self._provider.embedding_model
+        expected_dim = self._provider.embedding_dimensions
+        if (
+            report_embedding_meta.model != expected_model
+            or (expected_dim > 0 and report_embedding_meta.dimensions != expected_dim)
+            or report_embedding_meta.text_version != EMBEDDING_TEXT_VERSION
+        ):
+            raise ValueError(
+                "report_embedding_meta does not match active embedding space "
+                f"({expected_model}, dim={expected_dim}, text_version={EMBEDDING_TEXT_VERSION}); "
+                "re-embed reports before blending"
+            )
+        return report_embedding_meta
+
+    async def _compute_ticket_embedding(
         self,
         *,
         domain: str,
@@ -300,24 +387,11 @@ class TriageService:
         report_embedding_meta: EmbeddingIdentity | None,
         summary_weight: float,
         reports_weight: float,
-    ) -> tuple[EmbeddingResult, EmbeddingResult]:
-        if report_embeddings:
-            if report_embedding_meta is None:
-                raise ValueError(
-                    "report_embedding_meta is required when report_embeddings are provided"
-                )
-            expected_model = self._provider.embedding_model
-            expected_dim = self._provider.embedding_dimensions
-            if (
-                report_embedding_meta.model != expected_model
-                or (expected_dim > 0 and report_embedding_meta.dimensions != expected_dim)
-                or report_embedding_meta.text_version != EMBEDDING_TEXT_VERSION
-            ):
-                raise ValueError(
-                    "report_embedding_meta does not match active embedding space "
-                    f"({expected_model}, dim={expected_dim}, text_version={EMBEDDING_TEXT_VERSION}); "
-                    "re-embed reports before blending"
-                )
+    ) -> EmbeddingResult:
+        validated_meta = self._validate_report_embedding_space(
+            report_embeddings,
+            report_embedding_meta,
+        )
 
         embed_text = build_ticket_embedding_text(
             domain=domain,
@@ -329,12 +403,11 @@ class TriageService:
         embed_result = await self._provider.embed(text=embed_text)
         summary_embedding = self._normalize_upstream_embedding(embed_result)
 
-        if report_embeddings:
-            assert report_embedding_meta is not None
+        if validated_meta is not None:
             if (
-                report_embedding_meta.model != summary_embedding.model
-                or report_embedding_meta.dimensions != summary_embedding.dimensions
-                or report_embedding_meta.text_version != summary_embedding.text_version
+                validated_meta.model != summary_embedding.model
+                or validated_meta.dimensions != summary_embedding.dimensions
+                or validated_meta.text_version != summary_embedding.text_version
             ):
                 raise ValueError(
                     "report_embedding_meta does not match active embedding space "
@@ -348,16 +421,14 @@ class TriageService:
                 summary_weight=summary_weight,
                 reports_weight=reports_weight,
             )
-            blended_embedding = EmbeddingResult(
+            return EmbeddingResult(
                 model=summary_embedding.model,
                 dimensions=len(blended_values),
                 text_version=summary_embedding.text_version,
                 values=blended_values,
             )
-        else:
-            blended_embedding = summary_embedding
 
-        return summary_embedding, blended_embedding
+        return summary_embedding
 
     def _build_analyze_response(
         self,
@@ -421,52 +492,11 @@ class TriageService:
 
         severity: SeverityResult | None = None
         if "severity" in requested:
-            if raw is None or raw.severity is None:
-                raise ProviderUpstreamError(
-                    "AI provider omitted required severity output"
-                )
-            severity_confidence = _clamp_confidence(
-                raw.severity.confidence, field_name="severity.confidence"
-            )
-            severity_reason = raw.severity.reason.strip()
-            if not severity_reason:
-                raise ProviderUpstreamError(
-                    "AI provider returned an empty severity reason"
-                )
-            w = request.taxonomy.severity_weights
-            t = request.taxonomy.severity_thresholds
-            computed = compute_severity(
-                SeverityFactors(
-                    safety_risk=raw.severity.safety_risk,
-                    operational_impact=raw.severity.operational_impact,
-                    affected_scope=raw.severity.affected_scope,
-                    urgency=raw.severity.urgency,
-                ),
-                weights=SeverityWeights(
-                    safety_risk=w.safety_risk,
-                    operational_impact=w.operational_impact,
-                    affected_scope=w.affected_scope,
-                    urgency=w.urgency,
-                ),
-                thresholds=SeverityThresholds(
-                    medium=t.medium,
-                    high=t.high,
-                    critical=t.critical,
-                ),
+            severity = _build_severity_result(
+                raw.severity if raw is not None else None,
+                weights_input=request.taxonomy.severity_weights,
+                thresholds_input=request.taxonomy.severity_thresholds,
                 safety_override=request.taxonomy.safety_override,
-            )
-            severity = SeverityResult(
-                level=computed.level,
-                risk_score=computed.risk_score,
-                factors=SeverityFactorsResult(
-                    safety_risk=computed.factors.safety_risk,
-                    operational_impact=computed.factors.operational_impact,
-                    affected_scope=computed.factors.affected_scope,
-                    urgency=computed.factors.urgency,
-                ),
-                safety_override_triggered=computed.safety_override_triggered,
-                confidence=severity_confidence,
-                reason=severity_reason,
             )
 
         keywords: list[str] = []

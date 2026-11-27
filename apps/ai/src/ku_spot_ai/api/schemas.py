@@ -465,7 +465,7 @@ class TriageAnalyzeResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 3. Summarize Ticket (Synthesize Title + Description + Optional Blended Vector)
+# 3. Summarize Ticket (Title + Description + Ticket Severity + Blended Vector)
 # ---------------------------------------------------------------------------
 
 
@@ -474,6 +474,7 @@ class TicketReportSource(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=4000)
     location_name: str | None = Field(default=None, max_length=200)
+    observed_severity: SeverityLevel | None = None
 
     @field_validator("title")
     @classmethod
@@ -489,6 +490,7 @@ class TicketReportSource(BaseModel):
 class CurrentTicketInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=4000)
+    severity: SeverityLevel | None = None
 
     @field_validator("title")
     @classmethod
@@ -510,16 +512,23 @@ class SummarizeTicketRequest(BaseModel):
                 "language": "th",
                 "location_name": "อาคารศูนย์เรียนรวม 3 (ศร.3)",
                 "category_name": "ไฟฟ้าและแสงสว่าง",
+                "current_ticket": {
+                    "title": "ตู้ไฟหน้าลิฟต์ ศร.3 ชั้น 2 มีกลิ่นไหม้",
+                    "description": "เดินผ่านหน้าลิฟต์ชั้น 2 ได้กลิ่นเหม็นไหม้และมีเสียงช็อตเบา ๆ เป็นระยะ",
+                    "severity": "HIGH",
+                },
                 "reports": [
                     {
                         "report_id": "R-001",
                         "title": "ตู้ไฟหน้าลิฟต์ ศร.3 ชั้น 2 มีกลิ่นไหม้",
                         "description": "เดินผ่านหน้าลิฟต์ชั้น 2 ได้กลิ่นเหม็นไหม้และมีเสียงช็อตเบา ๆ เป็นระยะ",
+                        "observed_severity": "HIGH",
                     },
                     {
                         "report_id": "R-002",
                         "title": "ตู้เบรกเกอร์ ศร.3 ชั้น 2 ร้อนผิดปกติ",
                         "description": "เพิ่งขึ้นลิฟต์มาชั้น 2 ตู้เบรกเกอร์ไฟข้างลิฟต์ร้อนมากและมีกลิ่นไหม้",
+                        "observed_severity": "CRITICAL",
                     },
                 ],
                 "include_embedding": True,
@@ -543,6 +552,12 @@ class SummarizeTicketRequest(BaseModel):
     category_name: str | None = Field(default=None, max_length=120)
     current_ticket: CurrentTicketInput | None = None
     reports: list[TicketReportSource] = Field(min_length=1, max_length=50)
+    severity_rubric: SeverityRubricInput = Field(default_factory=SeverityRubricInput)
+    severity_weights: SeverityWeightsInput = Field(default_factory=SeverityWeightsInput)
+    severity_thresholds: SeverityThresholdsInput = Field(
+        default_factory=SeverityThresholdsInput
+    )
+    safety_override: bool = True
     include_embedding: bool = True
     report_embeddings: list[list[float]] = Field(default_factory=list, max_length=50)
     report_embedding_meta: EmbeddingIdentity | None = None
@@ -560,6 +575,7 @@ class SummarizeTicketRequest(BaseModel):
 class ProviderSummarizeTicketOutput(BaseModel):
     ticket_title: str
     ticket_description: str
+    severity: ProviderSeverity
     keywords: list[str] = Field(default_factory=list)
 
 
@@ -570,8 +586,8 @@ class SummarizeTicketResponse(BaseModel):
     latency_ms: int = Field(ge=0)
     ticket_title: str
     ticket_description: str
+    severity: SeverityResult
     keywords: list[str] = Field(default_factory=list)
-    summary_embedding: EmbeddingResult | None = None
     blended_embedding: EmbeddingResult | None = None
 
 
@@ -631,7 +647,6 @@ class EmbedTicketResponse(BaseModel):
     request_id: str
     provider: str
     latency_ms: int = Field(ge=0)
-    summary_embedding: EmbeddingResult
     blended_embedding: EmbeddingResult
 
 

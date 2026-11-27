@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from ku_spot_ai.api.schemas import (
     RephraseRequest,
     SeverityLevel,
+    SeverityRubricInput,
     SummarizeTicketRequest,
     TriageAnalyzeRequest,
 )
@@ -130,11 +131,16 @@ def build_rephrase_prompts(request: RephraseRequest) -> BuiltPrompt:
     )
 
 
-def build_analyze_prompts(request: TriageAnalyzeRequest) -> BuiltPrompt:
-    custom_rubric = request.taxonomy.severity_rubric.model_dump(exclude_none=True)
-    use_campus_defaults = (
-        request.domain == "campus_facilities" and not custom_rubric
-    )
+def _resolve_severity_context(
+    domain: str,
+    severity_rubric: SeverityRubricInput,
+) -> tuple[dict[str, dict[str, str]], dict[str, str]]:
+    custom_rubric = {
+        level: text.strip()
+        for level, text in severity_rubric.model_dump(exclude_none=True).items()
+        if text.strip()
+    }
+    use_campus_defaults = domain == "campus_facilities"
     base_rubric = (
         DEFAULT_SEVERITY_RUBRIC if use_campus_defaults else GENERIC_SEVERITY_RUBRIC
     )
@@ -143,6 +149,14 @@ def build_analyze_prompts(request: TriageAnalyzeRequest) -> BuiltPrompt:
         CAMPUS_SEVERITY_FACTOR_GUIDE
         if use_campus_defaults
         else GENERIC_SEVERITY_FACTOR_GUIDE
+    )
+    return factor_guide, rubric
+
+
+def build_analyze_prompts(request: TriageAnalyzeRequest) -> BuiltPrompt:
+    factor_guide, rubric = _resolve_severity_context(
+        request.domain,
+        request.taxonomy.severity_rubric,
     )
     llm_tasks = [t for t in request.tasks if t != "embed"]
     tasks_str = ", ".join(llm_tasks)
@@ -196,19 +210,27 @@ def build_analyze_prompts(request: TriageAnalyzeRequest) -> BuiltPrompt:
 
 
 def build_summarize_ticket_prompts(request: SummarizeTicketRequest) -> BuiltPrompt:
+    factor_guide, rubric = _resolve_severity_context(
+        request.domain,
+        request.severity_rubric,
+    )
+
     system_lines = [
-        "You are an advisory incident summarization AI engine for issue tracking systems.",
-        "Your output is a proposed Ticket Title and Ticket Description for a human Reviewer to confirm or edit.",
+        "You are an advisory incident summarization and ticket-level severity assessment AI engine for issue tracking systems.",
+        "Your output is a proposed Ticket Title, Ticket Description, keywords, and 4-factor Ticket Severity assessment for a human Reviewer to confirm or edit.",
         TRUST_BOUNDARY_RULE,
         "",
         "Strict rules:",
         "1. Return ONLY valid JSON matching the requested schema.",
-        "2. Write ticket_title and ticket_description in the language specified in payload.language.",
+        "2. Write ticket_title, ticket_description, and severity.reason in the language specified in payload.language.",
         "3. Synthesize ALL provided reports into one coherent, factual, non-redundant ticket_title and ticket_description.",
         "4. Merge complementary details from different reports (e.g., exact room/floor, symptoms, affected area) without duplicating sentences.",
         "5. NEVER invent facts not present in the provided reports or current_ticket.",
         "6. Keep ticket_title concise and informative; keep ticket_description clear and neutral.",
         "7. Extract 3 to 8 concise, deduplicated keywords/keyphrases (equipment, symptoms, building/room/floor identifiers) into keywords for downstream keyword matching.",
+        "8. For 'severity': DO NOT guess a single severity label. Instead, score each of the 4 objective risk factors (safety_risk, operational_impact, affected_scope, urgency) as an integer from 0 to 3 strictly using severity_factor_guide, severity_rubric_context, and the combined physical/operational evidence across all reports.",
+        "9. BR-AI-013 invariant: NEVER increase or inflate any severity factor solely because multiple reports exist for the same ticket. Only score higher when concrete evidence shows greater physical hazard, wider affected scope, stronger operational impact, or higher urgency.",
+        "10. Treat current_ticket.severity and each report's observed_severity strictly as advisory reference context; re-evaluate objectively from all combined evidence and calibrate severity.confidence as a finite decimal between 0.0 and 1.0.",
     ]
 
     payload: dict[str, object] = {
@@ -220,10 +242,13 @@ def build_summarize_ticket_prompts(request: SummarizeTicketRequest) -> BuiltProm
         if request.current_ticket
         else None,
         "reports": [r.model_dump(exclude_none=True) for r in request.reports],
+        "severity_factor_guide": factor_guide,
+        "severity_rubric_context": rubric,
     }
 
     user_text = (
-        "Synthesize the untrusted report data below into a proposed ticket_title and ticket_description.\n\n"
+        "Synthesize the untrusted report data below into a proposed ticket_title, "
+        "ticket_description, keywords, and 4-factor ticket severity assessment.\n\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
     )
     return BuiltPrompt(
