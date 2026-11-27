@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { PageSize } from "@/components/shared/PaginationBar";
 
-export function usePagination() {
-  const [requestedPage, setPage] = useState(1);
+export function usePagination(resetKey = "") {
+  const [selection, setSelection] = useState({ key: resetKey, page: 1 });
+  const requestedPage = selection.key === resetKey ? selection.page : 1;
+  if (selection.key !== resetKey) setSelection({ key: resetKey, page: 1 });
+  const setPage = useCallback((page: number) => setSelection({ key: resetKey, page }), [resetKey]);
   const [size, setSize] = useState<PageSize>(25);
   const reset = () => setPage(1);
 
@@ -27,5 +30,5 @@ export function usePagination() {
     };
   }
 
-  return { current, reset, requestedPage, size, controls };
+  return { current, reset, requestedPage, size, controls, setPage };
 }

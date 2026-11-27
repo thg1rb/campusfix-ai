@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Result<T> =
   { status: "loading" } | { status: "ready"; value: T } | { status: "error"; error: unknown };
@@ -11,6 +11,7 @@ export function useApiResource<T>(load: (signal: AbortSignal) => Promise<T>, ena
     load: typeof load;
     version: number;
     result: Result<T>;
+    lastReady?: T;
   }>();
 
   useEffect(() => {
@@ -19,11 +20,16 @@ export function useApiResource<T>(load: (signal: AbortSignal) => Promise<T>, ena
     void load(request.signal).then(
       (value) => {
         if (!request.signal.aborted)
-          setSnapshot({ load, version, result: { status: "ready", value } });
+          setSnapshot({ load, version, result: { status: "ready", value }, lastReady: value });
       },
       (error: unknown) => {
         if (!request.signal.aborted)
-          setSnapshot({ load, version, result: { status: "error", error } });
+          setSnapshot((previous) => ({
+            load,
+            version,
+            result: { status: "error", error },
+            lastReady: previous?.lastReady,
+          }));
       },
     );
     return () => request.abort();
@@ -33,5 +39,12 @@ export function useApiResource<T>(load: (signal: AbortSignal) => Promise<T>, ena
     enabled && snapshot?.load === load && snapshot.version === version
       ? snapshot.result
       : { status: "loading" };
-  return { result, reload: () => setVersion((current) => current + 1) };
+  const reload = useCallback(() => setVersion((current) => current + 1), []);
+  const previousValue = enabled && result.status !== "ready" ? snapshot?.lastReady : undefined;
+  return {
+    result,
+    reload,
+    previousValue,
+    isRefreshing: result.status === "loading" && previousValue !== undefined,
+  };
 }

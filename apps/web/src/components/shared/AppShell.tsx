@@ -45,7 +45,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DemoSimulationBar } from "@/features/demo/components/DemoSimulationBar";
-import { isAuthPortal, publicFeedPath, signInPath } from "@/features/auth";
+import { publicFeedPath, signInPath } from "@/features/auth";
 import { googleSignInLabel } from "@/features/auth/authRoutes";
 import { GoogleMark } from "@/features/auth/components/GoogleMark";
 import { usePrototype } from "@/lib/store/PrototypeStore";
@@ -55,6 +55,7 @@ import type { User } from "@/types/domain";
 import { useLiveSession } from "@/features/auth/LiveSession";
 import { identityErrorMessage } from "@/features/auth/authErrors";
 import { PageFrame } from "./Controls";
+import { getRouteMode } from "./routeMode";
 
 type NavUser = Pick<User, "username" | "roles">;
 
@@ -311,15 +312,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, state, demoAvailable } = usePrototype();
   const { session } = useLiveSession();
   const path = usePathname();
-  const portal = isAuthPortal(path);
-  const staticLogin = path === "/" || path === signInPath;
-  const prototypeOnly =
-    /^(?:\/reports\/new|\/my-reports|\/reviewer|\/department|\/admin\/(?:categories|departments|locations))(?:\/|$)/.test(
-      path,
-    );
-  const prototypePublic = /^(?:\/feed|\/map|\/tickets|\/reports|\/u)(?:\/|$)/.test(path);
-  const liveScreen =
-    path === "/settings/profile" || path === "/admin" || path.startsWith("/admin/");
+  const mode = getRouteMode(path);
+  const portal = mode === "login" || mode === "demo-login";
   return (
     <div className="flex min-h-dvh flex-col">
       <a
@@ -329,17 +323,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         ข้ามไปยังเนื้อหา
       </a>
       {!portal && <TopNav user={session.user ?? user} />}
-      {prototypePublic && !prototypeOnly && (
+      {mode === "prototype-public" && (
         <p className="border-b bg-muted px-4 py-2 text-center text-sm text-muted-foreground">
           ตัวอย่างข้อมูลปัญหาในวิทยาเขต
         </p>
       )}
       <main id="main" tabIndex={-1} className={cn("flex-1", portal && "grid")}>
-        {prototypeOnly && !demoAvailable && session.status !== "loading" ? (
+        {mode === "prototype-only" && !demoAvailable && session.status !== "loading" ? (
           <PageFrame>
             <p className="campus-panel p-4">ส่วนนี้อยู่ระหว่างเชื่อมต่อกับระบบจริง</p>
           </PageFrame>
-        ) : staticLogin || liveScreen || state ? (
+        ) : mode === "login" || mode === "live" || state ? (
           children
         ) : (
           <div className="mx-auto grid max-w-[1200px] gap-4 px-4 py-10" role="status">

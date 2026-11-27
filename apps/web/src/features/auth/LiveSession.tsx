@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -25,10 +26,13 @@ type SessionContext = {
   signOut: () => Promise<void>;
 };
 
+const channelName = "ku-spot-live-session";
+
 const Context = createContext<SessionContext | null>(null);
 
 export function LiveSessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session>({ status: "loading", user: null });
+  const channel = useRef<BroadcastChannel | null>(null);
   const pending = useRef<AbortController | null>(null);
 
   const refresh = useCallback(() => {
@@ -55,16 +59,45 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        channel.current = new BroadcastChannel(channelName);
+        channel.current.onmessage = (event) => {
+          if (event.data === "logout") {
+            pending.current?.abort();
+            setSession({ status: "guest", user: null });
+          } else if (event.data === "profile-changed") {
+            void refresh();
+          }
+        };
+      }
+    } catch {
+      // Visibility revalidation also works in browsers without cross-tab channels.
+    }
     void refresh();
-    return () => pending.current?.abort();
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      channel.current?.close();
+      channel.current = null;
+      pending.current?.abort();
+    };
   }, [refresh]);
 
-  function replaceUser(user: Profile) {
+  const replaceUser = useCallback((user: Profile) => {
     pending.current?.abort();
-    setSession({ status: "authenticated", user });
-  }
+    setSession((current) =>
+      current.status === "authenticated" && current.user.id === user.id
+        ? { status: "authenticated", user }
+        : current,
+    );
+    channel.current?.postMessage("profile-changed");
+  }, []);
 
-  async function signOut() {
+  const signOut = useCallback(async () => {
     try {
       await logout();
     } catch (error) {
@@ -72,13 +105,14 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     }
     pending.current?.abort();
     setSession({ status: "guest", user: null });
-  }
+    channel.current?.postMessage("logout");
+  }, []);
 
-  return (
-    <Context.Provider value={{ session, refresh, replaceUser, signOut }}>
-      {children}
-    </Context.Provider>
+  const value = useMemo(
+    () => ({ session, refresh, replaceUser, signOut }),
+    [session, refresh, replaceUser, signOut],
   );
+  return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
 export function useLiveSession() {

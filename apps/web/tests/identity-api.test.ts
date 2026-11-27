@@ -7,6 +7,7 @@ import { GET as startLogin } from "@/app/login/start/route";
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 describe("identity API client", () => {
@@ -95,6 +96,7 @@ describe("runtime API proxy", () => {
   );
 
   it("returns a JSON 503 for the API and a login notice redirect for the browser", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     vi.stubEnv("API_BASE_URL", "");
     const api = await GET(new Request("http://localhost/api/v1/auth/login"), {
       params: Promise.resolve({ path: ["auth", "login"] }),
@@ -105,4 +107,46 @@ describe("runtime API proxy", () => {
     expect(browser.status).toBe(303);
     expect(browser.headers.get("Location")).toBe("/login?error=SERVICE_UNAVAILABLE&next=%2Ffeed");
   });
+});
+
+it.each([
+  ["public, max-age=300", "public, max-age=300"],
+  [null, "no-store"],
+])("preserves upstream cache policy %s", async (cache, expected) => {
+  vi.stubEnv("API_BASE_URL", "http://api.internal:8080/");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_target, init: RequestInit) => {
+      const headers = new Headers(init.headers);
+      expect(headers.get("Referer")).toBe("http://localhost/profile");
+      expect(headers.has("Content-Encoding")).toBe(false);
+      return new Response(null, { headers: cache ? { "Cache-Control": cache } : {} });
+    }),
+  );
+  const response = await GET(
+    new Request("http://localhost/api/v1/me", {
+      headers: { Referer: "http://localhost/profile", "Content-Encoding": "gzip" },
+    }),
+    { params: Promise.resolve({ path: ["me"] }) },
+  );
+  expect(response.headers.get("Cache-Control")).toBe(expected);
+});
+
+it("logs safe proxy failure metadata without raw errors, cookies or query values", async () => {
+  vi.stubEnv("API_BASE_URL", "http://api.internal:8080/");
+  const logging = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("private transport payload")));
+  const response = await GET(
+    new Request("http://localhost/api/v1/auth/callback?code=private-query", {
+      headers: { Cookie: "session=private-cookie", "X-Request-Id": "trace-1" },
+    }),
+    { params: Promise.resolve({ path: ["auth", "callback"] }) },
+  );
+  expect(response.status).toBe(503);
+  expect(logging).toHaveBeenCalledExactlyOnceWith("[api-proxy]", {
+    message: "Upstream request failed.",
+    requestId: "trace-1",
+    path: "auth/callback",
+  });
+  expect(JSON.stringify(await response.json())).not.toContain("private");
 });

@@ -20,7 +20,7 @@ import { usePrototype } from "@/lib/store/PrototypeStore";
 import { useLiveSession } from "../LiveSession";
 import { oauthErrorMessage } from "../authErrors";
 import { ErrorNotice } from "@/components/shared/Controls";
-import { getLoginUrl } from "@/lib/api/identity";
+import { getBrowserLoginUrl } from "@/lib/api/identity";
 import { cn } from "@/lib/utils";
 import {
   accountChooserPath,
@@ -50,7 +50,7 @@ export default function LoginScreen({ next, error }: { next?: string; error?: st
   const { user: demoUser } = usePrototype();
   const { session } = useLiveSession();
   const user = session.user ?? demoUser;
-  const start = getLoginUrl(safeReturnPath(next)).replace("/api/v1/auth/login", "/login/start");
+  const start = getBrowserLoginUrl(safeReturnPath(next));
   useAuthRedirect(error ? null : user, next);
   if (user && !error) return null;
 

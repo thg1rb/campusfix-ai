@@ -38,6 +38,10 @@ export function getLoginUrl(next?: string) {
   return "/api/v1/auth/login" + queryString({ next });
 }
 
+export function getBrowserLoginUrl(next?: string) {
+  return "/login/start" + queryString({ next });
+}
+
 export function getMe(signal?: AbortSignal) {
   return apiFetch<Profile>("/me", { signal });
 }

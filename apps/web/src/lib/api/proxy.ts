@@ -3,9 +3,9 @@ import { apiURL } from "./config";
 const requestHeaders = [
   "accept",
   "content-type",
-  "content-encoding",
   "cookie",
   "origin",
+  "referer",
   "sec-fetch-site",
   "if-match",
   "if-none-match",
@@ -78,9 +78,12 @@ export async function proxyAPI(request: Request, path: string[]) {
     }
     for (const cookie of upstream.headers.getSetCookie())
       responseHeaders.append("Set-Cookie", cookie);
-    responseHeaders.set("Cache-Control", "no-store");
+    if (!responseHeaders.has("Cache-Control")) responseHeaders.set("Cache-Control", "no-store");
     return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
-  } catch {
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    const message = timedOut ? "Upstream request timed out." : "Upstream request failed.";
+    console.error("[api-proxy]", { requestId, path: path.join("/"), message });
     return proxyError(
       503,
       "SERVICE_UNAVAILABLE",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useDeferredValue, useState } from "react";
+import { useCallback, useState } from "react";
 import { UserCog, Users } from "lucide-react";
 import { toast } from "sonner";
 import { ActionLabel, useActionFeedback } from "@/components/shared/ActionFeedback";
@@ -19,6 +19,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { CampusHeading } from "@/components/shared/CampusHeading";
 import { PaginationBar } from "@/components/shared/PaginationBar";
 import { allResults, matchesSearch, ResultFilters } from "@/components/shared/ResultFilters";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { usePagination } from "@/hooks/usePagination";
 import {
   AccountStatus,
@@ -59,10 +60,12 @@ function UserDialog({
   person,
   departments,
   save,
+  disabled,
 }: {
   person: Account;
   departments: Department[];
   save: SaveUser;
+  disabled: boolean;
 }) {
   const action = useActionFeedback();
   const [open, setOpen] = useState(false);
@@ -84,7 +87,7 @@ function UserDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" aria-label={`แก้ไขสิทธิ์ @${person.username}`}>
+        <Button disabled={disabled} variant="outline" aria-label={`แก้ไขสิทธิ์ @${person.username}`}>
           <UserCog aria-hidden="true" /> แก้ไขสิทธิ์
         </Button>
       </DialogTrigger>
@@ -116,7 +119,7 @@ function UserDialog({
         {error && <ErrorNotice message={error} />}
         <DialogFooter>
           <Button
-            disabled={action.pending}
+            disabled={disabled || action.pending}
             onClick={() => {
               void action.run(
                 () =>
@@ -149,22 +152,27 @@ export default function AdminUsersScreen() {
   const [query, setQuery] = useState("");
   const [role, setRole] = useState("all");
   const [status, setStatus] = useState("all");
-  const pager = usePagination();
-  const deferredQuery = useDeferredValue(query);
-  const { requestedPage, size } = pager;
+  const debouncedQuery = useDebouncedValue(query.trim().replace(/^@/, ""));
+  const pager = usePagination(JSON.stringify([live ? debouncedQuery : query, role, status]));
+  const { requestedPage, size, setPage } = pager;
   const fetchUsers = useCallback(
-    (signal: AbortSignal) =>
-      listAdminUsers(
+    async (signal: AbortSignal) => {
+      const result = await listAdminUsers(
         {
-          q: deferredQuery.trim().replace(/^@/, ""),
+          q: debouncedQuery,
           role: role === "all" ? undefined : (role as Role),
           isActive: status === "all" ? undefined : status === "active",
           page: requestedPage,
           pageSize: size,
         },
         signal,
-      ),
-    [deferredQuery, role, status, requestedPage, size],
+      );
+      if (!signal.aborted && requestedPage > 1 && result.items.length === 0) {
+        setPage(Math.max(1, Math.min(requestedPage - 1, result.pagination.totalPages)));
+      }
+      return result;
+    },
+    [debouncedQuery, role, status, requestedPage, size, setPage],
   );
   const usersRequest = useApiResource(fetchUsers, live);
   const departmentRequest = useApiResource(listAdminDepartments, live);
@@ -190,14 +198,13 @@ export default function AdminUsersScreen() {
     ),
   );
   const remote = usersRequest.result;
+  const remotePage = remote.status === "ready" ? remote.value : usersRequest.previousValue;
+  const stale = live && remote.status !== "ready";
   const page =
-    live && remote.status === "ready"
+    live && remotePage
       ? {
-          items: remote.value.items,
-          controls: pager.controls(
-            remote.value.pagination.totalItems,
-            remote.value.pagination.page,
-          ),
+          items: remotePage.items,
+          controls: pager.controls(remotePage.pagination.totalItems, remotePage.pagination.page),
         }
       : demoPage;
 
@@ -216,7 +223,6 @@ export default function AdminUsersScreen() {
     try {
       await updateAdminUser(person.id, patch);
       if (person.id === session.user?.id) await refresh();
-      if (page.items.length === 1 && requestedPage > 1) pager.controls(0).onPage(requestedPage - 1);
       usersRequest.reload();
       return { ok: true };
     } catch (error) {
@@ -236,15 +242,11 @@ export default function AdminUsersScreen() {
         label="ค้นหาผู้ใช้"
         placeholder={live ? "ค้นหาชื่อผู้ใช้ ชื่อจริง หรืออีเมล…" : "ค้นหาชื่อผู้ใช้ ชื่อจริง หรือหน่วยงาน…"}
         query={query}
-        onQuery={(value) => {
-          setQuery(value);
-          pager.reset();
-        }}
+        onQuery={setQuery}
         onClear={() => {
           setQuery("");
           setRole("all");
           setStatus("all");
-          pager.reset();
         }}
       >
         <div className="w-full sm:w-52">
@@ -254,7 +256,6 @@ export default function AdminUsersScreen() {
             options={[allResults, ...labelOptions(roleLabels)]}
             onChange={(value) => {
               setRole(value);
-              pager.reset();
             }}
           />
         </div>
@@ -265,15 +266,15 @@ export default function AdminUsersScreen() {
             options={statusOptions}
             onChange={(value) => {
               setStatus(value);
-              pager.reset();
             }}
           />
         </div>
       </ResultFilters>
-      {live && remote.status !== "ready" ? (
+      {live && remote.status !== "ready" && (
         <AdminRequestStatus request={remote} retry={usersRequest.reload} />
-      ) : (
-        <>
+      )}
+      {(!live || remotePage) && (
+        <div className="grid gap-4" aria-busy={usersRequest.isRefreshing}>
           {live && departmentRequest.result.status !== "ready" && (
             <AdminRequestStatus
               request={departmentRequest.result}
@@ -294,7 +295,17 @@ export default function AdminUsersScreen() {
                         {person.username.slice(0, 1).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span>@{person.username}</span>
+                    <div className="grid min-w-0 gap-0.5 whitespace-normal [overflow-wrap:anywhere]">
+                      <span>@{person.username}</span>
+                      {live && (
+                        <>
+                          <span className="text-sm font-normal">{person.realName}</span>
+                          <span className="text-xs font-normal text-muted-foreground">
+                            {person.email}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell className="min-w-44 whitespace-normal">
@@ -312,14 +323,19 @@ export default function AdminUsersScreen() {
                 </TableCell>
                 <TableCell>
                   {(!live || departmentRequest.result.status === "ready") && (
-                    <UserDialog person={person} departments={departmentItems} save={save} />
+                    <UserDialog
+                      person={person}
+                      departments={departmentItems}
+                      save={save}
+                      disabled={stale}
+                    />
                   )}
                 </TableCell>
               </TableRow>
             ))}
           </AdminTable>
-          <PaginationBar {...page.controls} />
-        </>
+          <PaginationBar {...page.controls} disabled={stale} />
+        </div>
       )}
     </>
   );
