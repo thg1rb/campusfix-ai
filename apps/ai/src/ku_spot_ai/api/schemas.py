@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-AnalyzeTask = Literal["classify", "severity", "keywords", "embed"]
+AnalyzeTask = Literal["classify", "severity", "keywords", "departments", "embed"]
 SeverityLevel = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 AllowedImageMime = Literal["image/jpeg", "image/png"]
 
@@ -20,6 +20,9 @@ MAX_METADATA_KEYS = 20
 MAX_METADATA_KEY_LENGTH = 64
 MAX_METADATA_JSON_BYTES = 4096
 MAX_SEVERITY_WEIGHT = 1_000_000.0
+DEFAULT_DEPARTMENT_MIN_CONFIDENCE = 0.45
+DEFAULT_MAX_RECOMMENDED_DEPARTMENTS = 3
+MAX_RECOMMENDED_DEPARTMENTS_LIMIT = 10
 
 DOMAIN_PATTERN = r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$"
 LANGUAGE_PATTERN = r"^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$"
@@ -33,6 +36,18 @@ def _require_non_blank(value: str, field_name: str) -> str:
     if not cleaned:
         raise ValueError(f"{field_name} cannot be blank")
     return cleaned
+
+
+def _require_unique_option_codes(
+    options: list[Any], field_name: str
+) -> list[Any]:
+    seen: set[str] = set()
+    for opt in options:
+        key = opt.code.strip().lower()
+        if key in seen:
+            raise ValueError(f"{field_name} must not contain duplicate codes")
+        seen.add(key)
+    return options
 
 
 def _validate_image_magic_bytes(data: bytes, mime_type: AllowedImageMime) -> None:
@@ -136,7 +151,11 @@ class RephraseRequest(BaseModel):
                 "language": "th",
                 "title": "ตู้ไฟ ศร3 ชั้น2 เหม็นไหม้",
                 "description": "เดินผ่านหน้าลิฟต์ชั้น 2 ตึก ศร.3 ได้กลิ่นเหม็นไหม้ออกมาจากตู้ควบคุมไฟ มีเสียงช็อตเป็นระยะ",
-                "location": {"name": "อาคารศูนย์เรียนรวม 3 (ศร.3)"},
+                "location": {
+                    "name": "อาคารศูนย์เรียนรวม 3 (ศร.3)",
+                    "latitude": 13.8476,
+                    "longitude": 100.5696,
+                },
             }
         },
     )
@@ -249,6 +268,48 @@ class CategoryOption(BaseModel):
         return _require_non_blank(value, "name")
 
 
+class DepartmentOption(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=120)
+    responsibility_scope: str = Field(min_length=1, max_length=600)
+    supported_categories: list[str] = Field(default_factory=list, max_length=20)
+    location_scope: str | None = Field(default=None, max_length=200)
+
+    @field_validator("code")
+    @classmethod
+    def check_code(cls, value: str) -> str:
+        return _require_non_blank(value, "code")
+
+    @field_validator("name")
+    @classmethod
+    def check_name(cls, value: str) -> str:
+        return _require_non_blank(value, "name")
+
+    @field_validator("responsibility_scope")
+    @classmethod
+    def check_responsibility_scope(cls, value: str) -> str:
+        return _require_non_blank(value, "responsibility_scope")
+
+    @field_validator("supported_categories")
+    @classmethod
+    def check_supported_categories(cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in values:
+            token = _require_non_blank(item, "supported_categories")
+            if len(token) > 64:
+                raise ValueError("supported_categories entries must be <= 64 characters")
+            cleaned.append(token)
+        return cleaned
+
+    @field_validator("location_scope")
+    @classmethod
+    def check_location_scope(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+
 class SeverityRubricInput(BaseModel):
     """Optional custom severity definitions (defaults to BRD rubric when omitted)."""
 
@@ -300,13 +361,38 @@ class SeverityThresholdsInput(BaseModel):
 
 
 class TaxonomyInput(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     categories: list[CategoryOption] = Field(default_factory=list, max_length=50)
+    departments: list[DepartmentOption] = Field(default_factory=list, max_length=50)
+    department_min_confidence: float = Field(
+        default=DEFAULT_DEPARTMENT_MIN_CONFIDENCE, ge=0.0, le=1.0
+    )
+    max_recommended_departments: int = Field(
+        default=DEFAULT_MAX_RECOMMENDED_DEPARTMENTS,
+        ge=1,
+        le=MAX_RECOMMENDED_DEPARTMENTS_LIMIT,
+    )
     severity_rubric: SeverityRubricInput = Field(default_factory=SeverityRubricInput)
     severity_weights: SeverityWeightsInput = Field(default_factory=SeverityWeightsInput)
     severity_thresholds: SeverityThresholdsInput = Field(
         default_factory=SeverityThresholdsInput
     )
     safety_override: bool = True
+
+    @field_validator("categories")
+    @classmethod
+    def check_unique_categories(
+        cls, value: list[CategoryOption]
+    ) -> list[CategoryOption]:
+        return _require_unique_option_codes(value, "categories")
+
+    @field_validator("departments")
+    @classmethod
+    def check_unique_departments(
+        cls, value: list[DepartmentOption]
+    ) -> list[DepartmentOption]:
+        return _require_unique_option_codes(value, "departments")
 
 
 class TriageAnalyzeRequest(BaseModel):
@@ -316,7 +402,7 @@ class TriageAnalyzeRequest(BaseModel):
             "example": {
                 "domain": "campus_facilities",
                 "language": "th",
-                "tasks": ["classify", "severity", "keywords", "embed"],
+                "tasks": ["classify", "severity", "departments", "keywords", "embed"],
                 "item": {
                     "title": "ตู้ควบคุมไฟฟ้ามีกลิ่นไหม้และเสียงช็อต ชั้น 2 ศร.3",
                     "description": "พบกลิ่นเหม็นไหม้และเสียงช็อตเป็นระยะจากตู้ควบคุมไฟหน้าลิฟต์ชั้น 2 อาคาร ศร.3",
@@ -325,15 +411,80 @@ class TriageAnalyzeRequest(BaseModel):
                         "latitude": 13.8476,
                         "longitude": 100.5696,
                     },
+                    "images": [],
+                    "metadata": {"building_code": "LH3", "floor": 2},
                 },
                 "taxonomy": {
                     "categories": [
-                        {"code": "ELECTRICAL", "name": "ไฟฟ้าและแสงสว่าง"},
-                        {"code": "BUILDING", "name": "อาคารและสถานที่"},
-                        {"code": "WATER", "name": "น้ำและท่อระบายน้ำ"},
-                        {"code": "INTERNET", "name": "อินเทอร์เน็ตและอุปกรณ์"},
-                        {"code": "SAFETY", "name": "ความปลอดภัยและการจราจร"},
-                    ]
+                        {
+                            "code": "ELECTRICAL",
+                            "name": "ไฟฟ้าและแสงสว่าง",
+                            "description": "ระบบไฟฟ้า ตู้ควบคุม ไฟส่องสว่าง ปลั๊ก และสายไฟ",
+                        },
+                        {
+                            "code": "BUILDING",
+                            "name": "อาคารและสถานที่",
+                            "description": "โครงสร้างอาคาร ประตู หน้าต่าง ลิฟต์ และเฟอร์นิเจอร์ส่วนกลาง",
+                        },
+                        {
+                            "code": "WATER",
+                            "name": "น้ำและท่อระบายน้ำ",
+                            "description": "ระบบประปา น้ำรั่ว ท่ออุดตัน และน้ำท่วมขัง",
+                        },
+                        {
+                            "code": "INTERNET",
+                            "name": "อินเทอร์เน็ตและอุปกรณ์",
+                            "description": "เครือข่าย Wi-Fi KUWIN สาย LAN และอุปกรณ์ไอทีส่วนกลาง",
+                        },
+                        {
+                            "code": "SAFETY",
+                            "name": "ความปลอดภัยและการจราจร",
+                            "description": "จุดเสี่ยงอันตราย อัคคีภัย สิ่งกีดขวาง และการจราจร",
+                        },
+                    ],
+                    "departments": [
+                        {
+                            "code": "BUILDINGS_UTILITIES",
+                            "name": "กองอาคารสถานที่และสาธารณูปโภค",
+                            "responsibility_scope": "ซ่อมบำรุงระบบไฟฟ้า ตู้ควบคุมไฟ แสงสว่าง ประปา ท่อระบายน้ำ และโครงสร้างอาคารส่วนกลาง",
+                            "supported_categories": ["ELECTRICAL", "BUILDING", "WATER"],
+                            "location_scope": "อาคารและพื้นที่ส่วนกลาง มก. บางเขน",
+                        },
+                        {
+                            "code": "SAFETY_SECURITY",
+                            "name": "งานรักษาความปลอดภัยและจราจร",
+                            "responsibility_scope": "กั้นพื้นที่อันตราย ระงับเหตุฉุกเฉินเบื้องต้น อัคคีภัย และความปลอดภัยการสัญจรภายในวิทยาเขต",
+                            "supported_categories": ["SAFETY", "ELECTRICAL"],
+                            "location_scope": "ทุกพื้นที่ภายใน มก. บางเขน",
+                        },
+                        {
+                            "code": "OCS_NETWORK",
+                            "name": "สำนักบริการคอมพิวเตอร์ (เครือข่าย)",
+                            "responsibility_scope": "ดูแลระบบอินเทอร์เน็ต Wi-Fi KUWIN เครือข่ายสาย LAN และระบบบัญชีผู้ใช้ไอที",
+                            "supported_categories": ["INTERNET"],
+                            "location_scope": "ทุกอาคารเรียนและหอสมุด มก. บางเขน",
+                        },
+                    ],
+                    "department_min_confidence": DEFAULT_DEPARTMENT_MIN_CONFIDENCE,
+                    "max_recommended_departments": DEFAULT_MAX_RECOMMENDED_DEPARTMENTS,
+                    "severity_rubric": {
+                        "LOW": "ผลกระทบจำกัด ไม่กระทบความปลอดภัยหรือการใช้งานหลัก เช่น ความชำรุดเล็กน้อยหรือความสวยงาม",
+                        "MEDIUM": "กระทบความสะดวกหรือการใช้งานบางส่วน แต่ยังมีทางเลือกทดแทน เช่น ไฟบางจุดดับหรืออุปกรณ์บางชิ้นชำรุด",
+                        "HIGH": "กระทบการใช้งานหลักของพื้นที่ส่วนกลางหรือผู้ใช้จำนวนมาก เช่น น้ำไม่ไหล อินเทอร์เน็ตล่มทั้งอาคาร หรือลิฟต์ใช้งานไม่ได้",
+                        "CRITICAL": "มีความเสี่ยงอันตรายต่อความปลอดภัย ชีวิต หรือทรัพย์สินโดยตรง ต้องรับทราบเร่งด่วน เช่น ไฟฟ้าลัดวงจร/ไฟรั่ว โครงสร้างเสี่ยงถล่ม หรือน้ำท่วมขังบริเวณอุปกรณ์ไฟฟ้า",
+                    },
+                    "severity_weights": {
+                        "safety_risk": 0.4,
+                        "operational_impact": 0.25,
+                        "affected_scope": 0.2,
+                        "urgency": 0.15,
+                    },
+                    "severity_thresholds": {
+                        "medium": 0.8,
+                        "high": 1.6,
+                        "critical": 2.35,
+                    },
+                    "safety_override": True,
                 },
             }
         },
@@ -354,7 +505,7 @@ class TriageAnalyzeRequest(BaseModel):
     tasks: list[AnalyzeTask] = Field(
         default_factory=lambda: ["classify", "severity", "keywords", "embed"],
         min_length=1,
-        max_length=4,
+        max_length=5,
     )
     item: ReportItemInput
     taxonomy: TaxonomyInput = Field(default_factory=TaxonomyInput)
@@ -370,6 +521,10 @@ class TriageAnalyzeRequest(BaseModel):
     def validate_taxonomy_requirements(self) -> "TriageAnalyzeRequest":
         if "classify" in self.tasks and not self.taxonomy.categories:
             raise ValueError("taxonomy.categories is required when 'classify' is in tasks")
+        if "departments" in self.tasks and not self.taxonomy.departments:
+            raise ValueError(
+                "taxonomy.departments is required when 'departments' is in tasks"
+            )
         return self
 
 
@@ -394,9 +549,18 @@ class ProviderSeverity(BaseModel):
     reason: str
 
 
+class ProviderDepartmentRecommendation(BaseModel):
+    department_code: str
+    confidence: float
+    reason: str
+
+
 class ProviderAnalyzeOutput(BaseModel):
     classification: ProviderClassification | None = None
     severity: ProviderSeverity | None = None
+    recommended_departments: list[ProviderDepartmentRecommendation] = Field(
+        default_factory=list
+    )
     keywords: list[str] = Field(default_factory=list)
 
 
@@ -426,6 +590,13 @@ class SeverityResult(BaseModel):
     risk_score: float = Field(ge=0.0, le=3.0)
     factors: SeverityFactorsResult
     safety_override_triggered: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str
+
+
+class DepartmentRecommendation(BaseModel):
+    department_code: str
+    department_name: str
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str
 
@@ -460,6 +631,7 @@ class TriageAnalyzeResponse(BaseModel):
     latency_ms: int = Field(ge=0)
     classification: ClassificationResult | None = None
     severity: SeverityResult | None = None
+    recommended_departments: list[DepartmentRecommendation] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
     embedding: EmbeddingResult | None = None
 
@@ -491,6 +663,7 @@ class CurrentTicketInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=4000)
     severity: SeverityLevel | None = None
+    department_codes: list[str] = Field(default_factory=list, max_length=20)
 
     @field_validator("title")
     @classmethod
@@ -501,6 +674,17 @@ class CurrentTicketInput(BaseModel):
     @classmethod
     def check_description(cls, value: str) -> str:
         return _require_non_blank(value, "description")
+
+    @field_validator("department_codes")
+    @classmethod
+    def check_department_codes(cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in values:
+            token = _require_non_blank(item, "department_codes")
+            if len(token) > 64:
+                raise ValueError("department_codes entries must be <= 64 characters")
+            cleaned.append(token)
+        return cleaned
 
 
 class SummarizeTicketRequest(BaseModel):
@@ -516,22 +700,103 @@ class SummarizeTicketRequest(BaseModel):
                     "title": "ตู้ไฟหน้าลิฟต์ ศร.3 ชั้น 2 มีกลิ่นไหม้",
                     "description": "เดินผ่านหน้าลิฟต์ชั้น 2 ได้กลิ่นเหม็นไหม้และมีเสียงช็อตเบา ๆ เป็นระยะ",
                     "severity": "HIGH",
+                    "department_codes": ["BUILDINGS_UTILITIES"],
                 },
                 "reports": [
                     {
                         "report_id": "R-001",
                         "title": "ตู้ไฟหน้าลิฟต์ ศร.3 ชั้น 2 มีกลิ่นไหม้",
                         "description": "เดินผ่านหน้าลิฟต์ชั้น 2 ได้กลิ่นเหม็นไหม้และมีเสียงช็อตเบา ๆ เป็นระยะ",
+                        "location_name": "อาคารศูนย์เรียนรวม 3 (ศร.3) ชั้น 2",
                         "observed_severity": "HIGH",
                     },
                     {
                         "report_id": "R-002",
-                        "title": "ตู้เบรกเกอร์ ศร.3 ชั้น 2 ร้อนผิดปกติ",
-                        "description": "เพิ่งขึ้นลิฟต์มาชั้น 2 ตู้เบรกเกอร์ไฟข้างลิฟต์ร้อนมากและมีกลิ่นไหม้",
+                        "title": "ตู้เบรกเกอร์ ศร.3 ชั้น 2 ร้อนผิดปกติและมีประกายไฟ",
+                        "description": "เพิ่งขึ้นลิฟต์มาชั้น 2 ตู้เบรกเกอร์ไฟข้างลิฟต์ร้อนมาก มีกลิ่นไหม้แรง และเห็นประกายไฟเล็กน้อย",
+                        "location_name": "อาคารศูนย์เรียนรวม 3 (ศร.3) โถงลิฟต์ชั้น 2",
                         "observed_severity": "CRITICAL",
                     },
                 ],
+                "categories": [
+                    {
+                        "code": "ELECTRICAL",
+                        "name": "ไฟฟ้าและแสงสว่าง",
+                        "description": "ระบบไฟฟ้า ตู้ควบคุม ไฟส่องสว่าง ปลั๊ก และสายไฟ",
+                    },
+                    {
+                        "code": "BUILDING",
+                        "name": "อาคารและสถานที่",
+                        "description": "โครงสร้างอาคาร ประตู หน้าต่าง ลิฟต์ และเฟอร์นิเจอร์ส่วนกลาง",
+                    },
+                    {
+                        "code": "WATER",
+                        "name": "น้ำและท่อระบายน้ำ",
+                        "description": "ระบบประปา น้ำรั่ว ท่ออุดตัน และน้ำท่วมขัง",
+                    },
+                    {
+                        "code": "INTERNET",
+                        "name": "อินเทอร์เน็ตและอุปกรณ์",
+                        "description": "เครือข่าย Wi-Fi KUWIN สาย LAN และอุปกรณ์ไอทีส่วนกลาง",
+                    },
+                    {
+                        "code": "SAFETY",
+                        "name": "ความปลอดภัยและการจราจร",
+                        "description": "จุดเสี่ยงอันตราย อัคคีภัย สิ่งกีดขวาง และการจราจร",
+                    },
+                ],
+                "departments": [
+                    {
+                        "code": "BUILDINGS_UTILITIES",
+                        "name": "กองอาคารสถานที่และสาธารณูปโภค",
+                        "responsibility_scope": "ซ่อมบำรุงระบบไฟฟ้า ตู้ควบคุมไฟ แสงสว่าง ประปา ท่อระบายน้ำ และโครงสร้างอาคารส่วนกลาง",
+                        "supported_categories": ["ELECTRICAL", "BUILDING", "WATER"],
+                        "location_scope": "อาคารและพื้นที่ส่วนกลาง มก. บางเขน",
+                    },
+                    {
+                        "code": "SAFETY_SECURITY",
+                        "name": "งานรักษาความปลอดภัยและจราจร",
+                        "responsibility_scope": "กั้นพื้นที่อันตราย ระงับเหตุฉุกเฉินเบื้องต้น อัคคีภัย และความปลอดภัยการสัญจรภายในวิทยาเขต",
+                        "supported_categories": ["SAFETY", "ELECTRICAL"],
+                        "location_scope": "ทุกพื้นที่ภายใน มก. บางเขน",
+                    },
+                    {
+                        "code": "OCS_NETWORK",
+                        "name": "สำนักบริการคอมพิวเตอร์ (เครือข่าย)",
+                        "responsibility_scope": "ดูแลระบบอินเทอร์เน็ต Wi-Fi KUWIN เครือข่ายสาย LAN และระบบบัญชีผู้ใช้ไอที",
+                        "supported_categories": ["INTERNET"],
+                        "location_scope": "ทุกอาคารเรียนและหอสมุด มก. บางเขน",
+                    },
+                ],
+                "department_min_confidence": DEFAULT_DEPARTMENT_MIN_CONFIDENCE,
+                "max_recommended_departments": DEFAULT_MAX_RECOMMENDED_DEPARTMENTS,
+                "severity_rubric": {
+                    "LOW": "ผลกระทบจำกัด ไม่กระทบความปลอดภัยหรือการใช้งานหลัก เช่น ความชำรุดเล็กน้อยหรือความสวยงาม",
+                    "MEDIUM": "กระทบความสะดวกหรือการใช้งานบางส่วน แต่ยังมีทางเลือกทดแทน เช่น ไฟบางจุดดับหรืออุปกรณ์บางชิ้นชำรุด",
+                    "HIGH": "กระทบการใช้งานหลักของพื้นที่ส่วนกลางหรือผู้ใช้จำนวนมาก เช่น น้ำไม่ไหล อินเทอร์เน็ตล่มทั้งอาคาร หรือลิฟต์ใช้งานไม่ได้",
+                    "CRITICAL": "มีความเสี่ยงอันตรายต่อความปลอดภัย ชีวิต หรือทรัพย์สินโดยตรง ต้องรับทราบเร่งด่วน เช่น ไฟฟ้าลัดวงจร/ไฟรั่ว โครงสร้างเสี่ยงถล่ม หรือน้ำท่วมขังบริเวณอุปกรณ์ไฟฟ้า",
+                },
+                "severity_weights": {
+                    "safety_risk": 0.4,
+                    "operational_impact": 0.25,
+                    "affected_scope": 0.2,
+                    "urgency": 0.15,
+                },
+                "severity_thresholds": {
+                    "medium": 0.8,
+                    "high": 1.6,
+                    "critical": 2.35,
+                },
+                "safety_override": True,
                 "include_embedding": True,
+                "report_embeddings": [],
+                "report_embedding_meta": {
+                    "model": "gemini-embedding-2",
+                    "dimensions": 768,
+                    "text_version": "v1",
+                },
+                "summary_weight": 0.6,
+                "reports_weight": 0.4,
             }
         },
     )
@@ -552,6 +817,16 @@ class SummarizeTicketRequest(BaseModel):
     category_name: str | None = Field(default=None, max_length=120)
     current_ticket: CurrentTicketInput | None = None
     reports: list[TicketReportSource] = Field(min_length=1, max_length=50)
+    categories: list[CategoryOption] = Field(default_factory=list, max_length=50)
+    departments: list[DepartmentOption] = Field(default_factory=list, max_length=50)
+    department_min_confidence: float = Field(
+        default=DEFAULT_DEPARTMENT_MIN_CONFIDENCE, ge=0.0, le=1.0
+    )
+    max_recommended_departments: int = Field(
+        default=DEFAULT_MAX_RECOMMENDED_DEPARTMENTS,
+        ge=1,
+        le=MAX_RECOMMENDED_DEPARTMENTS_LIMIT,
+    )
     severity_rubric: SeverityRubricInput = Field(default_factory=SeverityRubricInput)
     severity_weights: SeverityWeightsInput = Field(default_factory=SeverityWeightsInput)
     severity_thresholds: SeverityThresholdsInput = Field(
@@ -564,6 +839,20 @@ class SummarizeTicketRequest(BaseModel):
     summary_weight: float = Field(default=0.6, ge=0.0, le=1.0)
     reports_weight: float = Field(default=0.4, ge=0.0, le=1.0)
 
+    @field_validator("categories")
+    @classmethod
+    def check_unique_categories(
+        cls, value: list[CategoryOption]
+    ) -> list[CategoryOption]:
+        return _require_unique_option_codes(value, "categories")
+
+    @field_validator("departments")
+    @classmethod
+    def check_unique_departments(
+        cls, value: list[DepartmentOption]
+    ) -> list[DepartmentOption]:
+        return _require_unique_option_codes(value, "departments")
+
     @model_validator(mode="after")
     def validate_weights_and_vectors(self) -> "SummarizeTicketRequest":
         if (self.summary_weight + self.reports_weight) == 0:
@@ -575,7 +864,11 @@ class SummarizeTicketRequest(BaseModel):
 class ProviderSummarizeTicketOutput(BaseModel):
     ticket_title: str
     ticket_description: str
+    classification: ProviderClassification | None = None
     severity: ProviderSeverity
+    recommended_departments: list[ProviderDepartmentRecommendation] = Field(
+        default_factory=list
+    )
     keywords: list[str] = Field(default_factory=list)
 
 
@@ -586,7 +879,9 @@ class SummarizeTicketResponse(BaseModel):
     latency_ms: int = Field(ge=0)
     ticket_title: str
     ticket_description: str
+    classification: ClassificationResult | None = None
     severity: SeverityResult
+    recommended_departments: list[DepartmentRecommendation] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
     blended_embedding: EmbeddingResult | None = None
 
@@ -606,6 +901,14 @@ class EmbedTicketRequest(BaseModel):
                 "description": "พบกลิ่นเหม็นไหม้ เสียงช็อต และความร้อนผิดปกติจากตู้ควบคุมไฟโถงลิฟต์ชั้น 2 อาคาร ศร.3",
                 "location_name": "อาคารศูนย์เรียนรวม 3 (ศร.3)",
                 "category_name": "ไฟฟ้าและแสงสว่าง",
+                "report_embeddings": [],
+                "report_embedding_meta": {
+                    "model": "gemini-embedding-2",
+                    "dimensions": 768,
+                    "text_version": "v1",
+                },
+                "summary_weight": 0.6,
+                "reports_weight": 0.4,
             }
         },
     )
