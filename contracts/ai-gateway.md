@@ -1,6 +1,6 @@
 # Go API ↔ Python AI Gateway Integration Guide (`/v1/triage`)
 
-> **Canonical Schema:** Full OpenAPI 3.1.0 request/response schemas live in [contracts/ai-triage.v1.yaml](ai-triage.v1.yaml) (`v1.1.0`). This guide defines the operational integration rules, authentication, timeout budgets, backend matching split, revision freshness, and failure fallback semantics between `apps/api` and `apps/ai` (`ku_spot_ai`).
+> **Canonical Schema:** Full OpenAPI 3.1.0 request/response schemas live in [contracts/ai-triage.v1.yaml](ai-triage.v1.yaml) (`v1.2.0`). This guide defines the operational integration rules, authentication, timeout budgets, backend matching split, revision freshness, and failure fallback semantics between `apps/api` and `apps/ai` (`ku_spot_ai`).
 
 The AI Gateway is strictly **stateless** and acts solely as a **Decision Support System** (`BR-GEN-007`, `BR-AI-001`..`020`).
 
@@ -30,7 +30,7 @@ The AI Gateway is strictly **stateless** and acts solely as a **Decision Support
 | `GET /healthz` | Public | Liveness probe (`200 {"status": "ok"}`). Establishes process availability only; never calls paid upstream LLM inference. |
 | `POST /v1/triage/rephrase` | `X-API-Key` | Optional clarity/tone rephrasing of user-authored report title and description without inventing facts. |
 | `POST /v1/triage/analyze` | `X-API-Key` | Core Report Triage (`UC-AI-001`, `UC-AI-002`). Returns advisory category classification + confidence, deterministic severity assessment (`CRITICAL`/`HIGH`/`MEDIUM`/`LOW` from rounded `risk_score`), extracted keywords, and a unit-length semantic **report embedding vector**. |
-| `POST /v1/triage/summarize-ticket` | `X-API-Key` | Multi-report Ticket synthesis (`UC-AI-003`). Combines all Confirmed Reports in a Ticket to propose updated `ticket_title`, `ticket_description`, keywords, and weighted-blend **ticket embedding vector** (`0.6 * summary_vector + 0.4 * centroid(report_embeddings)`). |
+| `POST /v1/triage/summarize-ticket` | `X-API-Key` | Multi-report Ticket synthesis (`UC-AI-003`). Combines all Confirmed Reports in a Ticket to propose updated `ticket_title`, `ticket_description`, deterministic 4-factor ticket-level `severity` (with optional `safety_override`, `BR-AI-013`), keywords, and weighted-blend **ticket embedding vector** (`0.6 * summary_vector + 0.4 * centroid(report_embeddings)`). |
 | `POST /v1/triage/embed-ticket` | `X-API-Key` | Embed-only weighted-blend ticket vector (no LLM call) invoked when a Reviewer manually edits final Ticket text and `apps/api` needs a refreshed vector for Active Ticket matching. |
 
 ---

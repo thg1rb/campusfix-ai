@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: KU Spot Pluggable AI Triage API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Stateless, domain-agnostic multimodal incident AI API for KU Spot and
     other university reporting/helpdesk systems.
@@ -15,7 +15,7 @@ info:
     Provides 4 composable capabilities:
     1. POST /v1/triage/rephrase         — Optional report title & description rephrasing
     2. POST /v1/triage/analyze          — Category classification, deterministic severity, keyword extraction, and report embedding vector
-    3. POST /v1/triage/summarize-ticket — Multi-report ticket title/description/keywords synthesis and weighted-blend ticket vector
+    3. POST /v1/triage/summarize-ticket — Multi-report ticket title/description/keywords synthesis, deterministic ticket-level severity (BR-AI-013), and weighted-blend ticket vector
     4. POST /v1/triage/embed-ticket     — Embed-only weighted-blend ticket vector (no LLM call; used when Reviewer edits final ticket text)
 paths:
   /healthz:
@@ -126,11 +126,15 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /v1/triage/summarize-ticket:
     post:
-      summary: Synthesize ticket title and description from all reports in a ticket
+      summary: Synthesize ticket title, description, keywords, and deterministic ticket-level severity from all reports in a ticket
       description: |
         Combines all reports belonging to a ticket to propose an updated
-        ticket_title and ticket_description for Reviewer confirmation. Optionally
-        returns the summary embedding and a weighted-blend ticket vector
+        ticket_title, ticket_description, keywords, and deterministic 4-factor
+        ticket-level severity (thresholds compared against the 4-decimal rounded
+        risk_score with optional safety_override; grounded strictly in physical
+        and operational evidence and never auto-escalated solely from report
+        count per BR-AI-013) for Reviewer confirmation. Optionally returns a
+        weighted-blend ticket vector
         (0.6 * summary_vector + 0.4 * centroid(report_embeddings)) for cosine
         similarity matching. When report_embeddings are supplied,
         report_embedding_meta is required and must match the active embedding
@@ -145,7 +149,7 @@ paths:
               $ref: "#/components/schemas/SummarizeTicketRequest"
       responses:
         "200":
-          description: Advisory ticket title, description, and optional ticket vectors
+          description: Advisory ticket title, description, deterministic ticket-level severity, keywords, and optional weighted-blend ticket vector
           content:
             application/json:
               schema:
@@ -176,7 +180,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /v1/triage/embed-ticket:
     post:
-      summary: Compute summary and weighted-blend ticket vectors without calling the LLM
+      summary: Compute weighted-blend ticket vector without calling the LLM
       description: |
         Used when a Reviewer edits or writes the final ticket title/description
         manually and the backend needs an updated ticket embedding vector.
@@ -192,7 +196,7 @@ paths:
               $ref: "#/components/schemas/EmbedTicketRequest"
       responses:
         "200":
-          description: Unit-normalized summary and weighted-blend ticket vectors
+          description: Unit-normalized weighted-blend ticket vector
           content:
             application/json:
               schema:
@@ -638,6 +642,11 @@ components:
         location_name:
           type: [string, "null"]
           maxLength: 200
+        observed_severity:
+          oneOf:
+            - $ref: "#/components/schemas/SeverityLevel"
+            - type: "null"
+          description: Optional advisory severity previously assessed or observed for this report
     CurrentTicketInput:
       type: object
       required: [title, description]
@@ -652,6 +661,11 @@ components:
           minLength: 1
           maxLength: 4000
           pattern: "\\S"
+        severity:
+          oneOf:
+            - $ref: "#/components/schemas/SeverityLevel"
+            - type: "null"
+          description: Optional current severity level of the ticket as advisory re-evaluation context
     SummarizeTicketRequest:
       type: object
       required: [reports]
@@ -684,6 +698,16 @@ components:
           maxItems: 50
           items:
             $ref: "#/components/schemas/TicketReportSource"
+        severity_rubric:
+          $ref: "#/components/schemas/SeverityRubricInput"
+        severity_weights:
+          $ref: "#/components/schemas/SeverityWeightsInput"
+        severity_thresholds:
+          $ref: "#/components/schemas/SeverityThresholdsInput"
+        safety_override:
+          type: boolean
+          default: true
+          description: When true, safety_risk == 3 always forces level = CRITICAL
         include_embedding:
           type: boolean
           default: true
@@ -722,7 +746,7 @@ components:
               $ref: "#/components/schemas/EmbeddingIdentity"
     SummarizeTicketResponse:
       type: object
-      required: [request_id, provider, model, latency_ms, ticket_title, ticket_description]
+      required: [request_id, provider, model, latency_ms, ticket_title, ticket_description, severity]
       properties:
         request_id:
           type: string
@@ -737,15 +761,13 @@ components:
           type: string
         ticket_description:
           type: string
+        severity:
+          $ref: "#/components/schemas/SeverityResult"
         keywords:
           type: array
           default: []
           items:
             type: string
-        summary_embedding:
-          oneOf:
-            - $ref: "#/components/schemas/EmbeddingResult"
-            - type: "null"
         blended_embedding:
           oneOf:
             - $ref: "#/components/schemas/EmbeddingResult"
@@ -811,7 +833,7 @@ components:
               $ref: "#/components/schemas/EmbeddingIdentity"
     EmbedTicketResponse:
       type: object
-      required: [request_id, provider, latency_ms, summary_embedding, blended_embedding]
+      required: [request_id, provider, latency_ms, blended_embedding]
       properties:
         request_id:
           type: string
@@ -820,8 +842,6 @@ components:
         latency_ms:
           type: integer
           minimum: 0
-        summary_embedding:
-          $ref: "#/components/schemas/EmbeddingResult"
         blended_embedding:
           $ref: "#/components/schemas/EmbeddingResult"
     FieldError:

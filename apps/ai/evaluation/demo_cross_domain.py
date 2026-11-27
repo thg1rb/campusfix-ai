@@ -1,7 +1,7 @@
 """Live end-to-end demo for all 3 Pluggable AI endpoints:
 1. POST /v1/triage/rephrase         (Optional user text rephrasing)
 2. POST /v1/triage/analyze          (Category + Severity + Report Embedding Vector)
-3. POST /v1/triage/summarize-ticket (Multi-report Ticket Title/Description + Weighted-Blend Ticket Vector)
+3. POST /v1/triage/summarize-ticket (Multi-report Ticket Title/Description + Ticket-level Severity + Weighted-Blend Ticket Vector)
 
 Run from apps/ai:
     uv run --locked --env-file .env python evaluation/demo_cross_domain.py
@@ -91,7 +91,7 @@ async def main() -> None:
             TriageAnalyzeRequest.model_validate(
                 {
                     "domain": "campus_facilities",
-                    "tasks": ["embed"],
+                    "tasks": ["severity", "embed"],
                     "item": {
                         "title": "ตู้เบรกเกอร์หน้าลิฟต์ ศร.3 ชั้น 2 ร้อนและมีกลิ่นไหม้",
                         "description": "เพิ่งขึ้นลิฟต์มาชั้น 2 ศร.3 ตู้เบรกเกอร์ไฟข้างลิฟต์ร้อนผิดปกติและมีกลิ่นไหม้",
@@ -101,25 +101,33 @@ async def main() -> None:
             )
         )
 
-        # 3. Summarize Ticket from all reports + Weighted-Blend Ticket Vector (0.6 summary + 0.4 reports centroid)
-        print("\n=== Step 3: /v1/triage/summarize-ticket (Weighted-Blend Ticket Vector) ===")
+        # 3. Summarize Ticket from all reports + Ticket-level Severity + Weighted-Blend Ticket Vector (0.6 summary + 0.4 reports centroid)
+        print("\n=== Step 3: /v1/triage/summarize-ticket (Ticket Severity + Weighted-Blend Vector) ===")
         assert report1_res.embedding is not None and report2_res.embedding is not None
+        assert report1_res.severity is not None and report2_res.severity is not None
         ticket_res = await service.summarize_ticket(
             SummarizeTicketRequest.model_validate(
                 {
                     "domain": "campus_facilities",
                     "location_name": "อาคารศูนย์เรียนรวม 3 (ศร.3)",
                     "category_name": "ไฟฟ้าและแสงสว่าง",
+                    "current_ticket": {
+                        "title": rephrase_res.rephrased_title,
+                        "description": rephrase_res.rephrased_description,
+                        "severity": report1_res.severity.level,
+                    },
                     "reports": [
                         {
                             "report_id": "R-001",
                             "title": rephrase_res.rephrased_title,
                             "description": rephrase_res.rephrased_description,
+                            "observed_severity": report1_res.severity.level,
                         },
                         {
                             "report_id": "R-002",
                             "title": "ตู้เบรกเกอร์หน้าลิฟต์ ศร.3 ชั้น 2 ร้อนและมีกลิ่นไหม้",
                             "description": "เพิ่งขึ้นลิฟต์มาชั้น 2 ศร.3 ตู้เบรกเกอร์ไฟข้างลิฟต์ร้อนผิดปกติและมีกลิ่นไหม้",
+                            "observed_severity": report2_res.severity.level,
                         },
                     ],
                     "include_embedding": True,
@@ -136,7 +144,6 @@ async def main() -> None:
             )
         )
         t_dump = ticket_res.model_dump()
-        _truncate_embedding(t_dump, "summary_embedding")
         _truncate_embedding(t_dump, "blended_embedding")
         print(json.dumps(t_dump, ensure_ascii=False, indent=2))
 

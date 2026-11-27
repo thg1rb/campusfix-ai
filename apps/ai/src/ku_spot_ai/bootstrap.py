@@ -18,7 +18,7 @@ from ku_spot_ai.providers.base import TriageProvider
 from ku_spot_ai.providers.gemini import GeminiTriageProvider
 
 API_TITLE = "KU Spot Pluggable AI Triage API"
-API_VERSION = "1.1.0"
+API_VERSION = "1.2.0"
 
 
 class MaxBodySizeMiddleware:
