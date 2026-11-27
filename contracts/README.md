@@ -7,7 +7,7 @@ This directory holds the authoritative service boundary contracts for **KU Spot*
 | File | Boundary | Description |
 | --- | --- | --- |
 | [api-v1.md](api-v1.md) | `apps/web` ↔ `apps/api` | REST HTTP `/api/v1/*` contract, operational probes (`/healthz`, `/readyz`), auth/RBAC rules, query params, optimistic locking, and error codes. |
-| [ai-triage.v1.yaml](ai-triage.v1.yaml) | `apps/api` ↔ `apps/ai` | **Canonical OpenAPI 3.1.0 schema** (`v1.2.0`) for the implemented Pluggable AI Triage Gateway (`/v1/triage/rephrase`, `/v1/triage/analyze`, `/v1/triage/summarize-ticket`, `/v1/triage/embed-ticket`, `/healthz`). |
+| [ai-triage.v1.yaml](ai-triage.v1.yaml) | `apps/api` ↔ `apps/ai` | **Canonical OpenAPI 3.1.0 schema** (`v1.3.0`) for the implemented Pluggable AI Triage Gateway (`/v1/triage/rephrase`, `/v1/triage/analyze`, `/v1/triage/summarize-ticket`, `/v1/triage/embed-ticket`, `/healthz`). |
 | [ai-gateway.md](ai-gateway.md) | `apps/api` ↔ `apps/ai` | Operational integration guide, auth (`X-API-Key`), timeout budgets, backend-side cosine/keyword matching flow, revision freshness, and failure fallback rules complementing `ai-triage.v1.yaml`. |
 
 ## Contract-First Rules
