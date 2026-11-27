@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { matchesSearch, ResultFilters } from "@/components/shared/ResultFilters";
 import { AdminTable } from "../components/AdminTable";
 import { AdminBreakdowns } from "../components/AdminBreakdowns";
+import { LiveAuditLogTable } from "../components/LiveAuditLogTable";
+import { useLiveSession } from "@/features/auth/LiveSession";
 import { AuditLogTable } from "../components/AuditLogTable";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,6 +23,23 @@ import { formatDuration } from "@/lib/format";
 import { usePrototype } from "@/lib/store/PrototypeStore";
 
 export default function AdminAnalyticsScreen() {
+  const { session } = useLiveSession();
+  if (session.status === "authenticated") {
+    return (
+      <>
+        <CampusHeading
+          icon={BarChart3}
+          title="ประวัติการเปลี่ยนแปลง"
+          context="การจัดการระบบ · มหาวิทยาลัยเกษตรศาสตร์ วิทยาเขตบางเขน"
+        />
+        <LiveAuditLogTable />
+      </>
+    );
+  }
+  return <PrototypeAnalytics />;
+}
+
+function PrototypeAnalytics() {
   const { state, dispatch } = usePrototype();
   const [period, setPeriod] = useState("all");
   const [departmentQuery, setDepartmentQuery] = useState("");

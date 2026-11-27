@@ -22,6 +22,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +52,11 @@ import { usePrototype } from "@/lib/store/PrototypeStore";
 import { platformName } from "@/lib/brand";
 import { isExclusiveAdmin } from "@/lib/domain/permissions";
 import type { User } from "@/types/domain";
+import { useLiveSession } from "@/features/auth/LiveSession";
+import { identityErrorMessage } from "@/features/auth/authErrors";
+import { PageFrame } from "./Controls";
+
+type NavUser = Pick<User, "username" | "roles">;
 
 type NavLink = { href: string; label: string; icon: LucideIcon };
 const publicLinks: NavLink[] = [
@@ -68,7 +74,7 @@ const reportLink = { href: "/reports/new", label: "แจ้งปัญหา",
 const profileLink = { href: "/settings/profile", label: "ตั้งค่าโปรไฟล์", icon: UserCog };
 const activeClass = "bg-[var(--color-brand-soft)] text-primary font-medium";
 
-function workspaceLinks(user: User | null): NavLink[] {
+function workspaceLinks(user: NavUser | null): NavLink[] {
   if (!user || isExclusiveAdmin(user)) return [];
   const links: NavLink[] = [{ href: "/my-reports", label: "รายงานของฉัน", icon: FileText }];
   if (user.roles.includes("REVIEWER"))
@@ -113,8 +119,10 @@ function MobileNav({
   user,
   path,
   logout,
+  demoAvailable,
 }: {
-  user: User | null;
+  user: NavUser | null;
+  demoAvailable: boolean;
   path: string;
   logout: () => void;
 }) {
@@ -146,16 +154,16 @@ function MobileNav({
               >
                 <ShieldCheck size={18} className="size-[18px]" aria-hidden="true" /> ผู้ดูแลระบบ
               </h2>
-              {adminLinks.map((link) => (
+              {(demoAvailable ? adminLinks : adminLinks.slice(0, 2)).map((link) => (
                 <NavAction key={link.href} link={link} path={path} mobile />
               ))}
             </section>
           ) : (
             <div className="grid gap-1">
-              {workspaceLinks(user).map((link) => (
+              {workspaceLinks(demoAvailable ? user : null).map((link) => (
                 <NavAction key={link.href} link={link} path={path} mobile />
               ))}
-              <NavAction link={reportLink} path={path} mobile />
+              {demoAvailable && <NavAction link={reportLink} path={path} mobile />}
             </div>
           )}
           <Separator />
@@ -184,14 +192,28 @@ function MobileNav({
   );
 }
 
-function TopNav({ user }: { user: User | null }) {
+function TopNav({ user }: { user: NavUser | null }) {
   const path = usePathname();
   const router = useRouter();
-  const { dispatch } = usePrototype();
+  const { dispatch, demoAvailable } = usePrototype();
+  const { session, signOut } = useLiveSession();
   const admin = isExclusiveAdmin(user);
   const logout = async () => {
-    const result = await dispatch({ type: "login", userId: null });
-    if (result.ok) router.push(publicFeedPath);
+    try {
+      if (session.user) {
+        if (process.env.NODE_ENV === "development") await dispatch({ type: "login", userId: null });
+        await signOut();
+      } else {
+        const result = await dispatch({ type: "login", userId: null });
+        if (!result.ok) {
+          toast.error(result.message);
+          return;
+        }
+      }
+      router.push(publicFeedPath);
+    } catch (error) {
+      toast.error(identityErrorMessage(error));
+    }
   };
   return (
     <header className="sticky top-0 z-30 border-b bg-white/95 shadow-xs backdrop-blur-sm">
@@ -208,7 +230,7 @@ function TopNav({ user }: { user: User | null }) {
           </span>
         </Link>
         <nav aria-label="เมนูหลัก" className="hidden items-center gap-1 lg:flex">
-          {[...publicLinks, ...workspaceLinks(user)].map((link) => (
+          {[...publicLinks, ...workspaceLinks(demoAvailable ? user : null)].map((link) => (
             <NavAction key={link.href} link={link} path={path} />
           ))}
           {admin ? (
@@ -221,22 +243,24 @@ function TopNav({ user }: { user: User | null }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="min-w-52">
                 <DropdownMenuGroup>
-                  {adminLinks.map(({ href, label, icon: Icon }) => {
-                    const current = isCurrent(path, href);
-                    return (
-                      <DropdownMenuItem asChild key={href} className={cn(current && activeClass)}>
-                        <Link href={href} aria-current={current ? "page" : undefined}>
-                          <Icon size={18} className="size-[18px]" aria-hidden="true" />
-                          {label}
-                        </Link>
-                      </DropdownMenuItem>
-                    );
-                  })}
+                  {(demoAvailable ? adminLinks : adminLinks.slice(0, 2)).map(
+                    ({ href, label, icon: Icon }) => {
+                      const current = isCurrent(path, href);
+                      return (
+                        <DropdownMenuItem asChild key={href} className={cn(current && activeClass)}>
+                          <Link href={href} aria-current={current ? "page" : undefined}>
+                            <Icon size={18} className="size-[18px]" aria-hidden="true" />
+                            {label}
+                          </Link>
+                        </DropdownMenuItem>
+                      );
+                    },
+                  )}
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <NavAction link={reportLink} path={path} />
+            demoAvailable && <NavAction link={reportLink} path={path} />
           )}
         </nav>
         <div className="flex min-w-0 items-center gap-1">
@@ -275,7 +299,7 @@ function TopNav({ user }: { user: User | null }) {
             </Button>
           )}
           <div className="lg:hidden">
-            <MobileNav user={user} path={path} logout={logout} />
+            <MobileNav user={user} path={path} logout={logout} demoAvailable={demoAvailable} />
           </div>
         </div>
       </div>
@@ -284,10 +308,18 @@ function TopNav({ user }: { user: User | null }) {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { user, state } = usePrototype();
+  const { user, state, demoAvailable } = usePrototype();
+  const { session } = useLiveSession();
   const path = usePathname();
   const portal = isAuthPortal(path);
   const staticLogin = path === "/" || path === signInPath;
+  const prototypeOnly =
+    /^(?:\/reports\/new|\/my-reports|\/reviewer|\/department|\/admin\/(?:categories|departments|locations))(?:\/|$)/.test(
+      path,
+    );
+  const prototypePublic = /^(?:\/feed|\/map|\/tickets|\/reports|\/u)(?:\/|$)/.test(path);
+  const liveScreen =
+    path === "/settings/profile" || path === "/admin" || path.startsWith("/admin/");
   return (
     <div className="flex min-h-dvh flex-col">
       <a
@@ -296,9 +328,18 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         ข้ามไปยังเนื้อหา
       </a>
-      {!portal && <TopNav user={user} />}
+      {!portal && <TopNav user={session.user ?? user} />}
+      {prototypePublic && !prototypeOnly && (
+        <p className="border-b bg-muted px-4 py-2 text-center text-sm text-muted-foreground">
+          ตัวอย่างข้อมูลปัญหาในวิทยาเขต
+        </p>
+      )}
       <main id="main" tabIndex={-1} className={cn("flex-1", portal && "grid")}>
-        {staticLogin || state ? (
+        {prototypeOnly && !demoAvailable && session.status !== "loading" ? (
+          <PageFrame>
+            <p className="campus-panel p-4">ส่วนนี้อยู่ระหว่างเชื่อมต่อกับระบบจริง</p>
+          </PageFrame>
+        ) : staticLogin || liveScreen || state ? (
           children
         ) : (
           <div className="mx-auto grid max-w-[1200px] gap-4 px-4 py-10" role="status">
@@ -308,13 +349,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
       </main>
-      {staticLogin ? (
-        <div className="min-h-[57px] bg-[var(--color-brand-soft)]">
-          <DemoSimulationBar compact />
-        </div>
-      ) : (
-        <DemoSimulationBar compact={portal} />
-      )}
+      {demoAvailable && <DemoSimulationBar compact={portal} />}
     </div>
   );
 }

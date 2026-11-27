@@ -4,7 +4,7 @@ import type { User } from "@/types/domain";
 export const publicFeedPath = "/feed";
 export const signInPath = "/login";
 export const accountChooserPath = "/login/select-account";
-export const googleSignInLabel = "เข้าสู่ระบบด้วย Google (@ku.th)";
+export const googleSignInLabel = "เข้าสู่ระบบด้วยบัญชี Google (@ku.th)";
 
 export function isAuthPortal(path: string) {
   return path === "/" || path === signInPath || path === accountChooserPath;
@@ -34,6 +34,6 @@ export function authLink(path: typeof signInPath | typeof accountChooserPath, ne
   return returnPath ? `${path}?next=${encodeURIComponent(returnPath)}` : path;
 }
 
-export function signedInDestination(user: User, next?: string) {
+export function signedInDestination(user: Pick<User, "roles">, next?: string) {
   return safeReturnPath(next) ?? (isExclusiveAdmin(user) ? "/admin" : publicFeedPath);
 }

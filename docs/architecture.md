@@ -177,6 +177,7 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 | `recharts` | `^3.8.0` | Flat operational/analytics charts |
 | `sonner` | `^2.0.8` | Toast notifications |
 | `next-themes` | `^0.4.6` | Theme provider support (light-mode first) |
+| `jsdom` / `@testing-library/react` / `@testing-library/dom` | `28.1.0` / `16.3.2` / `10.4.1` | Browser DOM and user-facing component tests for the live identity UI |
 | `vitest` / `fake-indexeddb` | `^5.1.1` / `^6.2.8` | Unit testing and prototype IndexedDB test doubles |
 | `eslint` / `eslint-config-next` | `^9` / `16.4.6` | Static linting |
 | `prettier` / `eslint-config-prettier` | `^3.10.1` / `^10.1.8` | Automated code formatting (`apps/web`) and ESLint formatting conflict prevention |

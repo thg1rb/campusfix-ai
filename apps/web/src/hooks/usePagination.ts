@@ -8,22 +8,24 @@ export function usePagination() {
   const [size, setSize] = useState<PageSize>(25);
   const reset = () => setPage(1);
 
+  const controls = (total: number, page = requestedPage) => ({
+    page,
+    size,
+    total,
+    onPage: setPage,
+    onSize: (nextSize: PageSize) => {
+      setSize(nextSize);
+      reset();
+    },
+  });
+
   function current<T>(items: T[]) {
     const page = Math.min(requestedPage, Math.max(1, Math.ceil(items.length / size)));
     return {
       items: items.slice((page - 1) * size, page * size),
-      controls: {
-        page,
-        size,
-        total: items.length,
-        onPage: setPage,
-        onSize: (nextSize: PageSize) => {
-          setSize(nextSize);
-          reset();
-        },
-      },
+      controls: controls(items.length, page),
     };
   }
 
-  return { current, reset };
+  return { current, reset, requestedPage, size, controls };
 }

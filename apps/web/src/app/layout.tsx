@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
+import { LiveSessionProvider } from "@/features/auth/LiveSession";
 import { AppShell } from "@/components/shared/AppShell";
 import { PrototypeStoreProvider } from "@/lib/store/PrototypeStore";
 import { Toaster } from "@/components/ui/sonner";
@@ -23,12 +24,14 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="th" dir="ltr" className={notoSansThai.variable}>
       <body>
-        <PrototypeStoreProvider>
-          <TooltipProvider>
-            <AppShell>{children}</AppShell>
-            <Toaster />
-          </TooltipProvider>
-        </PrototypeStoreProvider>
+        <LiveSessionProvider>
+          <PrototypeStoreProvider>
+            <TooltipProvider>
+              <AppShell>{children}</AppShell>
+              <Toaster />
+            </TooltipProvider>
+          </PrototypeStoreProvider>
+        </LiveSessionProvider>
       </body>
     </html>
   );

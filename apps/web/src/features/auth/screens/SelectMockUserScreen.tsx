@@ -15,13 +15,16 @@ import { isEligibleGoogleAccount } from "@/lib/domain/validation";
 import { authLink, publicFeedPath, signInPath } from "../authRoutes";
 import { CampusPlan, CampusPortalBrand } from "../components/CampusPortalBrand";
 import { RoleBadge } from "../components/RoleBadge";
+import { useLiveSession } from "../LiveSession";
 import { useAuthRedirect } from "../useAuthRedirect";
 
 export default function SelectMockUserScreen({ next }: { next?: string }) {
-  const { dispatch, state, user } = usePrototype();
+  const { dispatch, state, user, demoAvailable } = usePrototype();
+  const { session } = useLiveSession();
   const [error, setError] = useState("");
-  useAuthRedirect(user, next);
-  if (!state || user) return null;
+  useAuthRedirect(session.user ?? user, next);
+  if (session.status === "unavailable") return <ErrorNotice message={session.error} />;
+  if (!state || !demoAvailable || user) return null;
 
   const accounts = state.users.filter(
     (person) => person.isActive && isEligibleGoogleAccount(person),

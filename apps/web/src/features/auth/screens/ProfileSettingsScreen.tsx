@@ -24,17 +24,23 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { isExclusiveAdmin } from "@/lib/domain/permissions";
+import { type Profile, updateUsername } from "@/lib/api/identity";
+import { useLiveSession } from "../LiveSession";
+import { identityErrorMessage } from "../authErrors";
 import { usernameError } from "@/lib/domain/validation";
 import { usePrototype } from "@/lib/store/PrototypeStore";
 import type { User } from "@/types/domain";
 import { RoleBadge } from "../components/RoleBadge";
 
-function PublicIdentity({ user }: { user: User }) {
+type Account = Profile | User;
+
+function PublicIdentity({ user, live }: { user: Account; live: boolean }) {
   const { state, dispatch } = usePrototype();
+  const { replaceUser } = useLiveSession();
   const action = useActionFeedback();
   const [name, setName] = useState(user.username);
   const [error, setError] = useState("");
-  const validation = usernameError(name.trim(), state?.users ?? [], user.id);
+  const validation = usernameError(name.trim(), live ? [] : (state?.users ?? []), user.id);
   const preview = name.trim() || user.username;
 
   return (
@@ -71,7 +77,15 @@ function PublicIdentity({ user }: { user: User }) {
           event.preventDefault();
           if (validation) return;
           void action.run(
-            () => dispatch({ type: "username", username: name }),
+            async () => {
+              if (!live) return dispatch({ type: "username", username: name });
+              try {
+                replaceUser(await updateUsername(name.trim()));
+                return { ok: true as const };
+              } catch (error) {
+                return { ok: false as const, message: identityErrorMessage(error) };
+              }
+            },
             (result) => {
               if (result.ok) {
                 setName(name.trim());
@@ -122,13 +136,13 @@ function PublicIdentity({ user }: { user: User }) {
   );
 }
 
-function PrivateAccount({ user, department }: { user: User; department?: string }) {
+function PrivateAccount({ user, department }: { user: Account; department?: string }) {
   const fields = [
     { label: "ชื่อบัญชี Google", value: user.realName, icon: UserRound },
     { label: "อีเมลมหาวิทยาลัย (@ku.th)", value: user.email, icon: Mail },
     {
       label: "ผู้ให้บริการยืนยันตัวตน",
-      value: `Google OAuth (โดเมน @${user.hostedDomain})`,
+      value: user.hostedDomain ? `Google OAuth (โดเมน @${user.hostedDomain})` : user.authProvider,
       icon: LockKeyhole,
     },
     {
@@ -188,18 +202,36 @@ function PrivateAccount({ user, department }: { user: User; department?: string 
 }
 
 export default function ProfileSettingsScreen() {
-  const { user, state } = usePrototype();
-  if (!user || !state) return <AccessNotice loggedIn={false} path="/settings/profile" />;
+  const { user: demoUser, state } = usePrototype();
+  const { session, refresh } = useLiveSession();
+  const user = session.user ?? demoUser;
+  const live = session.status === "authenticated";
+  if (session.status === "loading")
+    return (
+      <PageFrame>
+        <p role="status">กำลังโหลดโปรไฟล์…</p>
+      </PageFrame>
+    );
+  if (session.status === "unavailable")
+    return (
+      <PageFrame>
+        <ErrorNotice message={session.error} />
+        <Button onClick={() => void refresh()}>ลองอีกครั้ง</Button>
+      </PageFrame>
+    );
+  if (!user) return <AccessNotice loggedIn={false} path="/settings/profile" />;
   const admin = isExclusiveAdmin(user);
   const stats = [{ label: "บทบาทที่ได้รับ", value: user.roles.length }];
-  if (!admin)
+  if (!admin && !live && state)
     stats.push({
       label: "รายงานที่ยืนยันแล้ว",
       value: state.reports.filter(
         (report) => report.reporterId === user.id && report.status === "CONFIRMED",
       ).length,
     });
-  const department = state.departments.find((item) => item.id === user.departmentId);
+  const department = (live ? undefined : state)?.departments.find(
+    (item) => item.id === user.departmentId,
+  );
   return (
     <PageFrame>
       <CampusHeading
@@ -208,7 +240,7 @@ export default function ProfileSettingsScreen() {
         icon={UserCog}
         stats={stats}
       >
-        {!admin && (
+        {!admin && !live && (
           <Button asChild variant="outline">
             <Link href={`/u/${encodeURIComponent(user.username)}`}>
               <Eye aria-hidden="true" /> ดูโปรไฟล์สาธารณะ
@@ -217,7 +249,7 @@ export default function ProfileSettingsScreen() {
         )}
       </CampusHeading>
       <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <PublicIdentity user={user} key={user.id} />
+        <PublicIdentity user={user} live={live} key={user.id} />
         <PrivateAccount user={user} department={department?.name} />
       </div>
     </PageFrame>
