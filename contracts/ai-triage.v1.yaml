@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: KU Spot Pluggable AI Triage API
-  version: 1.2.0
+  version: 1.3.0
   description: |
     Stateless, domain-agnostic multimodal incident AI API for KU Spot and
     other university reporting/helpdesk systems.
@@ -97,7 +97,7 @@ paths:
               $ref: "#/components/schemas/TriageAnalyzeRequest"
       responses:
         "200":
-          description: Advisory classification, severity, keywords, and/or embedding vector
+          description: Advisory classification, severity, optional multi-department recommendations, keywords, and/or embedding vector
           content:
             application/json:
               schema:
@@ -154,7 +154,7 @@ paths:
               $ref: "#/components/schemas/SummarizeTicketRequest"
       responses:
         "200":
-          description: Advisory ticket title, description, deterministic ticket-level severity, keywords, and optional weighted-blend ticket vector
+          description: Advisory ticket title, description, optional canonical classification, deterministic ticket-level severity, optional multi-department recommendations, keywords, and optional weighted-blend ticket vector
           content:
             application/json:
               schema:
@@ -469,12 +469,14 @@ components:
           type: array
           maxItems: 50
           default: []
+          description: Candidate categories (duplicate codes are rejected case-insensitively with 422)
           items:
             $ref: "#/components/schemas/CategoryOption"
         departments:
           type: array
           maxItems: 50
           default: []
+          description: Candidate responsible departments (duplicate codes are rejected case-insensitively with 422)
           items:
             $ref: "#/components/schemas/DepartmentOption"
         department_min_confidence:
@@ -801,14 +803,14 @@ components:
           type: array
           maxItems: 50
           default: []
-          description: Optional active candidate categories; when non-empty, returns canonical ticket-level classification with confidence, alternatives, and reason
+          description: Optional active candidate categories (duplicate codes are rejected case-insensitively with 422); when non-empty, returns canonical ticket-level classification with confidence, alternatives, and reason
           items:
             $ref: "#/components/schemas/CategoryOption"
         departments:
           type: array
           maxItems: 50
           default: []
-          description: Optional active candidate departments; when non-empty, the endpoint recommends 1..max_recommended_departments responsible departments with confidence and per-department reason (BR-AI-010, BR-TKT-011)
+          description: Optional active candidate departments (duplicate codes are rejected case-insensitively with 422); when non-empty, the endpoint recommends 1..max_recommended_departments responsible departments with confidence and per-department reason (BR-AI-010, BR-TKT-011)
           items:
             $ref: "#/components/schemas/DepartmentOption"
         department_min_confidence:

@@ -149,13 +149,10 @@ def _resolve_severity_context(
 
 
 def build_analyze_prompts(request: TriageAnalyzeRequest) -> BuiltPrompt:
-    factor_guide, rubric = _resolve_severity_context(
-        request.domain,
-        request.taxonomy.severity_rubric,
-    )
     llm_tasks = [t for t in request.tasks if t != "embed"]
     tasks_str = ", ".join(llm_tasks)
     max_depts = request.taxonomy.max_recommended_departments
+    include_severity = "severity" in llm_tasks
 
     system_lines = [
         "You are an advisory incident triage AI engine for reporting and helpdesk systems.",
@@ -193,9 +190,14 @@ def build_analyze_prompts(request: TriageAnalyzeRequest) -> BuiltPrompt:
         "departments": [d.model_dump(exclude_none=True) for d in request.taxonomy.departments]
         if "departments" in llm_tasks
         else [],
-        "severity_factor_guide": factor_guide,
-        "severity_rubric_context": rubric,
     }
+    if include_severity:
+        factor_guide, rubric = _resolve_severity_context(
+            request.domain,
+            request.taxonomy.severity_rubric,
+        )
+        payload["severity_factor_guide"] = factor_guide
+        payload["severity_rubric_context"] = rubric
 
     user_text = (
         "Analyze the following untrusted incoming report data (together with any attached images) "

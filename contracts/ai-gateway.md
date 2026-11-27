@@ -1,6 +1,6 @@
 # Go API ↔ Python AI Gateway Integration Guide (`/v1/triage`)
 
-> **Canonical Schema:** Full OpenAPI 3.1.0 request/response schemas live in [contracts/ai-triage.v1.yaml](ai-triage.v1.yaml) (`v1.2.0`). This guide defines the operational integration rules, authentication, timeout budgets, backend matching split, revision freshness, and failure fallback semantics between `apps/api` and `apps/ai` (`ku_spot_ai`).
+> **Canonical Schema:** Full OpenAPI 3.1.0 request/response schemas live in [contracts/ai-triage.v1.yaml](ai-triage.v1.yaml) (`v1.3.0`). This guide defines the operational integration rules, authentication, timeout budgets, backend matching split, revision freshness, and failure fallback semantics between `apps/api` and `apps/ai` (`ku_spot_ai`).
 
 The AI Gateway is strictly **stateless** and acts solely as a **Decision Support System** (`BR-GEN-007`, `BR-AI-001`..`020`).
 

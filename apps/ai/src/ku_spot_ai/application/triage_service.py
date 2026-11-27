@@ -168,10 +168,6 @@ def _build_department_recommendations(
             item.confidence, field_name="recommended_departments.confidence"
         )
         reason = item.reason.strip()
-        if not reason:
-            raise ProviderUpstreamError(
-                "AI provider returned an empty department recommendation reason"
-            )
         candidate = DepartmentRecommendation(
             department_code=matched.code,
             department_name=matched.name,
@@ -179,7 +175,15 @@ def _build_department_recommendations(
             reason=reason,
         )
         existing = resolved_by_code.get(matched.code)
-        if existing is None or candidate.confidence > existing.confidence:
+        if (
+            existing is None
+            or candidate.confidence > existing.confidence
+            or (
+                candidate.confidence == existing.confidence
+                and bool(candidate.reason)
+                and not existing.reason
+            )
+        ):
             resolved_by_code[matched.code] = candidate
 
     if not resolved_by_code:
@@ -190,8 +194,13 @@ def _build_department_recommendations(
         key=lambda rec: (-rec.confidence, rec.department_code),
     )
     above_threshold = [rec for rec in ranked if rec.confidence >= min_confidence]
-    selected = above_threshold if above_threshold else ranked[:1]
-    return selected[:max_departments]
+    selected = (above_threshold if above_threshold else ranked[:1])[:max_departments]
+    for rec in selected:
+        if not rec.reason:
+            raise ProviderUpstreamError(
+                "AI provider returned an empty department recommendation reason"
+            )
+    return selected
 
 
 def _build_severity_result(
@@ -413,7 +422,8 @@ class TriageService:
         blended_embedding: EmbeddingResult | None = None
 
         if request.include_embedding:
-            embed_category_name = request.category_name or (
+            request_category = request.category_name.strip() if request.category_name else None
+            embed_category_name = request_category or (
                 classification.category_name if classification is not None else None
             )
             blended_embedding = await self._compute_ticket_embedding(

@@ -4,13 +4,14 @@ import base64
 import binascii
 import json
 import math
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AnalyzeTask = Literal["classify", "severity", "keywords", "departments", "embed"]
 SeverityLevel = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 AllowedImageMime = Literal["image/jpeg", "image/png"]
+NonBlankCodeItem = Annotated[str, Field(min_length=1, max_length=64, pattern=r"\S")]
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MiB per image (BRD §5.3)
 MAX_TOTAL_IMAGE_BYTES = 15 * 1024 * 1024  # 15 MiB aggregate (within Gemini 20 MB inline budget)
@@ -36,6 +37,13 @@ def _require_non_blank(value: str, field_name: str) -> str:
     if not cleaned:
         raise ValueError(f"{field_name} cannot be blank")
     return cleaned
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
 
 
 def _require_unique_option_codes(options: list[Any], field_name: str) -> list[Any]:
@@ -264,7 +272,7 @@ class DepartmentOption(BaseModel):
     code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=120)
     responsibility_scope: str = Field(min_length=1, max_length=600)
-    supported_categories: list[str] = Field(default_factory=list, max_length=20)
+    supported_categories: list[NonBlankCodeItem] = Field(default_factory=list, max_length=20)
     location_scope: str | None = Field(default=None, max_length=200)
 
     @field_validator("code")
@@ -285,21 +293,12 @@ class DepartmentOption(BaseModel):
     @field_validator("supported_categories")
     @classmethod
     def check_supported_categories(cls, values: list[str]) -> list[str]:
-        cleaned: list[str] = []
-        for item in values:
-            token = _require_non_blank(item, "supported_categories")
-            if len(token) > 64:
-                raise ValueError("supported_categories entries must be <= 64 characters")
-            cleaned.append(token)
-        return cleaned
+        return [_require_non_blank(item, "supported_categories") for item in values]
 
     @field_validator("location_scope")
     @classmethod
     def check_location_scope(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        cleaned = value.strip()
-        return cleaned or None
+        return _normalize_optional_text(value)
 
 
 class SeverityRubricInput(BaseModel):
@@ -638,7 +637,7 @@ class CurrentTicketInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=4000)
     severity: SeverityLevel | None = None
-    department_codes: list[str] = Field(default_factory=list, max_length=20)
+    department_codes: list[NonBlankCodeItem] = Field(default_factory=list, max_length=20)
 
     @field_validator("title")
     @classmethod
@@ -653,13 +652,7 @@ class CurrentTicketInput(BaseModel):
     @field_validator("department_codes")
     @classmethod
     def check_department_codes(cls, values: list[str]) -> list[str]:
-        cleaned: list[str] = []
-        for item in values:
-            token = _require_non_blank(item, "department_codes")
-            if len(token) > 64:
-                raise ValueError("department_codes entries must be <= 64 characters")
-            cleaned.append(token)
-        return cleaned
+        return [_require_non_blank(item, "department_codes") for item in values]
 
 
 class SummarizeTicketRequest(BaseModel):
@@ -812,6 +805,11 @@ class SummarizeTicketRequest(BaseModel):
     summary_weight: float = Field(default=0.6, ge=0.0, le=1.0)
     reports_weight: float = Field(default=0.4, ge=0.0, le=1.0)
 
+    @field_validator("location_name", "category_name")
+    @classmethod
+    def normalize_optional_names(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value)
+
     @field_validator("categories")
     @classmethod
     def check_unique_categories(cls, value: list[CategoryOption]) -> list[CategoryOption]:
@@ -904,6 +902,11 @@ class EmbedTicketRequest(BaseModel):
     @classmethod
     def check_description(cls, value: str) -> str:
         return _require_non_blank(value, "description")
+
+    @field_validator("location_name", "category_name")
+    @classmethod
+    def normalize_optional_names(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value)
 
     @model_validator(mode="after")
     def validate_weights_and_vectors(self) -> EmbedTicketRequest:

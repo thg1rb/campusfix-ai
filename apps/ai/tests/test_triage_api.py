@@ -1528,6 +1528,109 @@ def test_department_recommendation_validation_and_provider_error_handling() -> N
     assert res_nan.status_code == 503
 
 
+def test_department_edge_cases_below_threshold_blank_reason_name_match_tie_break_and_prompt_minimization() -> (
+    None
+):
+    # 1. Below-threshold irrelevant department with blank reason must NOT fail the request with 503,
+    #    matching by Thai department.name works, and equal-confidence ties sort deterministically by code.
+    fake = FakeProvider(
+        outputs={
+            ProviderAnalyzeOutput: ProviderAnalyzeOutput(
+                recommended_departments=[
+                    ProviderDepartmentRecommendation(
+                        department_code="งานรักษาความปลอดภัยและจราจร",  # match by department.name
+                        confidence=0.85,
+                        reason="กั้นพื้นที่อันตรายและจัดการจราจร",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="BUILDINGS_UTILITIES",
+                        confidence=0.85,  # tie with SAFETY_SECURITY -> BUILDINGS_UTILITIES comes first
+                        reason="ซ่อมระบบไฟฟ้าและตู้ควบคุม",
+                    ),
+                    ProviderDepartmentRecommendation(
+                        department_code="OCS_NETWORK",
+                        confidence=0.05,  # below threshold 0.45 with empty reason -> filtered out safely
+                        reason="",
+                    ),
+                ],
+                keywords=["ตู้ควบคุมไฟ", "ศร.3"],
+            )
+        }
+    )
+    client = TestClient(create_app(_anon_settings(), provider=fake))
+
+    res = client.post(
+        "/v1/triage/analyze",
+        json={
+            "tasks": ["departments"],
+            "item": {"title": "ตู้ไฟมีประกายไฟ", "description": "ตู้ไฟชั้น 2 มีประกายไฟ"},
+            "taxonomy": {"departments": SAMPLE_DEPARTMENTS},
+        },
+    )
+    assert res.status_code == 200
+    depts = res.json()["recommended_departments"]
+    assert [d["department_code"] for d in depts] == ["BUILDINGS_UTILITIES", "SAFETY_SECURITY"]
+    assert depts[1]["department_name"] == "งานรักษาความปลอดภัยและจราจร"
+
+    # 2. Prompt minimization: when departments and severity are omitted from tasks,
+    #    neither candidate departments nor severity rubric/guide are sent to the LLM.
+    res_min = client.post(
+        "/v1/triage/analyze",
+        json={
+            "tasks": ["keywords"],
+            "item": {"title": "ตู้ไฟมีประกายไฟ", "description": "ตู้ไฟชั้น 2 มีประกายไฟ"},
+            "taxonomy": {
+                "departments": SAMPLE_DEPARTMENTS,
+                "severity_rubric": {"CRITICAL": "CUSTOM_UNUSED_RUBRIC_TOKEN"},
+            },
+        },
+    )
+    assert res_min.status_code == 200
+    assert res_min.json()["recommended_departments"] == []
+    assert "BUILDINGS_UTILITIES" not in fake.last_user
+    assert "severity_factor_guide" not in fake.last_user
+    assert "severity_rubric_context" not in fake.last_user
+    assert "CUSTOM_UNUSED_RUBRIC_TOKEN" not in fake.last_user
+
+    # 3. Item-level raw length (> 64 chars even when whitespace-padded) rejected with 422
+    padded_over_64 = " " * 60 + "ELEC" + " " * 10
+    assert (
+        client.post(
+            "/v1/triage/summarize-ticket",
+            json={
+                "current_ticket": {
+                    "title": "ไฟดับ",
+                    "description": "ไฟทางเดินดับ",
+                    "department_codes": [padded_over_64],
+                },
+                "reports": [{"title": "ไฟดับ", "description": "ไฟทางเดินดับ"}],
+                "include_embedding": False,
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/v1/triage/analyze",
+            json={
+                "tasks": ["departments"],
+                "item": {"title": "ไฟดับ", "description": "ไฟทางเดินดับ"},
+                "taxonomy": {
+                    "departments": [
+                        {
+                            "code": "D1",
+                            "name": "หน่วยงาน 1",
+                            "responsibility_scope": "ดูแลไฟฟ้า",
+                            "supported_categories": [padded_over_64],
+                        }
+                    ]
+                },
+            },
+        ).status_code
+        == 422
+    )
+
+
 def test_summarize_ticket_optional_categories_classification_and_error_handling() -> None:
     sample_categories = [
         {"code": "ELECTRICAL", "name": "ไฟฟ้าและแสงสว่าง"},
@@ -1593,6 +1696,23 @@ def test_summarize_ticket_optional_categories_classification_and_error_handling(
     # Classified category_name enriches ticket embedding text when caller omitted category_name
     assert "category: ไฟฟ้าและแสงสว่าง" in fake.last_embed_text
     assert '"categories":' in fake.last_user
+
+    # 1b. Whitespace-only category_name normalizes to None and still falls back to classification
+    res_blank_cat = client.post(
+        "/v1/triage/summarize-ticket",
+        json={
+            "category_name": "   ",
+            "location_name": "   ",
+            "reports": [
+                {"report_id": "R-001", "title": "ตู้ไฟมีกลิ่นไหม้", "description": "ตู้ไฟชั้น 2 เหม็นไหม้"},
+            ],
+            "categories": sample_categories,
+            "include_embedding": True,
+        },
+    )
+    assert res_blank_cat.status_code == 200
+    assert "category: ไฟฟ้าและแสงสว่าง" in fake.last_embed_text
+    assert "location:" not in fake.last_embed_text
 
     # 2. Without categories -> classification is null
     res_no_cats = client.post(
@@ -2026,6 +2146,14 @@ def test_validation_and_runtime_openapi_parity() -> None:
     assert "max_recommended_departments" in schemas["TaxonomyInput"]["properties"]
     assert "DepartmentOption" in schemas
     assert "DepartmentRecommendation" in schemas
+    dept_sup_items = schemas["DepartmentOption"]["properties"]["supported_categories"]["items"]
+    assert dept_sup_items["minLength"] == 1
+    assert dept_sup_items["maxLength"] == 64
+    assert dept_sup_items["pattern"] == r"\S"
+    ticket_dept_items = schemas["CurrentTicketInput"]["properties"]["department_codes"]["items"]
+    assert ticket_dept_items["minLength"] == 1
+    assert ticket_dept_items["maxLength"] == 64
+    assert ticket_dept_items["pattern"] == r"\S"
     assert "recommended_departments" in schemas["TriageAnalyzeResponse"]["properties"]
     assert "classification" in schemas["SummarizeTicketResponse"]["properties"]
     assert "recommended_departments" in schemas["SummarizeTicketResponse"]["properties"]
