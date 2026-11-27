@@ -39,4 +39,4 @@ export const loginPreviewMocks = [
     category: "ความสะอาด",
     categoryTone: "success",
   },
-] as const
+] as const;

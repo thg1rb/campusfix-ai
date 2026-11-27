@@ -1,1 +1,1 @@
-export { default } from "@/features/admin/screens/AdminLocationsScreen"
+export { default } from "@/features/admin/screens/AdminLocationsScreen";

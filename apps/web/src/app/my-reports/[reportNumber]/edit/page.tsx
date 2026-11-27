@@ -1,6 +1,6 @@
-import Screen from "@/features/reports/screens/EditPendingReportScreen"
+import Screen from "@/features/reports/screens/EditPendingReportScreen";
 
 export default async function Page({ params }: { params: Promise<{ reportNumber: string }> }) {
-  const { reportNumber } = await params
-  return <Screen reportNumber={reportNumber} />
+  const { reportNumber } = await params;
+  return <Screen reportNumber={reportNumber} />;
 }

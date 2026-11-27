@@ -19,4 +19,20 @@ packages = ["src/ku_spot_ai"]
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.2.0",
+    "ruff>=0.17.6",
 ]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# E501 is handled by `ruff format`; ignoring it avoids false positives on long Thai prompt strings/URLs.
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

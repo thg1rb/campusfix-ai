@@ -116,9 +116,7 @@ def build_rephrase_prompts(request: RephraseRequest) -> BuiltPrompt:
         "language": request.language,
         "title": request.title,
         "description": request.description,
-        "location": request.location.model_dump(exclude_none=True)
-        if request.location
-        else None,
+        "location": request.location.model_dump(exclude_none=True) if request.location else None,
     }
 
     user_text = (
@@ -141,14 +139,10 @@ def _resolve_severity_context(
         if text.strip()
     }
     use_campus_defaults = domain == "campus_facilities"
-    base_rubric = (
-        DEFAULT_SEVERITY_RUBRIC if use_campus_defaults else GENERIC_SEVERITY_RUBRIC
-    )
+    base_rubric = DEFAULT_SEVERITY_RUBRIC if use_campus_defaults else GENERIC_SEVERITY_RUBRIC
     rubric = {**base_rubric, **custom_rubric}
     factor_guide = (
-        CAMPUS_SEVERITY_FACTOR_GUIDE
-        if use_campus_defaults
-        else GENERIC_SEVERITY_FACTOR_GUIDE
+        CAMPUS_SEVERITY_FACTOR_GUIDE if use_campus_defaults else GENERIC_SEVERITY_FACTOR_GUIDE
     )
     return factor_guide, rubric
 
@@ -190,9 +184,7 @@ def build_analyze_prompts(request: TriageAnalyzeRequest) -> BuiltPrompt:
             "image_count": len(request.item.images),
             "metadata": request.item.metadata or None,
         },
-        "categories": [
-            c.model_dump(exclude_none=True) for c in request.taxonomy.categories
-        ],
+        "categories": [c.model_dump(exclude_none=True) for c in request.taxonomy.categories],
         "severity_factor_guide": factor_guide,
         "severity_rubric_context": rubric,
     }

@@ -68,7 +68,9 @@ def test_gemini_embedding_2_omits_task_type_on_the_wire(with_image: bool) -> Non
                 if with_image
                 else None
             )
-            result = await provider.embed(text="task: semantic similarity\ntitle: ไฟดับ", images=images)
+            result = await provider.embed(
+                text="task: semantic similarity\ntitle: ไฟดับ", images=images
+            )
             assert result.model == "gemini-embedding-2"
             assert result.values == [0.1, 0.2, 0.3, 0.4]
         finally:

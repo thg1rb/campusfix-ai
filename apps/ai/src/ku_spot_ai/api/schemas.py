@@ -44,21 +44,17 @@ def _validate_image_magic_bytes(data: bytes, mime_type: AllowedImageMime) -> Non
 
 def _validate_report_embeddings(
     report_embeddings: list[list[float]],
-    report_embedding_meta: "EmbeddingIdentity | None",
+    report_embedding_meta: EmbeddingIdentity | None,
 ) -> None:
     if not report_embeddings:
         return
     if report_embedding_meta is None:
-        raise ValueError(
-            "report_embedding_meta is required when report_embeddings are provided"
-        )
+        raise ValueError("report_embedding_meta is required when report_embeddings are provided")
     dim = len(report_embeddings[0])
     if dim == 0:
         raise ValueError("report_embeddings vectors cannot be empty")
     if dim > MAX_EMBEDDING_DIMENSIONS:
-        raise ValueError(
-            f"report_embeddings vector dimension exceeds {MAX_EMBEDDING_DIMENSIONS}"
-        )
+        raise ValueError(f"report_embeddings vector dimension exceeds {MAX_EMBEDDING_DIMENSIONS}")
     if dim != report_embedding_meta.dimensions:
         raise ValueError(
             "report_embeddings vector dimension must match report_embedding_meta.dimensions"
@@ -113,7 +109,7 @@ class ImageInput(BaseModel):
         return payload
 
     @model_validator(mode="after")
-    def validate_magic_bytes(self) -> "ImageInput":
+    def validate_magic_bytes(self) -> ImageInput:
         decoded = self.decode_bytes()
         _validate_image_magic_bytes(decoded, self.mime_type)
         return self
@@ -213,9 +209,7 @@ class ReportItemInput(BaseModel):
             raise ValueError(f"metadata cannot contain more than {MAX_METADATA_KEYS} keys")
         for key in value:
             if not key or len(key) > MAX_METADATA_KEY_LENGTH:
-                raise ValueError(
-                    f"metadata keys must be 1..{MAX_METADATA_KEY_LENGTH} characters"
-                )
+                raise ValueError(f"metadata keys must be 1..{MAX_METADATA_KEY_LENGTH} characters")
         serialized = json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
         if len(serialized) > MAX_METADATA_JSON_BYTES:
             raise ValueError(
@@ -224,7 +218,7 @@ class ReportItemInput(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def check_total_image_budget(self) -> "ReportItemInput":
+    def check_total_image_budget(self) -> ReportItemInput:
         total_bytes = sum(len(img.decode_bytes()) for img in self.images)
         if total_bytes > MAX_TOTAL_IMAGE_BYTES:
             raise ValueError(
@@ -269,13 +263,8 @@ class SeverityWeightsInput(BaseModel):
     urgency: float = Field(default=0.15, ge=0.0, le=MAX_SEVERITY_WEIGHT)
 
     @model_validator(mode="after")
-    def validate_positive_sum(self) -> "SeverityWeightsInput":
-        total = (
-            self.safety_risk
-            + self.operational_impact
-            + self.affected_scope
-            + self.urgency
-        )
+    def validate_positive_sum(self) -> SeverityWeightsInput:
+        total = self.safety_risk + self.operational_impact + self.affected_scope + self.urgency
         if not math.isfinite(total) or total <= 0:
             raise ValueError("severity_weights must have a positive finite sum")
         return self
@@ -291,11 +280,9 @@ class SeverityThresholdsInput(BaseModel):
     critical: float = Field(default=2.35, gt=0.0, le=3.0)
 
     @model_validator(mode="after")
-    def validate_strict_order(self) -> "SeverityThresholdsInput":
+    def validate_strict_order(self) -> SeverityThresholdsInput:
         if not (0.0 < self.medium < self.high < self.critical <= 3.0):
-            raise ValueError(
-                "severity_thresholds must satisfy 0 < medium < high < critical <= 3.0"
-            )
+            raise ValueError("severity_thresholds must satisfy 0 < medium < high < critical <= 3.0")
         return self
 
 
@@ -303,9 +290,7 @@ class TaxonomyInput(BaseModel):
     categories: list[CategoryOption] = Field(default_factory=list, max_length=50)
     severity_rubric: SeverityRubricInput = Field(default_factory=SeverityRubricInput)
     severity_weights: SeverityWeightsInput = Field(default_factory=SeverityWeightsInput)
-    severity_thresholds: SeverityThresholdsInput = Field(
-        default_factory=SeverityThresholdsInput
-    )
+    severity_thresholds: SeverityThresholdsInput = Field(default_factory=SeverityThresholdsInput)
     safety_override: bool = True
 
 
@@ -367,7 +352,7 @@ class TriageAnalyzeRequest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_taxonomy_requirements(self) -> "TriageAnalyzeRequest":
+    def validate_taxonomy_requirements(self) -> TriageAnalyzeRequest:
         if "classify" in self.tasks and not self.taxonomy.categories:
             raise ValueError("taxonomy.categories is required when 'classify' is in tasks")
         return self
@@ -554,9 +539,7 @@ class SummarizeTicketRequest(BaseModel):
     reports: list[TicketReportSource] = Field(min_length=1, max_length=50)
     severity_rubric: SeverityRubricInput = Field(default_factory=SeverityRubricInput)
     severity_weights: SeverityWeightsInput = Field(default_factory=SeverityWeightsInput)
-    severity_thresholds: SeverityThresholdsInput = Field(
-        default_factory=SeverityThresholdsInput
-    )
+    severity_thresholds: SeverityThresholdsInput = Field(default_factory=SeverityThresholdsInput)
     safety_override: bool = True
     include_embedding: bool = True
     report_embeddings: list[list[float]] = Field(default_factory=list, max_length=50)
@@ -565,7 +548,7 @@ class SummarizeTicketRequest(BaseModel):
     reports_weight: float = Field(default=0.4, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
-    def validate_weights_and_vectors(self) -> "SummarizeTicketRequest":
+    def validate_weights_and_vectors(self) -> SummarizeTicketRequest:
         if (self.summary_weight + self.reports_weight) == 0:
             raise ValueError("summary_weight and reports_weight cannot both be zero")
         _validate_report_embeddings(self.report_embeddings, self.report_embedding_meta)
@@ -636,7 +619,7 @@ class EmbedTicketRequest(BaseModel):
         return _require_non_blank(value, "description")
 
     @model_validator(mode="after")
-    def validate_weights_and_vectors(self) -> "EmbedTicketRequest":
+    def validate_weights_and_vectors(self) -> EmbedTicketRequest:
         if (self.summary_weight + self.reports_weight) == 0:
             raise ValueError("summary_weight and reports_weight cannot both be zero")
         _validate_report_embeddings(self.report_embeddings, self.report_embedding_meta)

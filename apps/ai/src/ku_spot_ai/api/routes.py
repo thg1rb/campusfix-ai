@@ -56,9 +56,7 @@ def _verify_client_api_key(
         raise _UnauthorizedClientError()
     if not x_api_key or not x_api_key.isascii():
         raise _UnauthorizedClientError()
-    if not any(
-        hmac.compare_digest(x_api_key, allowed) for allowed in settings.client_api_keys
-    ):
+    if not any(hmac.compare_digest(x_api_key, allowed) for allowed in settings.client_api_keys):
         raise _UnauthorizedClientError()
 
 
@@ -106,9 +104,7 @@ def register_error_handlers(app: Any) -> None:
         )
 
     @app.exception_handler(ProviderError)
-    async def handle_provider_error(
-        _request: Request, exc: ProviderError
-    ) -> JSONResponse:
+    async def handle_provider_error(_request: Request, exc: ProviderError) -> JSONResponse:
         body = ErrorResponse(
             error=ErrorDetail(
                 code=exc.code,
