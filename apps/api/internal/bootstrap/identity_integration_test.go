@@ -18,6 +18,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/thg1rb/ku-spot/apps/api/internal/config"
 	"github.com/thg1rb/ku-spot/apps/api/internal/modules/identity/application"
 	"github.com/thg1rb/ku-spot/apps/api/internal/modules/identity/domain"
@@ -89,6 +90,99 @@ func testDatabase(t *testing.T) *database.Connection {
 	}
 
 	return db
+}
+
+func TestUserAccessPostgres(t *testing.T) {
+	db := testDatabase(t)
+	ctx := t.Context()
+	insertUser := func(t *testing.T, ctx context.Context, username string) string {
+		t.Helper()
+		var id string
+		err := db.DB(ctx).Raw(`
+			INSERT INTO users (auth_provider, provider_subject_id, username, real_name, email)
+			VALUES ('GOOGLE', ?, ?, 'Test User', 'test@ku.th') RETURNING id`, username, username,
+		).Scan(&id).Error
+		if err != nil || id == "" {
+			t.Fatalf("insert user: id=%q, error=%v", id, err)
+		}
+		return id
+	}
+	addRole := func(t *testing.T, ctx context.Context, id string, role domain.Role) {
+		t.Helper()
+		if err := db.DB(ctx).Exec(
+			"INSERT INTO user_roles (user_id, role) VALUES (?, ?)", id, role,
+		).Error; err != nil {
+			t.Fatalf("insert role: %v", err)
+		}
+	}
+	seedUser := func(t *testing.T, username string) string {
+		t.Helper()
+		var id string
+		if err := db.WithTx(ctx, func(txCtx context.Context) error {
+			id = insertUser(t, txCtx, username)
+			addRole(t, txCtx, id, domain.Reporter)
+			return nil
+		}); err != nil {
+			t.Fatalf("commit user and initial role: %v", err)
+		}
+		return id
+	}
+	deleteRoles := func(t *testing.T, ctx context.Context, id string) {
+		t.Helper()
+		result := db.DB(ctx).Exec("DELETE FROM user_roles WHERE user_id = ?", id)
+		if result.Error != nil || result.RowsAffected != 1 {
+			t.Fatalf("delete last role: rows=%d, error=%v", result.RowsAffected, result.Error)
+		}
+	}
+	assertCheckViolation := func(t *testing.T, err error) {
+		t.Helper()
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+			t.Fatalf("commit error = %v, want SQLSTATE 23514", err)
+		}
+	}
+
+	t.Run("rejects a new user without roles at commit", func(t *testing.T) {
+		err := db.WithTx(ctx, func(txCtx context.Context) error {
+			insertUser(t, txCtx, "no_roles")
+			return nil
+		})
+		assertCheckViolation(t, err)
+	})
+	t.Run("rejects deleting the last role at commit", func(t *testing.T) {
+		id := seedUser(t, "remove_role")
+		err := db.WithTx(ctx, func(txCtx context.Context) error {
+			deleteRoles(t, txCtx, id)
+			return nil
+		})
+		assertCheckViolation(t, err)
+	})
+	t.Run("cascades role deletion when deleting a user", func(t *testing.T) {
+		id := seedUser(t, "delete_user")
+		result := db.DB(ctx).Exec("DELETE FROM users WHERE id = ?", id)
+		if result.Error != nil || result.RowsAffected != 1 {
+			t.Fatalf("delete user: rows=%d, error=%v", result.RowsAffected, result.Error)
+		}
+		var count int64
+		if err := db.DB(ctx).Table("user_roles").Where("user_id = ?", id).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("role count after cascade = %d, error = %v", count, err)
+		}
+	})
+	t.Run("replaces the last role in one transaction", func(t *testing.T) {
+		id := seedUser(t, "replace_role")
+		if err := db.WithTx(ctx, func(txCtx context.Context) error {
+			deleteRoles(t, txCtx, id)
+			addRole(t, txCtx, id, domain.Reviewer)
+			return nil
+		}); err != nil {
+			t.Fatalf("commit role replacement: %v", err)
+		}
+		var role domain.Role
+		err := db.DB(ctx).Raw("SELECT role FROM user_roles WHERE user_id = ?", id).Scan(&role).Error
+		if err != nil || role != domain.Reviewer {
+			t.Fatalf("replacement role = %q, error = %v", role, err)
+		}
+	})
 }
 
 type response struct {

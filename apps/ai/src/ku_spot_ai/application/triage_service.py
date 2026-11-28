@@ -4,16 +4,23 @@ import asyncio
 import math
 import time
 import uuid
+from typing import Any
 
 from ku_spot_ai.api.schemas import (
+    DEFAULT_DEPARTMENT_MIN_CONFIDENCE,
+    DEFAULT_MAX_RECOMMENDED_DEPARTMENTS,
     AlternativeCategory,
     CategoryOption,
     ClassificationResult,
+    DepartmentOption,
+    DepartmentRecommendation,
     EmbeddingIdentity,
     EmbeddingResult,
     EmbedTicketRequest,
     EmbedTicketResponse,
     ProviderAnalyzeOutput,
+    ProviderClassification,
+    ProviderDepartmentRecommendation,
     ProviderRephraseOutput,
     ProviderSeverity,
     ProviderSummarizeTicketOutput,
@@ -50,7 +57,7 @@ from ku_spot_ai.scoring.severity import (
 )
 from ku_spot_ai.scoring.vectors import l2_normalize, weighted_blend
 
-ANALYZE_LLM_TASKS = frozenset({"classify", "severity", "keywords"})
+ANALYZE_LLM_TASKS = frozenset({"classify", "severity", "keywords", "departments"})
 
 
 def _clamp_confidence(value: float, *, field_name: str) -> float:
@@ -89,6 +96,111 @@ def _resolve_category(
         if cat.name.strip().lower() == needle:
             return cat
     return None
+
+
+def _build_classification_result(
+    raw_classification: ProviderClassification | None,
+    categories: list[CategoryOption],
+) -> ClassificationResult:
+    if raw_classification is None:
+        raise ProviderUpstreamError("AI provider omitted required classification output")
+    matched = _resolve_category(raw_classification.category_code, categories)
+    if matched is None:
+        raise ProviderUpstreamError("AI provider returned an unrecognized category code")
+    confidence = _clamp_confidence(
+        raw_classification.confidence, field_name="classification.confidence"
+    )
+    reason = raw_classification.reason.strip()
+    if not reason:
+        raise ProviderUpstreamError("AI provider returned an empty classification reason")
+    alternatives: list[AlternativeCategory] = []
+    seen_codes = {matched.code}
+    for alt in raw_classification.alternatives:
+        resolved_alt = _resolve_category(alt.category_code, categories)
+        if resolved_alt is None or resolved_alt.code in seen_codes:
+            continue
+        seen_codes.add(resolved_alt.code)
+        alternatives.append(
+            AlternativeCategory(
+                category_code=resolved_alt.code,
+                category_name=resolved_alt.name,
+                confidence=_clamp_confidence(
+                    alt.confidence, field_name="classification.alternative.confidence"
+                ),
+            )
+        )
+    return ClassificationResult(
+        category_code=matched.code,
+        category_name=matched.name,
+        confidence=confidence,
+        alternatives=alternatives[:2],
+        reason=reason,
+    )
+
+
+def _resolve_department(
+    code_or_name: str,
+    departments: list[DepartmentOption],
+) -> DepartmentOption | None:
+    needle = code_or_name.strip().lower()
+    for dept in departments:
+        if dept.code.strip().lower() == needle:
+            return dept
+    for dept in departments:
+        if dept.name.strip().lower() == needle:
+            return dept
+    return None
+
+
+def _build_department_recommendations(
+    raw_recommendations: list[ProviderDepartmentRecommendation],
+    departments: list[DepartmentOption],
+    *,
+    min_confidence: float = DEFAULT_DEPARTMENT_MIN_CONFIDENCE,
+    max_departments: int = DEFAULT_MAX_RECOMMENDED_DEPARTMENTS,
+) -> list[DepartmentRecommendation]:
+    resolved_by_code: dict[str, DepartmentRecommendation] = {}
+    for item in raw_recommendations:
+        matched = _resolve_department(item.department_code, departments)
+        if matched is None:
+            continue
+        confidence = _clamp_confidence(
+            item.confidence, field_name="recommended_departments.confidence"
+        )
+        reason = item.reason.strip()
+        candidate = DepartmentRecommendation(
+            department_code=matched.code,
+            department_name=matched.name,
+            confidence=confidence,
+            reason=reason,
+        )
+        existing = resolved_by_code.get(matched.code)
+        if (
+            existing is None
+            or candidate.confidence > existing.confidence
+            or (
+                candidate.confidence == existing.confidence
+                and bool(candidate.reason)
+                and not existing.reason
+            )
+        ):
+            resolved_by_code[matched.code] = candidate
+
+    if not resolved_by_code:
+        raise ProviderUpstreamError("AI provider omitted required department recommendations")
+
+    ranked = sorted(
+        resolved_by_code.values(),
+        key=lambda rec: (-rec.confidence, rec.department_code),
+    )
+    above_threshold = [rec for rec in ranked if rec.confidence >= min_confidence]
+    selected = (above_threshold if above_threshold else ranked[:1])[:max_departments]
+    for rec in selected:
+        if not rec.reason:
+            raise ProviderUpstreamError(
+                "AI provider returned an empty department recommendation reason"
+            )
+    return selected
 
 
 def _build_severity_result(
@@ -218,8 +330,9 @@ class TriageService:
                     images=request.item.images,
                 )
             )
+            tasks: set[asyncio.Task[Any]] = {llm_task, embed_task}
             done, pending = await asyncio.wait(
-                {llm_task, embed_task},
+                tasks,
                 return_when=asyncio.FIRST_EXCEPTION,
             )
             failed: BaseException | None = None
@@ -284,23 +397,41 @@ class TriageService:
         ticket_description = llm_result.output.ticket_description.strip()
         if not ticket_title or not ticket_description:
             raise ProviderUpstreamError("AI provider returned an incomplete ticket summary")
+        classification: ClassificationResult | None = None
+        if request.categories:
+            classification = _build_classification_result(
+                llm_result.output.classification,
+                request.categories,
+            )
         severity = _build_severity_result(
             llm_result.output.severity,
             weights_input=request.severity_weights,
             thresholds_input=request.severity_thresholds,
             safety_override=request.safety_override,
         )
+        recommended_departments: list[DepartmentRecommendation] = []
+        if request.departments:
+            recommended_departments = _build_department_recommendations(
+                llm_result.output.recommended_departments,
+                request.departments,
+                min_confidence=request.department_min_confidence,
+                max_departments=request.max_recommended_departments,
+            )
         keywords = _clean_keywords(llm_result.output.keywords)
 
         blended_embedding: EmbeddingResult | None = None
 
         if request.include_embedding:
+            request_category = request.category_name.strip() if request.category_name else None
+            embed_category_name = request_category or (
+                classification.category_name if classification is not None else None
+            )
             blended_embedding = await self._compute_ticket_embedding(
                 domain=request.domain,
                 title=ticket_title,
                 description=ticket_description,
                 location_name=request.location_name,
-                category_name=request.category_name,
+                category_name=embed_category_name,
                 report_embeddings=request.report_embeddings,
                 report_embedding_meta=request.report_embedding_meta,
                 summary_weight=request.summary_weight,
@@ -316,7 +447,9 @@ class TriageService:
             latency_ms=latency_ms,
             ticket_title=ticket_title,
             ticket_description=ticket_description,
+            classification=classification,
             severity=severity,
+            recommended_departments=recommended_departments,
             keywords=keywords,
             blended_embedding=blended_embedding,
         )
@@ -441,41 +574,9 @@ class TriageService:
 
         classification: ClassificationResult | None = None
         if "classify" in requested:
-            if raw is None or raw.classification is None:
-                raise ProviderUpstreamError("AI provider omitted required classification output")
-            matched = _resolve_category(
-                raw.classification.category_code, request.taxonomy.categories
-            )
-            if matched is None:
-                raise ProviderUpstreamError("AI provider returned an unrecognized category code")
-            confidence = _clamp_confidence(
-                raw.classification.confidence, field_name="classification.confidence"
-            )
-            reason = raw.classification.reason.strip()
-            if not reason:
-                raise ProviderUpstreamError("AI provider returned an empty classification reason")
-            alternatives: list[AlternativeCategory] = []
-            seen_codes = {matched.code}
-            for alt in raw.classification.alternatives:
-                resolved_alt = _resolve_category(alt.category_code, request.taxonomy.categories)
-                if resolved_alt is None or resolved_alt.code in seen_codes:
-                    continue
-                seen_codes.add(resolved_alt.code)
-                alternatives.append(
-                    AlternativeCategory(
-                        category_code=resolved_alt.code,
-                        category_name=resolved_alt.name,
-                        confidence=_clamp_confidence(
-                            alt.confidence, field_name="classification.alternative.confidence"
-                        ),
-                    )
-                )
-            classification = ClassificationResult(
-                category_code=matched.code,
-                category_name=matched.name,
-                confidence=confidence,
-                alternatives=alternatives[:2],
-                reason=reason,
+            classification = _build_classification_result(
+                raw.classification if raw is not None else None,
+                request.taxonomy.categories,
             )
 
         severity: SeverityResult | None = None
@@ -485,6 +586,19 @@ class TriageService:
                 weights_input=request.taxonomy.severity_weights,
                 thresholds_input=request.taxonomy.severity_thresholds,
                 safety_override=request.taxonomy.safety_override,
+            )
+
+        recommended_departments: list[DepartmentRecommendation] = []
+        if "departments" in requested:
+            if raw is None:
+                raise ProviderUpstreamError(
+                    "AI provider omitted required department recommendations"
+                )
+            recommended_departments = _build_department_recommendations(
+                raw.recommended_departments,
+                request.taxonomy.departments,
+                min_confidence=request.taxonomy.department_min_confidence,
+                max_departments=request.taxonomy.max_recommended_departments,
             )
 
         keywords: list[str] = []
@@ -506,6 +620,7 @@ class TriageService:
             latency_ms=latency_ms,
             classification=classification,
             severity=severity,
+            recommended_departments=recommended_departments,
             keywords=keywords,
             embedding=embedding,
         )

@@ -38,6 +38,30 @@ CAMPUS_CATEGORIES = [
     {"code": "SAFETY", "name": "ความปลอดภัยและการจราจร"},
 ]
 
+CAMPUS_DEPARTMENTS = [
+    {
+        "code": "BUILDINGS_UTILITIES",
+        "name": "กองอาคารสถานที่และสาธารณูปโภค",
+        "responsibility_scope": "ซ่อมบำรุงระบบไฟฟ้า ตู้ควบคุมไฟ แสงสว่าง ประปา ท่อระบายน้ำ และโครงสร้างอาคารส่วนกลาง",
+        "supported_categories": ["ELECTRICAL", "BUILDING", "WATER"],
+        "location_scope": "อาคารและพื้นที่ส่วนกลาง มก. บางเขน",
+    },
+    {
+        "code": "SAFETY_SECURITY",
+        "name": "งานรักษาความปลอดภัยและจราจร",
+        "responsibility_scope": "กั้นพื้นที่อันตราย ระงับเหตุฉุกเฉินเบื้องต้น อัคคีภัย และความปลอดภัยการสัญจรภายในวิทยาเขต",
+        "supported_categories": ["SAFETY", "ELECTRICAL"],
+        "location_scope": "ทุกพื้นที่ภายใน มก. บางเขน",
+    },
+    {
+        "code": "OCS_NETWORK",
+        "name": "สำนักบริการคอมพิวเตอร์ (เครือข่าย)",
+        "responsibility_scope": "ดูแลระบบอินเทอร์เน็ต Wi-Fi KUWIN เครือข่ายสาย LAN และระบบบัญชีผู้ใช้ไอที",
+        "supported_categories": ["INTERNET"],
+        "location_scope": "ทุกอาคารเรียนและหอสมุด มก. บางเขน",
+    },
+]
+
 
 def _truncate_embedding(dumped: dict, key: str) -> None:
     if dumped.get(key) and isinstance(dumped[key].get("values"), list):
@@ -69,18 +93,22 @@ async def main() -> None:
         )
         print(json.dumps(rephrase_res.model_dump(), ensure_ascii=False, indent=2))
 
-        # 2. Analyze Report #1 + Report #2 (Category + Severity + Report Embedding Vector)
+        # 2. Analyze Report #1 + Report #2 (Category + Severity + Departments + Report Embedding Vector)
         print("\n=== Step 2: /v1/triage/analyze (Report #1: KU Spot) ===")
         report1_res = await service.analyze(
             TriageAnalyzeRequest.model_validate(
                 {
                     "domain": "campus_facilities",
+                    "tasks": ["classify", "severity", "departments", "keywords", "embed"],
                     "item": {
                         "title": rephrase_res.rephrased_title,
                         "description": rephrase_res.rephrased_description,
                         "location": {"name": "อาคารศูนย์เรียนรวม 3 (ศร.3)"},
                     },
-                    "taxonomy": {"categories": CAMPUS_CATEGORIES},
+                    "taxonomy": {
+                        "categories": CAMPUS_CATEGORIES,
+                        "departments": CAMPUS_DEPARTMENTS,
+                    },
                 }
             )
         )
@@ -102,9 +130,9 @@ async def main() -> None:
             )
         )
 
-        # 3. Summarize Ticket from all reports + Ticket-level Severity + Weighted-Blend Ticket Vector (0.6 summary + 0.4 reports centroid)
+        # 3. Summarize Ticket from all reports + Ticket-level Severity + Departments + Weighted-Blend Vector
         print(
-            "\n=== Step 3: /v1/triage/summarize-ticket (Ticket Severity + Weighted-Blend Vector) ==="
+            "\n=== Step 3: /v1/triage/summarize-ticket (Ticket Severity + Departments + Blended Vector) ==="
         )
         assert report1_res.embedding is not None and report2_res.embedding is not None
         assert report1_res.severity is not None and report2_res.severity is not None
@@ -118,6 +146,9 @@ async def main() -> None:
                         "title": rephrase_res.rephrased_title,
                         "description": rephrase_res.rephrased_description,
                         "severity": report1_res.severity.level,
+                        "department_codes": [
+                            d.department_code for d in report1_res.recommended_departments
+                        ],
                     },
                     "reports": [
                         {
@@ -133,6 +164,8 @@ async def main() -> None:
                             "observed_severity": report2_res.severity.level,
                         },
                     ],
+                    "categories": CAMPUS_CATEGORIES,
+                    "departments": CAMPUS_DEPARTMENTS,
                     "include_embedding": True,
                     "report_embeddings": [
                         report1_res.embedding.values,
