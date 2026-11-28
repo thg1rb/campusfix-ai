@@ -155,7 +155,7 @@ function MobileNav({
               >
                 <ShieldCheck size={18} className="size-[18px]" aria-hidden="true" /> ผู้ดูแลระบบ
               </h2>
-              {(demoAvailable ? adminLinks : adminLinks.slice(0, 2)).map((link) => (
+              {adminLinks.map((link) => (
                 <NavAction key={link.href} link={link} path={path} mobile />
               ))}
             </section>
@@ -244,19 +244,17 @@ function TopNav({ user }: { user: NavUser | null }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="min-w-52">
                 <DropdownMenuGroup>
-                  {(demoAvailable ? adminLinks : adminLinks.slice(0, 2)).map(
-                    ({ href, label, icon: Icon }) => {
-                      const current = isCurrent(path, href);
-                      return (
-                        <DropdownMenuItem asChild key={href} className={cn(current && activeClass)}>
-                          <Link href={href} aria-current={current ? "page" : undefined}>
-                            <Icon size={18} className="size-[18px]" aria-hidden="true" />
-                            {label}
-                          </Link>
-                        </DropdownMenuItem>
-                      );
-                    },
-                  )}
+                  {adminLinks.map(({ href, label, icon: Icon }) => {
+                    const current = isCurrent(path, href);
+                    return (
+                      <DropdownMenuItem asChild key={href} className={cn(current && activeClass)}>
+                        <Link href={href} aria-current={current ? "page" : undefined}>
+                          <Icon size={18} className="size-[18px]" aria-hidden="true" />
+                          {label}
+                        </Link>
+                      </DropdownMenuItem>
+                    );
+                  })}
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>

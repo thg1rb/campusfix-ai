@@ -8,20 +8,15 @@ const exact = new Map<string, RouteMode>([
   ["/settings/profile", "live"],
   ["/admin", "live"],
   ["/admin/users", "live"],
+  ["/admin/locations", "live"],
+  ["/admin/departments", "live"],
+  ["/admin/categories", "live"],
 ]);
 
 const subtrees: { mode: RouteMode; paths: string[] }[] = [
   {
     mode: "prototype-only",
-    paths: [
-      "/reports/new",
-      "/my-reports",
-      "/reviewer",
-      "/department",
-      "/admin/categories",
-      "/admin/departments",
-      "/admin/locations",
-    ],
+    paths: ["/reports/new", "/my-reports", "/reviewer", "/department"],
   },
   { mode: "prototype-public", paths: ["/feed", "/map", "/tickets", "/reports", "/u"] },
 ];
