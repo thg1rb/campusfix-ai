@@ -2,6 +2,17 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { getPublicMasterData } from "@/lib/api/masterdata";
+import { useApiResource } from "@/lib/api/useApiResource";
+import {
+  createDraftReport,
+  updateDraftReport,
+  submitDraftReport,
+  createAndSubmitReport,
+  editPendingReport,
+} from "@/lib/api/reports";
+import { reportErrorMessage } from "../liveReport";
 import {
   CheckCircle2,
   FileText,
@@ -22,7 +33,7 @@ import { ErrorNotice } from "@/components/shared/Controls";
 import { ReportStatusBadge } from "@/components/shared/Badges";
 import { CampusMapPicker } from "@/features/map";
 import { isActiveTicket } from "@/lib/domain/permissions";
-import { reportErrors, type ReportFields } from "@/lib/domain/validation";
+import { inCampus, reportErrors, validLocation, type ReportFields } from "@/lib/domain/validation";
 import { usePrototype } from "@/lib/store/PrototypeStore";
 import type { Report } from "@/types/domain";
 import { ReportFormGuidance, ReportStep } from "./ReportFormGuidance";
@@ -34,12 +45,18 @@ export function ReportForm({
   existing,
   targetId,
   edit = false,
+  live = false,
 }: {
   existing?: Report;
   targetId?: string;
   edit?: boolean;
+  live?: boolean;
 }) {
   const { state, dispatch } = usePrototype();
+  const router = useRouter();
+  const masterData = useApiResource(getPublicMasterData, live);
+  const [uploading, setUploading] = useState(false);
+  const savingRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const confirmationRef = useRef<HTMLHeadingElement>(null);
   const requestedId = existing?.requestedTargetTicketId ?? targetId;
@@ -63,10 +80,16 @@ export function ReportForm({
     location: undefined,
   });
   const [error, setError] = useState("");
-  if (!state) return null;
+  const locations = live
+    ? masterData.result.status === "ready"
+      ? masterData.result.value.locations
+      : []
+    : (state?.locations ?? []);
+  const locationsLoading = live && masterData.result.status === "loading";
+  if (!live && !state) return null;
 
   async function save(draft: boolean) {
-    if (busy || blockedTarget) return;
+    if (savingRef.current || uploading || blockedTarget || locationsLoading) return;
     const problems = reportErrors(fields, draft);
     setErrors(problems);
     if (Object.values(problems).some(Boolean)) {
@@ -77,6 +100,43 @@ export function ReportForm({
     }
     setError("");
     setPending(draft ? "draft" : "submit");
+    if (live) {
+      savingRef.current = true;
+      try {
+        const location = fields.location;
+        const point = location && inCampus(location) ? location : null;
+        const input = {
+          description: fields.description,
+          locationId: location?.locationId ?? null,
+          locationName: location?.locationName || null,
+          locationDetailNote: location?.detailNote || null,
+          lat: point?.lat ?? null,
+          lng: point?.lng ?? null,
+          imageIds: fields.images.map((image) => image.id),
+        };
+        if (draft) {
+          if (reportId) await updateDraftReport(reportId, input);
+          else await createDraftReport(input);
+        } else if (validLocation(location)) {
+          const submission = {
+            ...input,
+            locationName: location.locationName,
+            lat: location.lat,
+            lng: location.lng,
+          };
+          if (edit && reportId) await editPendingReport(reportId, submission);
+          else if (reportId) await submitDraftReport(reportId, submission);
+          else await createAndSubmitReport(submission);
+        }
+        toast.success(draft ? "บันทึกฉบับร่างแล้ว" : edit ? "บันทึกการแก้ไขแล้ว" : "ส่งรายงานแล้ว");
+        router.replace("/my-reports");
+      } catch (error) {
+        setError(reportErrorMessage(error));
+        setPending(null);
+        savingRef.current = false;
+      }
+      return;
+    }
     const result = await dispatch({
       type: "saveReport",
       fields,
@@ -214,6 +274,9 @@ export function ReportForm({
               <div className="min-w-0 rounded-xl border border-dashed border-[var(--color-brand-border)] bg-[var(--color-brand-soft)] p-3 sm:p-4">
                 <ImageUploader
                   images={fields.images}
+                  live={live}
+                  disabled={busy}
+                  onBusyChange={setUploading}
                   error={errors.images}
                   onChange={(images) => {
                     setFields((current) => ({ ...current, images }));
@@ -229,7 +292,8 @@ export function ReportForm({
               hint="เลือกสถานที่ในวิทยาเขต หรือปักหมุดตรงจุดที่เกิดปัญหา"
             >
               <CampusMapPicker
-                locations={state.locations}
+                locations={locations}
+                clearUnavailable={live}
                 value={fields.location}
                 error={errors.location}
                 onChange={(location) => {
@@ -239,9 +303,23 @@ export function ReportForm({
               />
             </ReportStep>
           </FieldGroup>
+          {locationsLoading && <p role="status">กำลังโหลดสถานที่…</p>}
+          {live && masterData.result.status === "error" && (
+            <div className="grid gap-2">
+              <ErrorNotice message="โหลดรายการสถานที่ไม่สำเร็จ คุณยังสามารถปักหมุดบนแผนที่ได้" />
+              <Button
+                type="button"
+                variant="outline"
+                className="justify-self-start"
+                onClick={masterData.reload}
+              >
+                โหลดสถานที่อีกครั้ง
+              </Button>
+            </div>
+          )}
           {error && <ErrorNotice message={error} />}
           <div className="flex flex-wrap gap-2 border-t pt-4">
-            <Button type="submit" disabled={busy || blockedTarget}>
+            <Button type="submit" disabled={busy || uploading || blockedTarget || locationsLoading}>
               <ActionLabel pending={pending === "submit"}>
                 {edit ? <Save aria-hidden="true" /> : <Send aria-hidden="true" />}
                 {edit ? "บันทึกการแก้ไข" : "ส่งรายงาน"}
@@ -251,7 +329,7 @@ export function ReportForm({
               <Button
                 type="button"
                 variant="outline"
-                disabled={busy || blockedTarget}
+                disabled={busy || uploading || blockedTarget || locationsLoading}
                 onClick={() => void save(true)}
               >
                 <ActionLabel pending={pending === "draft"}>
@@ -272,7 +350,7 @@ export function ReportForm({
           </div>
         </form>
       </div>
-      <ReportFormGuidance fields={fields} />
+      <ReportFormGuidance fields={fields} live={live} />
     </div>
   );
 }

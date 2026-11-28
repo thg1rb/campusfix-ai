@@ -75,12 +75,12 @@ const reportLink = { href: "/reports/new", label: "แจ้งปัญหา",
 const profileLink = { href: "/settings/profile", label: "ตั้งค่าโปรไฟล์", icon: UserCog };
 const activeClass = "bg-[var(--color-brand-soft)] text-primary font-medium";
 
-function workspaceLinks(user: NavUser | null): NavLink[] {
+function workspaceLinks(user: NavUser | null, demoAvailable: boolean): NavLink[] {
   if (!user || isExclusiveAdmin(user)) return [];
   const links: NavLink[] = [{ href: "/my-reports", label: "รายงานของฉัน", icon: FileText }];
-  if (user.roles.includes("REVIEWER"))
+  if (demoAvailable && user.roles.includes("REVIEWER"))
     links.push({ href: "/reviewer", label: "คิวตรวจสอบ", icon: ClipboardCheck });
-  if (user.roles.includes("DEPARTMENT_STAFF"))
+  if (demoAvailable && user.roles.includes("DEPARTMENT_STAFF"))
     links.push({ href: "/department", label: "งานหน่วยงาน", icon: Wrench });
   return links;
 }
@@ -161,10 +161,12 @@ function MobileNav({
             </section>
           ) : (
             <div className="grid gap-1">
-              {workspaceLinks(demoAvailable ? user : null).map((link) => (
+              {workspaceLinks(user, demoAvailable).map((link) => (
                 <NavAction key={link.href} link={link} path={path} mobile />
               ))}
-              {demoAvailable && <NavAction link={reportLink} path={path} mobile />}
+              {(demoAvailable || user?.roles.includes("REPORTER")) && (
+                <NavAction link={reportLink} path={path} mobile />
+              )}
             </div>
           )}
           <Separator />
@@ -231,7 +233,7 @@ function TopNav({ user }: { user: NavUser | null }) {
           </span>
         </Link>
         <nav aria-label="เมนูหลัก" className="hidden items-center gap-1 lg:flex">
-          {[...publicLinks, ...workspaceLinks(demoAvailable ? user : null)].map((link) => (
+          {[...publicLinks, ...workspaceLinks(user, demoAvailable)].map((link) => (
             <NavAction key={link.href} link={link} path={path} />
           ))}
           {admin ? (
@@ -259,7 +261,9 @@ function TopNav({ user }: { user: NavUser | null }) {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            demoAvailable && <NavAction link={reportLink} path={path} />
+            (demoAvailable || user?.roles.includes("REPORTER")) && (
+              <NavAction link={reportLink} path={path} />
+            )
           )}
         </nav>
         <div className="flex min-w-0 items-center gap-1">

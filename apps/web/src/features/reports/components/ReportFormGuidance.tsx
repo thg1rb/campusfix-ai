@@ -72,7 +72,13 @@ const guide = [
   },
 ];
 
-export function ReportFormGuidance({ fields }: { fields: ReportFields }) {
+export function ReportFormGuidance({
+  fields,
+  live = false,
+}: {
+  fields: ReportFields;
+  live?: boolean;
+}) {
   const errors = reportErrors(fields);
   const checklist = [
     { label: "รายละเอียดปัญหา", ready: !errors.description },
@@ -114,22 +120,24 @@ export function ReportFormGuidance({ fields }: { fields: ReportFields }) {
           })}
         </ul>
       </section>
-      <section className="campus-panel grid gap-3 p-4 sm:p-5">
-        <h2 className="text-base font-semibold">ขั้นตอนหลังส่งรายงาน</h2>
-        <ol className="grid gap-3">
-          {guide.map(({ icon: Icon, title, text }) => (
-            <li key={title} className="flex items-start gap-3">
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[var(--color-brand-soft)] text-primary">
-                <Icon size={16} aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{title}</p>
-                <p className="text-sm text-muted-foreground">{text}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
+      {!live && (
+        <section className="campus-panel grid gap-3 p-4 sm:p-5">
+          <h2 className="text-base font-semibold">ขั้นตอนหลังส่งรายงาน</h2>
+          <ol className="grid gap-3">
+            {guide.map(({ icon: Icon, title, text }) => (
+              <li key={title} className="flex items-start gap-3">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[var(--color-brand-soft)] text-primary">
+                  <Icon size={16} aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{title}</p>
+                  <p className="text-sm text-muted-foreground">{text}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
       <Alert data-tone="warning">
         <AlertTriangle aria-hidden="true" />
         <AlertTitle>เหตุฉุกเฉินในวิทยาเขต</AlertTitle>
