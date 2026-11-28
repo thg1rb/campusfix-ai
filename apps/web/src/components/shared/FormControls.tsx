@@ -16,6 +16,7 @@ export function TextField({
   disabled,
   required,
   type,
+  inputMode,
   readOnly,
 }: {
   label: string;
@@ -25,6 +26,7 @@ export function TextField({
   disabled?: boolean;
   required?: boolean;
   type?: string;
+  inputMode?: React.ComponentProps<"input">["inputMode"];
   readOnly?: boolean;
 }) {
   const id = useId();
@@ -33,6 +35,7 @@ export function TextField({
     value,
     disabled,
     readOnly,
+    inputMode,
     "aria-required": required,
     name: id,
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>

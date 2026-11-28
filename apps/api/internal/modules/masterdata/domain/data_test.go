@@ -72,3 +72,20 @@ func TestCampusCoordinates(t *testing.T) {
 		t.Fatalf("invalid type: %v", err)
 	}
 }
+
+func TestDetailsRejectNUL(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		normalize func() error
+	}{
+		{name: "description", normalize: (&Category{Name: "Category", Description: "Before\x00after"}).Normalize},
+		{name: "scope", normalize: (&Department{Name: "Department", ResponsibilityScope: "Before\x00after"}).Normalize},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.normalize(); !errors.Is(err, ErrDetails) {
+				t.Fatalf("normalize = %v; want ErrDetails", err)
+			}
+		})
+	}
+}

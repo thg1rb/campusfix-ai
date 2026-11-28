@@ -59,6 +59,7 @@ import {
 import { Choice, ErrorNotice, labelOptions } from "@/components/shared/Controls";
 import { TextField } from "@/components/shared/FormControls";
 import { CampusMap } from "@/features/map";
+import { inCampus } from "@/lib/domain/validation";
 import { usePrototype } from "@/lib/store/PrototypeStore";
 import type { StoreAction } from "@/lib/store/mutations";
 import type { CampusLocation, CampusLocationType, Category, Department } from "@/types/domain";
@@ -97,7 +98,7 @@ function changedFields<T extends object>(input: T, previous: Partial<T>): Partia
   ) as Partial<T>;
 }
 
-async function saveLive(action: MasterAction, previous?: Item) {
+function saveLive(action: MasterAction, previous?: Item) {
   const { item } = action;
   const status = previous && item.isActive !== previous.isActive ? { isActive: item.isActive } : {};
   switch (action.collection) {
@@ -130,6 +131,16 @@ const nouns: Record<Collection, string> = {
   departments: "หน่วยงาน",
   locations: "สถานที่",
 };
+const nameLimits: Record<Collection, number> = {
+  categories: 120,
+  departments: 160,
+  locations: 200,
+};
+
+function trimMasterDataText(value: string) {
+  return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+}
+
 const locationTypes: Record<CampusLocationType, string> = {
   BUILDING: "อาคาร",
   COMMON_AREA: "พื้นที่ส่วนกลาง",
@@ -169,22 +180,41 @@ function ItemEditor({
   const [error, setError] = useState("");
   const noun = nouns[collection];
   const heading = item ? `แก้ไข${noun}` : `เพิ่ม${noun}`;
+  const detailsLabel = collection === "categories" ? "คำอธิบาย" : "ขอบเขตความรับผิดชอบ";
+  const coordinates = { lat: Number(lat), lng: Number(lng) };
+  const hasCoordinates =
+    lat.trim() !== "" &&
+    lng.trim() !== "" &&
+    Number.isFinite(coordinates.lat) &&
+    Number.isFinite(coordinates.lng);
+  const point = hasCoordinates && inCampus(coordinates) ? coordinates : undefined;
 
   function save() {
-    if (
-      collection === "locations" &&
-      (!lat.trim() || !lng.trim() || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng)))
-    ) {
-      setError("กรุณาระบุละติจูดและลองจิจูดเป็นตัวเลข");
-      return;
+    const trimmedName = trimMasterDataText(name);
+    const trimmedDetails = trimMasterDataText(details);
+    if (/\p{Cc}/u.test(name)) return setError("ชื่อห้ามมีอักขระควบคุม");
+    if (!trimmedName) return setError(`กรุณากรอกชื่อ${noun}`);
+    if ([...trimmedName].length > nameLimits[collection]) {
+      return setError(`ชื่อ${noun}ต้องมีความยาวไม่เกิน ${nameLimits[collection]} ตัวอักษร`);
     }
-    const base = { id: item?.id ?? "", name: name.trim(), isActive: item?.isActive ?? true };
+    if (collection !== "locations") {
+      if ([...trimmedDetails].length > 1000) {
+        return setError(`${detailsLabel}ต้องมีความยาวไม่เกิน 1,000 ตัวอักษร`);
+      }
+      if (trimmedDetails.includes("\0")) return setError(`${detailsLabel}ห้ามมีอักขระ NUL`);
+    }
+    if (collection === "locations" && !point) {
+      return setError(
+        hasCoordinates ? "กรุณาระบุพิกัดภายในวิทยาเขตบางเขน" : "กรุณาระบุละติจูดและลองจิจูดเป็นตัวเลข",
+      );
+    }
+    const base = { id: item?.id ?? "", name: trimmedName, isActive: item?.isActive ?? true };
     const next =
       collection === "locations"
-        ? { ...base, type, lat: Number(lat), lng: Number(lng) }
+        ? { ...base, type, ...coordinates }
         : collection === "categories"
-          ? { ...base, description: details.trim() }
-          : { ...base, responsibilityScope: details.trim() };
+          ? { ...base, description: trimmedDetails }
+          : { ...base, responsibilityScope: trimmedDetails };
     void action.run(
       () => saveItem(masterAction(collection, next), item),
       (result) => {
@@ -238,45 +268,56 @@ function ItemEditor({
             {item ? item.name : `บันทึก${noun}สำหรับการทำงานในวิทยาเขตบางเขน`}
           </DialogDescription>
         </DialogHeader>
-        <TextField label={`ชื่อ${noun}`} value={name} onChange={setName} required />
-        {collection === "locations" ? (
-          <>
-            <Choice
-              label="ประเภทสถานที่"
-              value={type}
-              onChange={(value) => setType(value as CampusLocationType)}
-              options={labelOptions(locationTypes)}
-            />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextField label="ละติจูด" value={lat} onChange={setLat} required />
-              <TextField label="ลองจิจูด" value={lng} onChange={setLng} required />
-            </div>
-            <CampusMap
-              point={
-                lat && lng && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
-                  ? { lat: Number(lat), lng: Number(lng) }
-                  : undefined
-              }
-              onPoint={(point) => {
-                setLat(point.lat.toFixed(6));
-                setLng(point.lng.toFixed(6));
-              }}
-            />
-          </>
-        ) : (
-          <TextField
-            label={collection === "categories" ? "คำอธิบาย" : "ขอบเขตความรับผิดชอบ"}
-            value={details}
-            onChange={setDetails}
-            multiline
-          />
-        )}
-        {error && <ErrorNotice message={error} />}
-        <DialogFooter>
-          <Button onClick={save} disabled={action.pending}>
-            <ActionLabel pending={action.pending}>บันทึก{noun}</ActionLabel>
-          </Button>
-        </DialogFooter>
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            save();
+          }}
+        >
+          <TextField label={`ชื่อ${noun}`} value={name} onChange={setName} required />
+          {collection === "locations" ? (
+            <>
+              <Choice
+                label="ประเภทสถานที่"
+                value={type}
+                onChange={(value) => setType(value as CampusLocationType)}
+                options={labelOptions(locationTypes)}
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextField
+                  label="ละติจูด"
+                  value={lat}
+                  onChange={setLat}
+                  inputMode="decimal"
+                  required
+                />
+                <TextField
+                  label="ลองจิจูด"
+                  value={lng}
+                  onChange={setLng}
+                  inputMode="decimal"
+                  required
+                />
+              </div>
+              <CampusMap
+                point={point}
+                onPoint={(point) => {
+                  setLat(point.lat.toFixed(6));
+                  setLng(point.lng.toFixed(6));
+                }}
+              />
+            </>
+          ) : (
+            <TextField label={detailsLabel} value={details} onChange={setDetails} multiline />
+          )}
+          {error && <ErrorNotice message={error} />}
+          <DialogFooter>
+            <Button type="submit" disabled={action.pending}>
+              <ActionLabel pending={action.pending}>บันทึก{noun}</ActionLabel>
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
@@ -445,7 +486,9 @@ export function MasterDataScreen({ collection }: { collection: Collection }) {
       );
     }
     try {
-      await saveLive(action, previous);
+      const mutation = saveLive(action, previous);
+      if (!mutation) return { ok: true };
+      await mutation;
       request.reload();
       return { ok: true };
     } catch (error) {
@@ -461,7 +504,7 @@ export function MasterDataScreen({ collection }: { collection: Collection }) {
         stats={demo ? accountStats(items) : undefined}
         icon={collectionIcons[collection]}
       >
-        <ItemEditor collection={collection} saveItem={saveItem} />
+        <ItemEditor collection={collection} saveItem={saveItem} disabled={stale} />
       </CampusHeading>
       <ResultFilters
         label={`ค้นหา${noun}`}
@@ -540,7 +583,7 @@ export function MasterDataScreen({ collection }: { collection: Collection }) {
                         </Badge>
                         <span className="inline-flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted-foreground">
                           <MapPin size={16} aria-hidden="true" />
-                          {item.lat.toFixed(4)}, {item.lng.toFixed(4)}
+                          {item.lat.toFixed(6)}, {item.lng.toFixed(6)}
                         </span>
                       </div>
                     )}
@@ -568,7 +611,7 @@ export function MasterDataScreen({ collection }: { collection: Collection }) {
               );
             })}
           </AdminTable>
-          <PaginationBar {...page.controls} />
+          <PaginationBar {...page.controls} disabled={stale} />
         </div>
       )}
     </>

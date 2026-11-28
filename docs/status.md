@@ -23,7 +23,7 @@
 | Health & Readiness (`/healthz`, `/readyz`, `/api/health`) | Done | Done | Done | N/A | Verified |
 | Auth & Username Profile (`UC-AUTH-001`, `UC-USR-001`) | Live API | Implemented | N/A | Applied in verification | Mock-provider and Web tests pass |
 | Admin Users & Audit Logs | Live API | Implemented | N/A | Applied in verification | Mock-provider and Web tests pass |
-| Master Data CRUD (`UC-ADM-002`..`004`) | Live admin screens | Implemented | N/A | Applied in verification | PostgreSQL and Web tests pass |
+| Master Data CRUD (`UC-ADM-002`..`004`) | Live admin screens validate forms before writes | Unchanged PATCH requests preserve timestamps and audit history | N/A | Applied in verification | Go unit, PostgreSQL integration, and Web tests cover validation and no-op edits |
 | Public Master Data | Typed API client available | Implemented | N/A | Applied in verification | Live HTTP and PostgreSQL tests pass |
 | Media Upload & EXIF Stripping (`BR-RPT-003`..`005`) | Prototype DataURL | Not Started | N/A | Not Started | Not Started |
 | Report Draft / Submit / Edit / Cancel (`UC-RPT-001`..`005`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |

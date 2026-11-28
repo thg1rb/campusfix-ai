@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/thg1rb/ku-spot/apps/api/internal/modules/masterdata/application"
@@ -15,7 +14,6 @@ import (
 )
 
 type categoryRow struct {
-	UpdatedAt   time.Time
 	ID          string `gorm:"default:gen_random_uuid()"`
 	Name        string
 	Description string
@@ -23,7 +21,6 @@ type categoryRow struct {
 }
 
 type departmentRow struct {
-	UpdatedAt           time.Time
 	ID                  string `gorm:"default:gen_random_uuid()"`
 	Name                string
 	ResponsibilityScope string
@@ -31,12 +28,11 @@ type departmentRow struct {
 }
 
 type locationRow struct {
-	UpdatedAt time.Time
-	ID        string `gorm:"default:gen_random_uuid()"`
-	Name      string
-	Type      domain.LocationType
-	Lat, Lng  float64
-	IsActive  bool
+	ID       string `gorm:"default:gen_random_uuid()"`
+	Name     string
+	Type     domain.LocationType
+	Lat, Lng float64
+	IsActive bool
 }
 
 type repository[T, Row any] struct {
@@ -45,6 +41,7 @@ type repository[T, Row any] struct {
 	search   string
 	toDomain func(Row) T
 	toRow    func(T) Row
+	changes  func(T) map[string]any
 	id       func(T) string
 }
 
@@ -56,6 +53,9 @@ func Categories(db *database.Connection) application.Repository[domain.Category]
 		},
 		func(c domain.Category) categoryRow {
 			return categoryRow{ID: c.ID, Name: c.Name, Description: c.Description, IsActive: c.IsActive}
+		},
+		func(c domain.Category) map[string]any {
+			return map[string]any{"name": c.Name, "description": c.Description, "is_active": c.IsActive}
 		},
 		func(c domain.Category) string { return c.ID },
 	}
@@ -69,6 +69,9 @@ func Locations(db *database.Connection) application.Repository[domain.CampusLoca
 		},
 		func(l domain.CampusLocation) locationRow {
 			return locationRow{ID: l.ID, Name: l.Name, Type: l.Type, Lat: l.Lat, Lng: l.Lng, IsActive: l.IsActive}
+		},
+		func(l domain.CampusLocation) map[string]any {
+			return map[string]any{"name": l.Name, "type": l.Type, "lat": l.Lat, "lng": l.Lng, "is_active": l.IsActive}
 		},
 		func(l domain.CampusLocation) string { return l.ID },
 	}
@@ -86,6 +89,9 @@ func Departments(db *database.Connection) application.Repository[domain.Departme
 		},
 		func(d domain.Department) departmentRow {
 			return departmentRow{ID: d.ID, Name: d.Name, ResponsibilityScope: d.ResponsibilityScope, IsActive: d.IsActive}
+		},
+		func(d domain.Department) map[string]any {
+			return map[string]any{"name": d.Name, "responsibility_scope": d.ResponsibilityScope, "is_active": d.IsActive}
 		},
 		func(d domain.Department) string { return d.ID },
 	}}
@@ -174,9 +180,9 @@ func (r repository[T, Row]) Insert(ctx context.Context, value T) (T, error) {
 }
 
 func (r repository[T, Row]) Update(ctx context.Context, value T) error {
-	row := r.toRow(value)
-	query := r.query(ctx).Where("id = ?", r.id(value))
-	return r.nameError(query.Select("*").Omit("id").Updates(&row).Error)
+	changes := r.changes(value)
+	changes["updated_at"] = gorm.Expr("now()")
+	return r.nameError(r.query(ctx).Where("id = ?", r.id(value)).Updates(changes).Error)
 }
 
 func (r repository[T, Row]) nameError(err error) error {

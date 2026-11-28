@@ -115,10 +115,10 @@ func TestMasterDataHTTPPostgres(t *testing.T) {
 	if request.Header.Get("Cache-Control") != "no-store" {
 		t.Fatal(request.Header)
 	}
-	for _, tc := range []struct{ collection, singular, extras, scope, query string }{
-		{"categories", "CATEGORY", `,"description":"Scope 100% coverage"`, `,"description":"Updated"`, "q=100%25"},
-		{"departments", "DEPARTMENT", `,"responsibilityScope":"Scope 100% coverage"`, `,"responsibilityScope":"Updated"`, "q=100%25"},
-		{"locations", "LOCATION", `,"type":"ROAD","lat":13.839,"lng":100.580`, `,"lat":13.858`, "q=TEST&type=ROAD"},
+	for _, tc := range []struct{ collection, singular, table, extras, scope, query string }{
+		{"categories", "CATEGORY", "categories", `,"description":"Scope 100% coverage"`, `,"description":"Updated"`, "q=100%25"},
+		{"departments", "DEPARTMENT", "departments", `,"responsibilityScope":"Scope 100% coverage"`, `,"responsibilityScope":"Updated"`, "q=100%25"},
+		{"locations", "LOCATION", "campus_locations", `,"type":"ROAD","lat":13.839,"lng":100.580`, `,"lat":13.858`, "q=TEST&type=ROAD"},
 	} {
 		t.Run(tc.collection, func(t *testing.T) {
 			path := "/api/v1/admin/" + tc.collection
@@ -132,6 +132,9 @@ func TestMasterDataHTTPPostgres(t *testing.T) {
 			}
 			for _, query := range []string{"page=0", "pageSize=1", "isActive=maybe", "type=garbage", "q=%00"} {
 				send(t, app, "GET", path+"?"+query, "", admin).want(t, 400, "INVALID_REQUEST")
+			}
+			if tc.collection != "locations" {
+				send(t, app, "GET", path+"?type=BUILDING", "", admin).want(t, 400, "INVALID_REQUEST")
 			}
 			for _, tc := range []struct {
 				origin, media, code string
@@ -170,6 +173,28 @@ func TestMasterDataHTTPPostgres(t *testing.T) {
 			}
 			target := path + "/" + item.ID
 			send(t, app, "POST", path, `{"name":"test FACILITY"`+tc.extras+`}`, admin).want(t, 409, "NAME_TAKEN")
+			other := send(t, app, "POST", path, `{"name":"Other Facility"`+tc.extras+`}`, admin)
+			other.want(t, 201, `"name":"Other Facility"`)
+			var otherItem struct{ ID string }
+			if err := json.Unmarshal(other.body, &otherItem); err != nil {
+				t.Fatal(err)
+			}
+			otherTarget := path + "/" + otherItem.ID
+			send(t, app, "PATCH", otherTarget, `{"name":"test FACILITY"}`, admin).want(t, 409, "NAME_TAKEN")
+
+			timestamps := func() (time.Time, time.Time) {
+				t.Helper()
+				var row struct{ CreatedAt, UpdatedAt time.Time }
+				if err := db.DB(t.Context()).Table(tc.table).Select("created_at, updated_at").
+					Where("id = ?", item.ID).Take(&row).Error; err != nil {
+					t.Fatal(err)
+				}
+				return row.CreatedAt, row.UpdatedAt
+			}
+			createdAt, firstUpdate := timestamps()
+			if createdAt.IsZero() || !createdAt.Equal(firstUpdate) {
+				t.Fatalf("insert timestamps = %v, %v; want identical database defaults", createdAt, firstUpdate)
+			}
 			send(t, app, "PATCH", path+"/bad", `{"isActive":false}`, admin).want(t, 400, "INVALID_REQUEST")
 			send(t, app, "PATCH", path+"/"+uuid.NewString(), `{"isActive":false}`, admin).want(t, 404, "NOT_FOUND")
 			for _, body := range []string{`{}`, `null`, `{"name":null,"isActive":true}`, `{"name":"next"} {}`} {
@@ -188,10 +213,34 @@ func TestMasterDataHTTPPostgres(t *testing.T) {
 				}
 			}
 			if tc.collection == "locations" {
+				send(t, app, "POST", path, `{"name":"Library","type":"BUILDING","lng":100.571816}`, admin).
+					want(t, 422, "VALIDATION_ERROR")
+				send(t, app, "POST", path, `{"name":"Library","type":"BUILDING","lat":13.847654}`, admin).
+					want(t, 422, "VALIDATION_ERROR")
+				send(t, app, "POST", path, `{"name":"Library","type":"BUILDING","lat":13.9,"lng":100.571816}`, admin).
+					want(t, 422, "COORDINATES_OUT_OF_BOUNDS")
 				send(t, app, "PATCH", target, `{"lat":13.9}`, admin).want(t, 422, "COORDINATES_OUT_OF_BOUNDS")
 				send(t, app, "PATCH", target, `{"type":"PARKING"}`, admin).want(t, 422, "VALIDATION_ERROR")
 			}
 			send(t, app, "PATCH", target, `{"isActive":false`+tc.scope+`}`, admin).want(t, 200, `"isActive":false`)
+			send(t, app, "PATCH", otherTarget, `{"name":"TEST facility"}`, admin).want(t, 409, "NAME_TAKEN")
+			send(t, app, "GET", path+"?q=Other", "", admin).want(t, 200, otherItem.ID)
+
+			_, updatedAt := timestamps()
+			if !updatedAt.After(firstUpdate) {
+				t.Fatalf("updated_at = %v; want a timestamp after %v", updatedAt, firstUpdate)
+			}
+			send(t, app, "PATCH", target, `{"name":" Test Facility ","isActive":false`+tc.scope+`}`, admin).
+				want(t, 200, `"isActive":false`)
+			if _, noOpUpdatedAt := timestamps(); !noOpUpdatedAt.Equal(updatedAt) {
+				t.Fatalf("no-op changed updated_at from %v to %v", updatedAt, noOpUpdatedAt)
+			}
+			var updateCount int64
+			err := db.DB(t.Context()).Table("audit_logs").
+				Where("entity_id = ? AND action = ?", item.ID, "UPDATE_"+tc.singular).Count(&updateCount).Error
+			if err != nil || updateCount != 1 {
+				t.Fatalf("audit update count after no-op = %d, %v; want one entry", updateCount, err)
+			}
 			send(t, app, "GET", path+"?isActive=false", "", admin).want(t, 200, item.ID)
 			if body := string(send(t, app, "GET", publicPath, "", admin).body); strings.Contains(body, item.ID) ||
 				strings.Contains(body, "staffUsernames") || strings.Contains(body, staffName) || strings.Contains(body, "@ku.th") {

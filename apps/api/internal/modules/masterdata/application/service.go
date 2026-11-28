@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"maps"
 
 	audit "github.com/thg1rb/ku-spot/apps/api/internal/modules/audit/domain"
 	"github.com/thg1rb/ku-spot/apps/api/internal/modules/identity/domain"
@@ -125,6 +126,10 @@ func (r resource[T]) update(ctx context.Context, actor domain.User, id string, a
 		}
 		if err := r.normalize(&current); err != nil {
 			return err
+		}
+		if maps.Equal(before, r.snapshot(current)) {
+			result = current
+			return nil
 		}
 		if err := r.repo.Update(ctx, current); err != nil {
 			return err
