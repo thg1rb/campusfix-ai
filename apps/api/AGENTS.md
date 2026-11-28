@@ -45,6 +45,12 @@ Read root `AGENTS.md`, `docs/architecture.md`, `docs/data-model.md`, `docs/busin
 * Enforce **Public DTO Projection**: never serialize `email`, `real_name`, `provider_subject_id`, `student_id`, or private thread messages in public endpoints.
 * Treat AI Gateway errors/timeouts as degraded recommendations (`AIAnalysisStatus = FAILED`) — never fail `POST /reports/:id/submit` or `PATCH /reports/:id` because AI is unavailable.
 
+## OpenAPI / Swagger Documentation Checklist
+
+* Update `apps/api/docs/openapi-v1.yaml` in the same PR as every new or modified HTTP route.
+* Document path, query, cookie, and header parameters, request body schemas, security requirements, and success responses. Check handlers, middleware, and error mappers for every applicable status and provide named examples for each domain error code. Include `400`, `401`, `403`, `404`, `409`, `415`, `422`, `500`, and `503` wherever the operation can return them.
+* Keep schema validation, operation completeness, and route parity in `internal/bootstrap/openapi_test.go` green through `make check-api`.
+
 ## Verification
 
 * Whenever a new Go dependency is added to `go.mod`, record it in `docs/architecture.md` (Section 8).
@@ -53,5 +59,5 @@ Read root `AGENTS.md`, `docs/architecture.md`, `docs/data-model.md`, `docs/busin
 Before finishing changes in `apps/api`, run:
 
 ```sh
-cd apps/api && test -z "$(gofmt -l cmd internal)" && go mod verify && go vet ./... && go test -race ./... && go build ./...
+cd apps/api && test -z "$(gofmt -l cmd docs internal)" && go mod verify && go vet ./... && go test -race ./... && go build ./...
 ```

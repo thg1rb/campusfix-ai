@@ -9,10 +9,11 @@ import (
 )
 
 type Config struct {
-	Address     string
-	DatabaseURL string
-	AIURL       string
-	Auth        Auth
+	Address        string
+	DatabaseURL    string
+	AIURL          string
+	Auth           Auth
+	SwaggerEnabled bool
 }
 
 func Load() (Config, error) {
@@ -32,10 +33,25 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	base, err := url.Parse(auth.AppBaseURL)
+	if err != nil {
+		return Config{}, err
+	}
+	swaggerEnabled := isLoopbackHost(base.Hostname())
+	switch os.Getenv("SWAGGER_ENABLED") {
+	case "":
+	case "true":
+		swaggerEnabled = true
+	case "false":
+		swaggerEnabled = false
+	default:
+		return Config{}, fmt.Errorf("SWAGGER_ENABLED must be true or false")
+	}
 	return Config{
-		Address:     net.JoinHostPort("0.0.0.0", strconv.Itoa(port)),
-		DatabaseURL: databaseURL.String(),
-		AIURL:       aiURL.JoinPath("healthz").String(),
-		Auth:        auth,
+		SwaggerEnabled: swaggerEnabled,
+		Address:        net.JoinHostPort("0.0.0.0", strconv.Itoa(port)),
+		DatabaseURL:    databaseURL.String(),
+		AIURL:          aiURL.JoinPath("healthz").String(),
+		Auth:           auth,
 	}, nil
 }
