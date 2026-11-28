@@ -33,6 +33,7 @@ type Repository interface {
 	LockForBinding(ctx context.Context, reportID string, ids []string) ([]domain.ReportImage, error)
 	Bind(ctx context.Context, reportID, id string, sortOrder int) error
 	DeleteAttachments(ctx context.Context, reportID string, ids []string) error
+	ListByReportIDs(ctx context.Context, reportIDs []string) ([]domain.ReportImage, error)
 	DeleteExpired(ctx context.Context, cutoff time.Time, limit int) ([]string, error)
 }
 
@@ -253,6 +254,56 @@ func (s *Service) PurgeExpiredStagedImages(ctx context.Context) (int, error) {
 		total += count
 		if count < batchSize {
 			return total, nil
+		}
+	}
+}
+
+type Attachment struct {
+	ID, ReportID, FileName, MIMEType, PreviewURL string
+	SizeBytes, SortOrder                         int
+}
+
+func PreviewURL(id string) string { return "/api/v1/media/report-images/" + id }
+
+func (s *Service) ListByReportIDs(ctx context.Context, reportIDs []string) ([]Attachment, error) {
+	rows, err := s.repo.ListByReportIDs(ctx, reportIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Attachment, 0, len(rows))
+	for _, img := range rows {
+		result = append(result, Attachment{ID: img.ID, ReportID: *img.ReportID, FileName: img.FileName,
+			MIMEType: img.MIMEType, PreviewURL: PreviewURL(img.ID), SizeBytes: img.SizeBytes, SortOrder: img.SortOrder})
+	}
+	return result, nil
+}
+
+func (s *Service) StorageKeysByReportIDs(ctx context.Context, reportIDs []string) ([]string, error) {
+	rows, err := s.repo.ListByReportIDs(ctx, reportIDs)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(rows))
+	for _, img := range rows {
+		keys = append(keys, img.StorageKey)
+	}
+	return keys, nil
+}
+
+// DeleteObjects is best-effort cleanup and must be called outside the SQL transaction.
+func (s *Service) DeleteObjects(ctx context.Context, keys []string) {
+	if len(keys) == 0 {
+		return
+	}
+	if s.store == nil {
+		slog.Error("cannot clean up report objects without storage", "count", len(keys))
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	for _, key := range keys {
+		if err := s.store.Delete(ctx, key); err != nil && !errors.Is(err, ErrObjectNotFound) {
+			slog.Error("delete detached report object", "storage_key", key, "error", apperror.Diagnostic(err))
 		}
 	}
 }

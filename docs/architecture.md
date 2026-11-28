@@ -88,7 +88,7 @@ internal/modules/<module-name>/
 * **Staged Upload & Transactional Binding Lifecycle:**
   1. `POST /api/v1/media/report-images` validates format/size, strips EXIF, writes the object to storage, and inserts a staged `report_images` row with `report_id = NULL`, `uploaded_by = actor.id`, and `expires_at = NOW() + 24 hours`.
   2. While `report_id IS NULL`, only `uploaded_by` may preview it before `expires_at` (`GET /api/v1/media/report-images/:imageId`). Missing, expired, and inaccessible images return `404 NOT_FOUND`, including anonymous private reads.
-  3. On Draft save/update (`POST/PATCH /reports/drafts`), direct submit (`POST /reports`), Draft submit (`POST /reports/:id/submit`), or Pending edit (`PATCH /reports/:id`), `apps/api` verifies inside the **same SQL transaction** that every referenced `imageId` belongs to `actor.id` AND is either staged (`report_id IS NULL` and not expired) or already attached to that same `report.id`, then binds `report_id = report.id`, sets `sort_order`, and clears `expires_at = NULL`.
+  3. On Draft save/update (`POST /reports/drafts` and `PATCH /reports/:id/draft`), direct submit (`POST /reports`), Draft submit (`POST /reports/:id/submit`), or Pending edit (`PATCH /reports/:id`), `apps/api` verifies inside the **same SQL transaction** that every referenced `imageId` belongs to `actor.id` AND is either staged (`report_id IS NULL` and not expired) or already attached to that same `report.id`, then binds `report_id = report.id`, sets `sort_order`, and clears `expires_at = NULL`.
   4. Once attached, image read authorization inherits the parent Report's visibility (`DRAFT`/`CANCELLED`: owner only; `PENDING_REVIEW`/`REJECTED`: owner + active `REVIEWER`; `CONFIRMED`: Public).
 * **Storage Adapter (`internal/adapters/storage/`):** A private S3-compatible bucket sits behind the `ObjectStore` port. Compose builds and runs pinned upstream MinIO, and deployed environments can use a private S3-compatible service. The API authorizes all image reads. See [ADR 0004](decisions/0004-media-storage-and-exif-stripping.md).
 * **Purge Cleanup:**
@@ -118,7 +118,7 @@ Canonical OpenAPI schema: [contracts/ai-triage.v1.yaml](../contracts/ai-triage.v
 
 ## 6. Background Jobs & Notifications
 
-* **30-Day Retention Purge (`BR-RET-001`..`003`):** Scheduled daily job in `apps/api` deletes:
+* **30-Day Retention Purge (`BR-RET-001`..`003`):** The `apps/api` job runs at startup and daily thereafter. It deletes in bounded transactions:
   * `reports` where `status = 'DRAFT' AND created_at <= NOW() - INTERVAL '30 days'`
   * `reports` where `status = 'CANCELLED' AND cancelled_at <= NOW() - INTERVAL '30 days'`
   * Writes a `RETENTION` audit log summary and cleans up associated storage objects.
@@ -156,7 +156,7 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 | `413` | `PAYLOAD_TOO_LARGE` | HTTP body exceeds 12 MiB or raw/decoded JSON exceeds 4 MiB |
 | `415` | `UNSUPPORTED_MEDIA_TYPE` | Endpoint receives an unsupported media type or content encoding |
 | `409` | `STALE_REPORT_VERSION`, `STALE_REEVALUATION`, `TRANSITION_FORBIDDEN`, `TICKET_IS_FINAL`, `THREAD_READ_ONLY`, `USERNAME_TAKEN`, `ALREADY_COMPLETED` | Optimistic lock mismatch (`BR-RPT-012`), stale/outdated AI re-evaluation apply, invalid state transition, mutating Final (`RESOLVED`) Ticket, posting to Thread outside `WAITING_INFORMATION`, duplicate username |
-| `422` | `VALIDATION_ERROR`, `REJECTION_REASON_REQUIRED`, `DEPARTMENT_REQUIRED`, `EXCLUSIVE_ADMIN_CONFLICT`, `SINGLE_DEPARTMENT_LIMIT` | Missing mandatory domain fields or role/department constraint violation |
+| `422` | `VALIDATION_ERROR`, `LOCATION_UNAVAILABLE`, `REJECTION_REASON_REQUIRED`, `DEPARTMENT_REQUIRED`, `EXCLUSIVE_ADMIN_CONFLICT`, `SINGLE_DEPARTMENT_LIMIT` | Missing mandatory domain fields or role/department constraint violation |
 | `503` | `SERVICE_UNAVAILABLE` | Unexpected downstream outage on `/api/v1/*` business routes (not used by `/readyz`, which returns `{ "status": "unavailable", "checks": { ... } }`) |
 
 ---

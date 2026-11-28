@@ -84,3 +84,19 @@ func (r *Repository) DeleteExpired(ctx context.Context, cutoff time.Time, limit 
 		RETURNING image.storage_key`, cutoff, limit).Scan(&keys).Error
 	return keys, err
 }
+
+func (r *Repository) ListByReportIDs(ctx context.Context, reportIDs []string) ([]domain.ReportImage, error) {
+	if len(reportIDs) == 0 {
+		return nil, nil
+	}
+	var rows []imageRow
+	if err := r.db.DB(ctx).Table(table).Where("report_id IN ?", reportIDs).
+		Order("report_id, sort_order, id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	images := make([]domain.ReportImage, 0, len(rows))
+	for _, row := range rows {
+		images = append(images, domain.ReportImage(row))
+	}
+	return images, nil
+}

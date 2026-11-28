@@ -77,7 +77,7 @@ func mediaUpload(t *testing.T, app *fiber.App, cookie *http.Cookie, origin strin
 
 func TestMediaMigrationPostgres(t *testing.T) {
 	db, dsn := testDatabaseWithURL(t)
-	for _, direction := range []string{"down", "up"} {
+	for step, direction := range []string{"down", "down", "up-by-one", "up"} {
 		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 		command := exec.CommandContext(ctx, "go", "run", "github.com/pressly/goose/v3/cmd/goose@v3.30.1", "-dir", "migrations", direction)
 		command.Dir = "../.."
@@ -87,11 +87,11 @@ func TestMediaMigrationPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatalf("goose %s: %v\n%s", direction, err, strings.ReplaceAll(string(output), dsn, "[database URL]"))
 		}
-		if got := db.DB(t.Context()).Migrator().HasTable("report_images"); got != (direction == "up") {
+		if got := db.DB(t.Context()).Migrator().HasTable("report_images"); got != (step != 1) {
 			t.Errorf("report_images exists after %s: %t", direction, got)
 		}
-		if db.DB(t.Context()).Migrator().HasTable("reports") {
-			t.Fatal("Phase 3 created a reports table")
+		if db.DB(t.Context()).Migrator().HasTable("reports") != (step == 3) {
+			t.Fatalf("unexpected report table after %s", direction)
 		}
 	}
 }
@@ -103,13 +103,16 @@ func TestMediaHTTPPostgres(t *testing.T) {
 	clock := func() time.Time { return now }
 	settings := config.Auth{AppBaseURL: "http://localhost:3000", BootstrapAdminEmails: []string{"admin@ku.th"}}
 	app := platform.NewServer(nil, nil)
-	handler, sessions := registerIdentity(app, db, settings, provider{accounts: map[string]identity.ExternalIdentity{
+	handler, sessions, locations, recorder := registerIdentity(app, db, settings, provider{accounts: map[string]identity.ExternalIdentity{
 		"owner": account("owner@ku.th", "owner"),
 		"other": account("other@ku.th", "other"),
 		"admin": account("admin@ku.th", "admin"),
 	}}, clock)
 	objects := &failDeleteStore{MemoryStore: storage.NewMemory()}
-	service := registerMedia(app, db, handler, objects, clock)
+	service, _, err := registerReports(app, db, handler, objects, locations, recorder, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
 	repo := mediaDB.New(db)
 	_, owner := login(t, app, "owner", "/")
 	_, other := login(t, app, "other", "/")
@@ -188,6 +191,9 @@ func TestMediaHTTPPostgres(t *testing.T) {
 	send(t, app, http.MethodGet, imagePath+"/"+uuid.NewString(), "", owner).want(t, 404, "NOT_FOUND")
 
 	reportID := uuid.NewString()
+	if err := db.DB(ctx).Exec("INSERT INTO reports (id, reporter_id) VALUES (?, ?)", reportID, ownerID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if _, err := service.BindToReport(ctx, otherID, reportID, []string{bound.ID}); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("wrong owner: %v", err)
 	}
@@ -229,7 +235,7 @@ func TestMediaHTTPPostgres(t *testing.T) {
 		*img.ReportID != reportID || img.ExpiresAt != nil || img.SortOrder != 0 {
 		t.Fatalf("retained attachment: %+v %v", img, err)
 	}
-	send(t, app, http.MethodGet, imagePath+"/"+retained.ID, "", owner).want(t, 404, "NOT_FOUND")
+	send(t, app, http.MethodGet, imagePath+"/"+retained.ID, "", owner).want(t, 200, "PNG")
 
 	now = now.Add(domain.StageLifetime)
 	var large bytes.Buffer

@@ -3,7 +3,7 @@ info:
   title: KU Spot API
   version: 1.0.0
   description: |
-    KU Spot is Kasetsart University's platform for reporting and resolving campus facility issues. This reference covers the Phase 0–3 Go API.
+    KU Spot is Kasetsart University's platform for reporting and resolving campus facility issues. This reference covers the Phase 0–4 Go API.
 
     ### Authentication and writes
     Google OAuth 2.0 accepts verified @ku.th identities. A successful callback issues an HttpOnly, SameSite=Lax session cookie. HTTPS requires Secure cookies. The API checks the current active account and session on each protected request. Administrator routes require ADMINISTRATOR as the sole role and no department.
@@ -33,6 +33,7 @@ tags:
 - name: Admin Locations
 - name: Admin Audit Logs
 - name: Media
+- name: Reports
 paths:
   /healthz:
     get:
@@ -1054,7 +1055,7 @@ paths:
       operationId: getReportImage
       tags: [Media]
       summary: Preview a Report image
-      description: Staged images are visible to their uploader until expiry. Attached images inherit Report visibility. Phase 3 denies attached reads pending Report persistence. Missing, expired, and inaccessible images all return 404, including private reads without a session.
+      description: Staged images are visible to their uploader until expiry. Attached images inherit Report visibility. Draft and Cancelled attachments are owner-only. Pending Review and Rejected attachments are visible to their owner and active Reviewers. Confirmed attachments are public. Missing, expired, and inaccessible images all return 404, including private reads without a session.
       security:
       - {}
       - cookieAuth: []
@@ -1105,6 +1106,267 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/v1/my-reports:
+    get:
+      operationId: listMyReports
+      tags: [Reports]
+      summary: List my Reports
+      description: Lists the caller’s own Reports and counts across all statuses. Status, search and exact report number affect only the page.
+      security:
+      - cookieAuth: []
+      parameters:
+      - {$ref: "#/components/parameters/RequestId"}
+      - {$ref: "#/components/parameters/Page"}
+      - {$ref: "#/components/parameters/PageSize"}
+      - {"name": "status", "in": "query", "description": "Exact status filter.", "schema": {$ref: "#/components/schemas/ReportStatus"}}
+      - {"name": "q", "in": "query", "description": "Literal case-insensitive substring across number, title, description and location text.", "schema": {"type": "string"}}
+      - {"name": "reportNumber", "in": "query", "description": "Exact report number.", "schema": {"type": "string"}}
+      responses:
+        '200':
+          description: Successful Report operation.
+          headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PaginatedMyReports"}
+        '400': {$ref: "#/components/responses/InvalidRequest"}
+        '401': {$ref: "#/components/responses/Unauthenticated"}
+        '403': {$ref: "#/components/responses/ReportReadForbidden"}
+        '413': {$ref: "#/components/responses/BodyTooLarge"}
+        '500': {$ref: "#/components/responses/InternalError"}
+        '503': {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/v1/reports/{id}:
+    get:
+      operationId: getReport
+      tags: [Reports]
+      summary: Get private Report detail
+      description: Draft and Cancelled Reports are owner-only. The owner and active Reviewers can read Pending Review, Confirmed and Rejected Reports.
+      security:
+      - cookieAuth: []
+      parameters:
+      - {$ref: "#/components/parameters/RequestId"}
+      - {"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+      responses:
+        '200':
+          description: Successful Report operation.
+          headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReportDetail"}
+        '400': {$ref: "#/components/responses/InvalidRequest"}
+        '401': {$ref: "#/components/responses/Unauthenticated"}
+        '403': {$ref: "#/components/responses/ReportReadForbidden"}
+        '404': {$ref: "#/components/responses/NotFound"}
+        '413': {$ref: "#/components/responses/BodyTooLarge"}
+        '500': {$ref: "#/components/responses/InternalError"}
+        '503': {$ref: "#/components/responses/ServiceUnavailable"}
+    patch:
+      operationId: editPendingReport
+      tags: [Reports]
+      summary: Edit a Pending Review Report
+      description: Owner-only. Increments the version. Omitted images retain existing attachments, and one to five images must remain.
+      security:
+      - cookieAuth: []
+      parameters:
+      - {$ref: "#/components/parameters/RequestId"}
+      - {"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+      - {$ref: "#/components/parameters/Origin"}
+      - {$ref: "#/components/parameters/Referer"}
+      - {$ref: "#/components/parameters/SecFetchSite"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EditPendingReportRequest"}
+      responses:
+        '200':
+          description: Successful Report operation.
+          headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReportDetail"}
+        '400': {$ref: "#/components/responses/InvalidRequest"}
+        '401': {$ref: "#/components/responses/Unauthenticated"}
+        '403': {$ref: "#/components/responses/ReportWriteForbidden"}
+        '404': {$ref: "#/components/responses/NotFound"}
+        '409': {$ref: "#/components/responses/ReportTransitionForbidden"}
+        '413': {$ref: "#/components/responses/BodyTooLarge"}
+        '415': {$ref: "#/components/responses/UnsupportedMediaType"}
+        '422': {$ref: "#/components/responses/InvalidReportFields"}
+        '500': {$ref: "#/components/responses/InternalError"}
+        '503': {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/v1/reports/drafts:
+    post:
+      operationId: createDraftReport
+      tags: [Reports]
+      summary: Save a new Draft
+      description: Saves partial fields and optionally binds zero to five images. Requires an active Reporter.
+      security:
+      - cookieAuth: []
+      parameters:
+      - {$ref: "#/components/parameters/RequestId"}
+      - {$ref: "#/components/parameters/Origin"}
+      - {$ref: "#/components/parameters/Referer"}
+      - {$ref: "#/components/parameters/SecFetchSite"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SaveDraftRequest"}
+      responses:
+        '201':
+          description: Successful Report operation.
+          headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReportDetail"}
+        '400': {$ref: "#/components/responses/InvalidRequest"}
+        '401': {$ref: "#/components/responses/Unauthenticated"}
+        '403': {$ref: "#/components/responses/ReportWriteForbidden"}
+        '413': {$ref: "#/components/responses/BodyTooLarge"}
+        '415': {$ref: "#/components/responses/UnsupportedMediaType"}
+        '422': {$ref: "#/components/responses/InvalidReportFields"}
+        '500': {$ref: "#/components/responses/InternalError"}
+        '503': {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/v1/reports/{id}/draft:
+    patch:
+      operationId: updateDraftReport
+      tags: [Reports]
+      summary: Update a Draft
+      description: Owner-only. Omitted fields and images retain their current values. Requires an active Reporter.
+      security:
+      - cookieAuth: []
+      parameters:
+      - {$ref: "#/components/parameters/RequestId"}
+      - {"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+      - {$ref: "#/components/parameters/Origin"}
+      - {$ref: "#/components/parameters/Referer"}
+      - {$ref: "#/components/parameters/SecFetchSite"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SaveDraftRequest"}
+      responses:
+        '200':
+          description: Successful Report operation.
+          headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReportDetail"}
+        '400': {$ref: "#/components/responses/InvalidRequest"}
+        '401': {$ref: "#/components/responses/Unauthenticated"}
+        '403': {$ref: "#/components/responses/ReportWriteForbidden"}
+        '404': {$ref: "#/components/responses/NotFound"}
+        '409': {$ref: "#/components/responses/ReportTransitionForbidden"}
+        '413': {$ref: "#/components/responses/BodyTooLarge"}
+        '415': {$ref: "#/components/responses/UnsupportedMediaType"}
+        '422': {$ref: "#/components/responses/InvalidReportFields"}
+        '500': {$ref: "#/components/responses/InternalError"}
+        '503': {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/v1/reports:
+    post:
+      operationId: createAndSubmitReport
+      tags: [Reports]
+      summary: Create and submit a Report
+      description: Creates a Pending Review Report with a report number and version 1. Requires an active Reporter and one to five images.
+      security:
+      - cookieAuth: []
+      parameters:
+      - {$ref: "#/components/parameters/RequestId"}
+      - {$ref: "#/components/parameters/Origin"}
+      - {$ref: "#/components/parameters/Referer"}
+      - {$ref: "#/components/parameters/SecFetchSite"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SubmitReportRequest"}
+      responses:
+        '201':
+          description: Successful Report operation.
+          headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReportDetail"}
+        '400': {$ref: "#/components/responses/InvalidRequest"}
+        '401': {$ref: "#/components/responses/Unauthenticated"}
+        '403': {$ref: "#/components/responses/ReportWriteForbidden"}
+        '413': {$ref: "#/components/responses/BodyTooLarge"}
+        '415': {$ref: "#/components/responses/UnsupportedMediaType"}
+        '422': {$ref: "#/components/responses/InvalidReportFields"}
+        '500': {$ref: "#/components/responses/InternalError"}
+        '503': {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/v1/reports/{id}/submit:
+    post:
+      operationId: submitDraftReport
+      tags: [Reports]
+      summary: Submit a Draft
+      description: Owner-only. Merges overrides before validating a complete submission with one to five images. Send an empty object to use stored values.
+      security:
+      - cookieAuth: []
+      parameters:
+      - {$ref: "#/components/parameters/RequestId"}
+      - {"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+      - {$ref: "#/components/parameters/Origin"}
+      - {$ref: "#/components/parameters/Referer"}
+      - {$ref: "#/components/parameters/SecFetchSite"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SaveDraftRequest"}
+      responses:
+        '200':
+          description: Successful Report operation.
+          headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReportDetail"}
+        '400': {$ref: "#/components/responses/InvalidRequest"}
+        '401': {$ref: "#/components/responses/Unauthenticated"}
+        '403': {$ref: "#/components/responses/ReportWriteForbidden"}
+        '404': {$ref: "#/components/responses/NotFound"}
+        '409': {$ref: "#/components/responses/ReportTransitionForbidden"}
+        '413': {$ref: "#/components/responses/BodyTooLarge"}
+        '415': {$ref: "#/components/responses/UnsupportedMediaType"}
+        '422': {$ref: "#/components/responses/InvalidReportFields"}
+        '500': {$ref: "#/components/responses/InternalError"}
+        '503': {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/v1/reports/{id}/cancel:
+    post:
+      operationId: cancelPendingReport
+      tags: [Reports]
+      summary: Cancel a Pending Review Report
+      description: Owner-only. Sets Cancelled and starts 30-day retention. Send an empty object.
+      security:
+      - cookieAuth: []
+      parameters:
+      - {$ref: "#/components/parameters/RequestId"}
+      - {"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+      - {$ref: "#/components/parameters/Origin"}
+      - {$ref: "#/components/parameters/Referer"}
+      - {$ref: "#/components/parameters/SecFetchSite"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CancelReportRequest"}
+      responses:
+        '200':
+          description: Successful Report operation.
+          headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReportDetail"}
+        '400': {$ref: "#/components/responses/InvalidRequest"}
+        '401': {$ref: "#/components/responses/Unauthenticated"}
+        '403': {$ref: "#/components/responses/ReportWriteForbidden"}
+        '404': {$ref: "#/components/responses/NotFound"}
+        '409': {$ref: "#/components/responses/ReportTransitionForbidden"}
+        '413': {$ref: "#/components/responses/BodyTooLarge"}
+        '415': {$ref: "#/components/responses/UnsupportedMediaType"}
+        '500': {$ref: "#/components/responses/InternalError"}
+        '503': {$ref: "#/components/responses/ServiceUnavailable"}
 components:
   securitySchemes:
     cookieAuth:
@@ -1224,6 +1486,40 @@ components:
         enum:
         - no-referrer
   responses:
+    InvalidReportFields:
+      description: "Report fields or image attachments did not pass validation, or the campus location is unavailable."
+      headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            VALIDATION_ERROR: {"value": {"error": {"code": "VALIDATION_ERROR", "message": "Check the report fields and attachments.", "details": {}, "requestId": "ku-request-2026"}}}
+            LOCATION_UNAVAILABLE: {"value": {"error": {"code": "LOCATION_UNAVAILABLE", "message": "Select an active campus location.", "details": {}, "requestId": "ku-request-2026"}}}
+    ReportTransitionForbidden:
+      description: "The current report state does not allow this operation."
+      headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            TRANSITION_FORBIDDEN: {"value": {"error": {"code": "TRANSITION_FORBIDDEN", "message": "The current report status does not allow this action.", "details": {}, "requestId": "ku-request-2026"}}}
+    ReportReadForbidden:
+      description: "The caller is an administrator."
+      headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            ADMIN_NON_OPERATIONAL: {"value": {"error": {"code": "ADMIN_NON_OPERATIONAL", "message": "Administrators cannot perform operational actions.", "details": {}, "requestId": "ku-request-2026"}}}
+    ReportWriteForbidden:
+      description: "Origin verification, Reporter role, or image ownership check failed, or the caller is an administrator."
+      headers: {"X-Request-Id": {$ref: "#/components/headers/X-Request-Id"}, "Cache-Control": {$ref: "#/components/headers/Cache-Control"}}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+          examples:
+            FORBIDDEN: {"value": {"error": {"code": "FORBIDDEN", "message": "You do not have access.", "details": {}, "requestId": "ku-request-2026"}}}
+            ADMIN_NON_OPERATIONAL: {"value": {"error": {"code": "ADMIN_NON_OPERATIONAL", "message": "Administrators cannot perform operational actions.", "details": {}, "requestId": "ku-request-2026"}}}
     InvalidMediaUpload:
       description: Malformed multipart, unsupported or corrupt image, dimensions outside the limits, or an oversized file.
       headers:
@@ -2501,3 +2797,109 @@ components:
           pageSize: 25
           totalItems: 1
           totalPages: 1
+    ReportStatus:
+      type: "string"
+      enum: ["DRAFT", "PENDING_REVIEW", "CONFIRMED", "REJECTED", "CANCELLED"]
+    ReportLocation:
+      type: "object"
+      additionalProperties: false
+      required: ["locationId", "locationName", "detailNote", "lat", "lng"]
+      properties:
+        locationId: {"type": "string", "format": "uuid", "nullable": true}
+        locationName: {"type": "string", "maxLength": 200, "nullable": true}
+        detailNote: {"type": "string", "maxLength": 255, "nullable": true}
+        lat: {"type": "number", "format": "double", "minimum": 13.839, "maximum": 13.858, "nullable": true}
+        lng: {"type": "number", "format": "double", "minimum": 100.557, "maximum": 100.58, "nullable": true}
+      nullable: true
+    ReportImageAttachment:
+      type: "object"
+      additionalProperties: false
+      required: ["id", "fileName", "mimeType", "sizeBytes", "sortOrder", "previewUrl"]
+      properties:
+        id: {"type": "string", "format": "uuid"}
+        fileName: {"type": "string"}
+        mimeType: {"type": "string", "enum": ["image/png", "image/jpeg"]}
+        sizeBytes: {"type": "integer", "minimum": 1, "maximum": 10485760}
+        sortOrder: {"type": "integer", "minimum": 0}
+        previewUrl: {"type": "string", "pattern": "^/api/v1/media/report-images/"}
+    ReportDetail:
+      type: "object"
+      additionalProperties: false
+      required: ["id", "reporterId", "reportNumber", "status", "version", "description", "location", "images", "latestAiRun", "requestedTargetTicketId", "ticketId", "reviewedBy", "aiGeneratedTitle", "rejectionReason", "reviewedAt", "submittedAt", "cancelledAt", "createdAt", "updatedAt"]
+      properties:
+        id: {"type": "string", "format": "uuid"}
+        reporterId: {"type": "string", "format": "uuid"}
+        reportNumber: {"type": "string", "pattern": "^RPT-[0-9]{4}-[0-9]{5}$", "nullable": true}
+        status: {$ref: "#/components/schemas/ReportStatus"}
+        version: {"type": "integer", "minimum": 1}
+        description: {"type": "string"}
+        location: {$ref: "#/components/schemas/ReportLocation"}
+        images: {"type": "array", "maxItems": 5, "items": {$ref: "#/components/schemas/ReportImageAttachment"}}
+        latestAiRun: {"type": "object", "nullable": true, "enum": [null]}
+        requestedTargetTicketId: {"type": "string", "format": "uuid", "nullable": true}
+        ticketId: {"type": "string", "format": "uuid", "nullable": true}
+        reviewedBy: {"type": "string", "format": "uuid", "nullable": true}
+        aiGeneratedTitle: {"type": "string", "nullable": true}
+        rejectionReason: {"type": "string", "nullable": true}
+        reviewedAt: {"type": "string", "format": "date-time", "nullable": true}
+        submittedAt: {"type": "string", "format": "date-time", "nullable": true}
+        cancelledAt: {"type": "string", "format": "date-time", "nullable": true}
+        createdAt: {"type": "string", "format": "date-time"}
+        updatedAt: {"type": "string", "format": "date-time"}
+    ReportCounts:
+      type: "object"
+      additionalProperties: false
+      required: ["total", "draft", "pendingReview", "confirmed", "rejected", "cancelled"]
+      properties:
+        total: {"type": "integer", "minimum": 0}
+        draft: {"type": "integer", "minimum": 0}
+        pendingReview: {"type": "integer", "minimum": 0}
+        confirmed: {"type": "integer", "minimum": 0}
+        rejected: {"type": "integer", "minimum": 0}
+        cancelled: {"type": "integer", "minimum": 0}
+    PaginatedMyReports:
+      type: "object"
+      additionalProperties: false
+      required: ["items", "pagination", "counts"]
+      properties:
+        items: {"type": "array", "items": {$ref: "#/components/schemas/ReportDetail"}}
+        pagination: {$ref: "#/components/schemas/PaginationMeta"}
+        counts: {$ref: "#/components/schemas/ReportCounts"}
+    SaveDraftRequest:
+      type: "object"
+      additionalProperties: false
+      properties:
+        description: {"type": "string", "maxLength": 5000}
+        locationId: {"type": "string", "format": "uuid", "nullable": true}
+        locationName: {"type": "string", "maxLength": 200, "nullable": true}
+        locationDetailNote: {"type": "string", "maxLength": 255, "nullable": true}
+        lat: {"type": "number", "format": "double", "minimum": 13.839, "maximum": 13.858, "nullable": true}
+        lng: {"type": "number", "format": "double", "minimum": 100.557, "maximum": 100.58, "nullable": true}
+        imageIds: {"type": "array", "maxItems": 5, "uniqueItems": true, "items": {"type": "string", "format": "uuid"}}
+    SubmitReportRequest:
+      type: "object"
+      additionalProperties: false
+      required: ["description", "locationName", "lat", "lng", "imageIds"]
+      properties:
+        description: {"type": "string", "maxLength": 5000, "minLength": 1}
+        locationId: {"type": "string", "format": "uuid", "nullable": true}
+        locationName: {"type": "string", "maxLength": 200, "minLength": 1}
+        locationDetailNote: {"type": "string", "maxLength": 255, "nullable": true}
+        lat: {"type": "number", "format": "double", "minimum": 13.839, "maximum": 13.858}
+        lng: {"type": "number", "format": "double", "minimum": 100.557, "maximum": 100.58}
+        imageIds: {"type": "array", "maxItems": 5, "uniqueItems": true, "items": {"type": "string", "format": "uuid"}, "minItems": 1}
+    EditPendingReportRequest:
+      type: "object"
+      additionalProperties: false
+      required: ["description", "locationName", "lat", "lng"]
+      properties:
+        description: {"type": "string", "maxLength": 5000, "minLength": 1}
+        locationId: {"type": "string", "format": "uuid", "nullable": true}
+        locationName: {"type": "string", "maxLength": 200, "minLength": 1}
+        locationDetailNote: {"type": "string", "maxLength": 255, "nullable": true}
+        lat: {"type": "number", "format": "double", "minimum": 13.839, "maximum": 13.858}
+        lng: {"type": "number", "format": "double", "minimum": 100.557, "maximum": 100.58}
+        imageIds: {"type": "array", "maxItems": 5, "uniqueItems": true, "items": {"type": "string", "format": "uuid"}, "minItems": 1}
+    CancelReportRequest:
+      type: "object"
+      additionalProperties: false

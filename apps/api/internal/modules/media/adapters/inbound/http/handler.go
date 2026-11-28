@@ -66,7 +66,7 @@ func stage(service *application.Service) fiber.Handler {
 		}
 		return c.Status(201).JSON(fiber.Map{
 			"imageId": img.ID, "fileName": img.FileName, "mimeType": img.MIMEType,
-			"sizeBytes": img.SizeBytes, "previewUrl": "/api/v1" + Path + "/" + img.ID, "expiresAt": img.ExpiresAt,
+			"sizeBytes": img.SizeBytes, "previewUrl": application.PreviewURL(img.ID), "expiresAt": img.ExpiresAt,
 		})
 	}
 }

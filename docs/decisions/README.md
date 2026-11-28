@@ -14,6 +14,8 @@ Record significant architectural, protocol, security, and schema decisions here 
 | [0002-auth-provider-and-resolved-only-final-state.md](0002-auth-provider-and-resolved-only-final-state.md) | MVP Auth Provider (Google OAuth `@ku.th`) and `RESOLVED`-only final Ticket state | Accepted |
 | [0003-identity-session-and-auth-provider.md](0003-identity-session-and-auth-provider.md) | Identity sessions and AuthProvider | Accepted |
 | [0004-media-storage-and-exif-stripping.md](0004-media-storage-and-exif-stripping.md) | Media storage and EXIF stripping | Accepted |
+| [0007-reporter-lifecycle-access.md](0007-reporter-lifecycle-access.md) | Reporter lifecycle access | Accepted |
+
 
 ## Planned ADRs (Create When Implementing)
 

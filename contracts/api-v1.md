@@ -69,19 +69,32 @@ The response is `{ categories, departments, locations }`. Each array contains ac
 
 ## 5. Reporter Endpoints (`UC-RPT-001`..`005`)
 
-Report writes require an authenticated non-administrator. Media previews follow the visibility rules below.
+Report lifecycle writes require an active session with the `REPORTER` role. Administrators receive `403 ADMIN_NON_OPERATIONAL` on private Report routes. JSON writes require same-origin proof and `Content-Type: application/json`. Media previews follow the visibility rules below.
 
 | Method & Path | Behavior & Rules |
 | --- | --- |
 | `POST /api/v1/media/report-images` | Same-origin multipart upload with one `file` field. Accepts PNG/JPEG up to 10 MiB. Strips metadata, preserves JPEG orientation, and stages the image for 24 hours. Returns `201` with `imageId`, `fileName`, `mimeType`, sanitized `sizeBytes`, relative `previewUrl`, and `expiresAt`. |
-| `GET /api/v1/media/report-images/:imageId` | Returns sanitized PNG/JPEG bytes. An unexpired staged image is visible only to its uploader. A `DRAFT` or `CANCELLED` attachment is visible to its Report owner. A `PENDING_REVIEW` or `REJECTED` attachment is visible to its owner and active Reviewers. A `CONFIRMED` attachment is public. Phase 3 denies attached reads until Report persistence is available. |
+| `GET /api/v1/media/report-images/:imageId` | Returns sanitized PNG/JPEG bytes. An unexpired staged image is visible only to its uploader. A `DRAFT` or `CANCELLED` attachment is visible to its Report owner. A `PENDING_REVIEW` or `REJECTED` attachment is visible to its owner and active Reviewers. A `CONFIRMED` attachment is public. |
 | `GET /api/v1/my-reports` | Lists caller's own reports (`DRAFT`, `PENDING_REVIEW`, `CONFIRMED`, `REJECTED`, `CANCELLED`). |
-| `GET /api/v1/reports/:id` | Returns report detail + latest AI analysis run. Accessible by owner (`reporterId`) or `REVIEWER` (for `PENDING_REVIEW`/`REJECTED`). |
+| `GET /api/v1/reports/:id` | Returns report detail + latest AI analysis run. Accessible by owner (`reporterId`) or an active `REVIEWER` (for `PENDING_REVIEW`, `CONFIRMED`, and `REJECTED`). |
 | `POST /api/v1/reports/drafts` | Save new `DRAFT` (`UC-RPT-001`). Partial fields allowed; any `imageIds` are validated for caller ownership and bound to the new Report in the same transaction (clearing `expires_at`). |
 | `PATCH /api/v1/reports/:id/draft` | Update existing `DRAFT` (owner only); binds newly added staged `imageIds` owned by caller in the same transaction. |
-| `POST /api/v1/reports/:id/submit` | Submit `DRAFT` (or `POST /api/v1/reports` to create+submit directly, `UC-RPT-002`). Validates Description, Location+Map Point, `1–5` caller-owned staged/attached `imageIds` (binding them inside the same transaction and clearing `expires_at`); assigns `reportNumber`; sets `PENDING_REVIEW`, `version = 1`; triggers `UC-AI-001` without failing submission on AI outage. Optional `requestedTargetTicketId` (must be Active, `UC-RPT-005`). |
+| `POST /api/v1/reports/:id/submit` | Submit `DRAFT` (or `POST /api/v1/reports` to create+submit directly, `UC-RPT-002`). Validates Description, Location+Map Point, `1–5` caller-owned staged/attached `imageIds` (binding them inside the same transaction and clearing `expires_at`); assigns `reportNumber`; sets `PENDING_REVIEW`, `version = 1`; triggers `UC-AI-001` without failing submission on AI outage. Ticket-targeted submission is scheduled with `UC-RPT-005`. |
 | `PATCH /api/v1/reports/:id` | Edit `PENDING_REVIEW` report (`UC-RPT-003`, owner only). Validates/binds any new caller-owned staged `imageIds` in the same transaction, increments `version`, marks prior AI runs `isOutdated = true`, triggers `UC-AI-002`. Returns `409` if already `CONFIRMED`/`REJECTED`. |
 | `POST /api/v1/reports/:id/cancel` | Cancel `PENDING_REVIEW` report (`UC-RPT-004`, owner only) → `CANCELLED` with `cancelledAt`. |
+
+Report lifecycle writes return the saved Report detail (201 for creation, 200 otherwise).
+Draft create, draft update, and draft submit accept optional fields. Direct submission and pending edit require
+`description`, `locationName`, `lat`, and `lng`. Write fields also include optional nullable
+`locationId` and `locationDetailNote`, and ordered `imageIds`. Omitted fields in draft patches and
+submit overrides preserve saved values. A supplied image array replaces attachments. Omitted image IDs
+retain attachments on pending edit and draft submit. Direct submit requires an image array. Submit without
+overrides and cancel accept `{}`. Phase 4 exposes `latestAiRun: null` and invokes a no-op triage hook after commit.
+
+My Reports accepts `page` (default 1), `pageSize` (25, 50, 100; default 25), exact `status`,
+exact `reportNumber`, and literal case-insensitive substring `q` across number, title, description,
+and location text. It returns `items` ordered by descending update time and ID, `pagination`, and
+unfiltered caller-only `counts` (`total`, `draft`, `pendingReview`, `confirmed`, `rejected`, `cancelled`).
 
 Media upload returns `400 INVALID_REQUEST` for malformed multipart, `400 INVALID_MEDIA_FORMAT` for unsupported, corrupt, or oversized-dimension images, and `400 MEDIA_TOO_LARGE` when the raw or sanitized file exceeds 10 MiB. It returns `401 UNAUTHENTICATED` for missing or invalid sessions, `403 FORBIDDEN` for invalid origin proof, `403 ADMIN_NON_OPERATIONAL` for administrators, and `415 UNSUPPORTED_MEDIA_TYPE` when the request is not multipart. The HTTP transport rejects bodies over 12 MiB with `413 PAYLOAD_TOO_LARGE`.
 
