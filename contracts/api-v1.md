@@ -63,6 +63,8 @@ Cookie-authenticated identity writes require a same-origin `Origin` or, when it 
 | `GET /api/v1/public/users/:username` | Public Reporter Profile (`UC-PUB-005`): `username` + paginated list of their `CONFIRMED` public reports. |
 | `GET /api/v1/public/master-data` | Active Categories, Departments, and Campus Locations for search filters and map pickers. |
 
+The response is `{ categories, departments, locations }`. Each array contains active rows ordered by case-insensitive name and ID. Categories expose `id`, `name`, `description`, and `isActive`. Departments expose `id`, `name`, `responsibilityScope`, and `isActive`. Locations expose `id`, `name`, `type`, `lat`, `lng`, and `isActive`. The response omits staff usernames and uses `Cache-Control: no-store`.
+
 ---
 
 ## 5. Reporter Endpoints (`UC-RPT-001`..`005`)
@@ -137,14 +139,21 @@ All require exclusive `ADMINISTRATOR` role (`BR-ROLE-002`).
 | Method & Path | Behavior |
 | --- | --- |
 | `GET /api/v1/admin/users`, `PATCH /api/v1/admin/users/:id` | Manage account status, roles, and single department membership. Enforces `BR-ROLE-002` (Exclusive Admin) and `BR-ROLE-003` (max 1 Department, only with `DEPARTMENT_STAFF`). |
-| `GET / POST / PATCH /api/v1/admin/categories` | Create, update, and soft-disable (`isActive: false`) Problem Categories. |
-| `GET / POST / PATCH /api/v1/admin/departments` | Create, update, soft-disable Departments and manage responsibility scopes. |
-| `GET / POST / PATCH /api/v1/admin/locations` | Create, update, soft-disable KU Bangkhen Campus Locations. |
+| `GET /api/v1/admin/categories`, `POST /api/v1/admin/categories`, `PATCH /api/v1/admin/categories/:id` | Create, update, and soft-disable (`isActive: false`) Problem Categories. |
+| `GET /api/v1/admin/departments`, `POST /api/v1/admin/departments`, `PATCH /api/v1/admin/departments/:id` | Create, update, soft-disable Departments and manage responsibility scopes. |
+| `GET /api/v1/admin/locations`, `POST /api/v1/admin/locations`, `PATCH /api/v1/admin/locations/:id` | Create, update, soft-disable KU Bangkhen Campus Locations. |
 | `GET /api/v1/admin/analytics` | `UC-ADM-005`. System-wide KPIs (distinct Tickets, Reports, Affected Users), breakdowns, time metrics (`Review`, `Resolution`, `Total Lead`, `Aging`), satisfaction, and Department Performance table. |
 | `GET /api/v1/admin/audit-logs` | Paginated read-only audit log explorer for compliance verification (`BR-AUD-008`..`009`). |
 
 ### Phase 1 admin responses
 
 * Users list uses the pagination envelope and supports `q` (username, real name or email), `role`, and `isActive`. Rows and successful updates use the private profile shape. PATCH accepts any combination of `roles`, `departmentId`, and `isActive`. An explicit `null` clears the department. The last active administrator is protected by `409 LAST_ACTIVE_ADMIN`.
-* The department list uses the pagination envelope with `id`, `name`, `responsibilityScope`, and `isActive` per item. Phase 1 serves it for user assignments.
 * Audit rows include `id`, `entityType`, `entityId`, `action`, `actorType`, `actorUserId`, `actorRoles`, `departmentId`, `details`, and `createdAt`. Filters are `entityType`, `action`, and `actorUserId`. Lists default to page 1 and page size 25, with 25, 50, and 100 supported.
+
+### Phase 2 master data
+
+* Lists use the pagination envelope and accept `page`, `pageSize`, `q`, and `isActive=true|false`. Search matches literal substrings case-insensitively in names, category descriptions, and department scopes. Location lists also accept an exact `type`. Both active and disabled records appear by default, ordered by lowercase name and ID.
+* Department list rows add `staffUsernames`, a sorted array of active assigned department staff usernames. Department write responses use the same fields as public department rows.
+* POST returns `201` with an active record. Send `name` for each resource, optional `description` or `responsibilityScope` for categories or departments, and required `type`, `lat`, and `lng` for locations. PATCH returns `200`; send any nonempty subset of the corresponding create fields plus `isActive`. Disabling preserves the row and its name reservation.
+* Writes require JSON and same-origin proof under the cookie authentication rules above. Nulls, unknown fields, malformed JSON, empty patches, and invalid IDs or list filters return `400 INVALID_REQUEST`. An unsupported content type returns `415 UNSUPPORTED_MEDIA_TYPE`. Missing patch targets return `404 NOT_FOUND`. A case-insensitive name collision returns `409 NAME_TAKEN`. Invalid fields return `422 VALIDATION_ERROR`; coordinates outside the inclusive campus bounds return `422 COORDINATES_OUT_OF_BOUNDS`.
+* Names are trimmed, exclude control characters, and have limits of 120, 160, and 200 Unicode characters for categories, departments, and locations respectively. Descriptions and scopes are trimmed and limited to 1,000 Unicode characters. Campus bounds are latitude 13.839–13.858 and longitude 100.557–100.580.

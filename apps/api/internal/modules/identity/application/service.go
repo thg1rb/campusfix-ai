@@ -53,7 +53,6 @@ type Repository interface {
 	RevokeUserSessions(context.Context, string) error
 	UpdateUsername(context.Context, string, string) (domain.User, error)
 	ListUsers(context.Context, UserFilter, pagination.Query) ([]domain.User, int64, error)
-	ListDepartments(context.Context, pagination.Query) ([]domain.Department, int64, error)
 	DepartmentActive(context.Context, string) (bool, error)
 	LockAdminChanges(context.Context) error
 	CountActiveAdmins(context.Context) (int64, error)
@@ -219,14 +218,6 @@ func (s *Service) ListAdminUsers(ctx context.Context, actor domain.User, filter 
 	}
 	users, total, err := s.repo.ListUsers(ctx, filter, page)
 	return pagination.New(page, users, total), err
-}
-
-func (s *Service) ListDepartments(ctx context.Context, actor domain.User, page pagination.Query) (pagination.Result[domain.Department], error) {
-	if !actor.IsExclusiveAdmin() {
-		return pagination.Result[domain.Department]{}, apperror.Forbidden
-	}
-	items, total, err := s.repo.ListDepartments(ctx, page)
-	return pagination.New(page, items, total), err
 }
 
 func (s *Service) UpdateAdminUser(ctx context.Context, actor domain.User, id string, patch UserPatch) (domain.User, error) {

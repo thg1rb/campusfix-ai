@@ -87,11 +87,15 @@ Entity primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPT
 * **`sessions`**
   * `id` UUID PK, `token_hash` TEXT NOT NULL UNIQUE, `user_id` UUID NOT NULL REFERENCES `users(id)` ON DELETE CASCADE, `expires_at`, `revoked_at` (nullable), and `created_at`
 * **`categories`**
-  * `id` UUID PK, `name` TEXT NOT NULL UNIQUE, `description` TEXT NOT NULL DEFAULT `''`, `is_active` BOOLEAN NOT NULL DEFAULT TRUE, `created_at`, `updated_at`
+  * `id` UUID PK, `name` TEXT NOT NULL, `description` TEXT NOT NULL DEFAULT `''`, `is_active` BOOLEAN NOT NULL DEFAULT TRUE, `created_at`, `updated_at`
+  * `categories_name_key` is a case-insensitive unique index on `LOWER(name)` across active and disabled rows.
 * **`departments`**
-  * `id` UUID PK, `name` TEXT NOT NULL UNIQUE, `responsibility_scope` TEXT NOT NULL DEFAULT `''`, `is_active` BOOLEAN NOT NULL DEFAULT TRUE, `created_at`, `updated_at`
+  * `id` UUID PK, `name` TEXT NOT NULL, `responsibility_scope` TEXT NOT NULL DEFAULT `''`, `is_active` BOOLEAN NOT NULL DEFAULT TRUE, `created_at`, `updated_at`
+  * `departments_name_key` is a case-insensitive unique index on `LOWER(name)` across active and disabled rows.
 * **`campus_locations`**
   * `id` UUID PK, `name` TEXT NOT NULL, `type` TEXT NOT NULL (`CampusLocationType`), `lat` DOUBLE PRECISION NOT NULL, `lng` DOUBLE PRECISION NOT NULL, `is_active` BOOLEAN NOT NULL DEFAULT TRUE, `created_at`, `updated_at`
+  * `campus_locations_name_key` is a case-insensitive unique index on `LOWER(name)` across active and disabled rows.
+  * `CHECK` constraints enforce the inclusive KU Bangkhen bounds (`lat BETWEEN 13.839 AND 13.858` and `lng BETWEEN 100.557 AND 100.580`).
 
 ### 4.2 Reports, Media & AI Triage
 

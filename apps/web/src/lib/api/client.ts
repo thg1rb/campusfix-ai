@@ -1,3 +1,18 @@
+export type PageSize = 25 | 50 | 100;
+export type PageQuery = { page?: number; pageSize?: PageSize };
+export type PageResult<T> = {
+  items: T[];
+  pagination: { page: number; pageSize: PageSize; totalItems: number; totalPages: number };
+};
+
+export function queryString(filters: Record<string, string | boolean | number | undefined>) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "") query.set(key, String(value));
+  }
+  return query.size ? "?" + query : "";
+}
+
 interface ErrorData {
   code: string;
   message: string;

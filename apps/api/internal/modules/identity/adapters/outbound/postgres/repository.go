@@ -169,28 +169,6 @@ func (r *Repository) ListUsers(ctx context.Context, f application.UserFilter, p 
 	return users, total, nil
 }
 
-func (r *Repository) ListDepartments(ctx context.Context, p pagination.Query) ([]domain.Department, int64, error) {
-	query := r.db.DB(ctx).Table("departments")
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	type departmentRow struct {
-		ID, Name, ResponsibilityScope string
-		IsActive                      bool
-	}
-	var rows []departmentRow
-	if err := query.Select("id, name, responsibility_scope, is_active").
-		Order("lower(name), id").Limit(p.Size).Offset(p.Offset()).Find(&rows).Error; err != nil {
-		return nil, 0, err
-	}
-	items := make([]domain.Department, 0, len(rows))
-	for _, row := range rows {
-		items = append(items, domain.Department(row))
-	}
-	return items, total, nil
-}
-
 func (r *Repository) DepartmentActive(ctx context.Context, id string) (bool, error) {
 	var active bool
 	err := r.db.DB(ctx).Raw("SELECT is_active FROM departments WHERE id = ? FOR SHARE", id).Scan(&active).Error

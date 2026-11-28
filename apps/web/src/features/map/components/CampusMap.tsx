@@ -70,6 +70,7 @@ export function CampusMap({
             </svg>
             {addPoint && (
               <Button
+                type="button"
                 variant="ghost"
                 className="absolute inset-0 size-full rounded-none hover:bg-transparent"
                 aria-label="ปักหมุดในแผนผัง"
@@ -90,6 +91,7 @@ export function CampusMap({
               onSelect ? (
                 <Button
                   key={pin.id}
+                  type="button"
                   variant="outline"
                   size="icon"
                   style={position(pin)}
@@ -123,7 +125,7 @@ export function CampusMap({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-3">
-        <Button variant="outline" onClick={() => setFallback(!schematic)}>
+        <Button type="button" variant="outline" onClick={() => setFallback(!schematic)}>
           {schematic ? "ลองโหลดแผนที่ออนไลน์" : "ใช้แผนผังสำรอง"}
         </Button>
         {!schematic && (

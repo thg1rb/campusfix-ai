@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/thg1rb/ku-spot/apps/api/internal/modules/identity/domain"
 	"github.com/thg1rb/ku-spot/apps/api/internal/platform/apperror"
+	platform "github.com/thg1rb/ku-spot/apps/api/internal/platform/http"
 )
 
 func assertStatus(t *testing.T, app *fiber.App, request *http.Request, want int) {
@@ -39,7 +40,7 @@ func testApp() *fiber.App {
 func TestCheckWriteOrigin(t *testing.T) {
 	h := Handler{origin: "http://localhost:3000"}
 	app := testApp()
-	app.Post("/", h.checkWriteOrigin, func(c fiber.Ctx) error { return c.SendStatus(204) })
+	app.Post("/", h.CheckWriteOrigin, func(c fiber.Ctx) error { return c.SendStatus(204) })
 	for _, tc := range []struct {
 		name, origin, referer, site string
 		cookie                      bool
@@ -109,7 +110,7 @@ func TestDecodeMediaType(t *testing.T) {
 	app := testApp()
 	app.Patch("/", func(c fiber.Ctx) error {
 		var input struct{ Username string }
-		if err := decode(c, &input); err != nil {
+		if err := platform.DecodeJSON(c, &input); err != nil {
 			return err
 		}
 		return c.SendStatus(204)

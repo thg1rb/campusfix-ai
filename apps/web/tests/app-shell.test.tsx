@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import { AppShell } from "@/components/shared/AppShell";
@@ -17,8 +17,8 @@ const loading = "กำลังโหลดข้อมูล…";
 const routeContent = "Prototype report form";
 
 function HydrationProbe() {
-  const { state } = usePrototype();
-  return state && <span>Prototype state hydrated</span>;
+  const { state, demoAvailable } = usePrototype();
+  return state && <span data-demo-available={demoAvailable}>Prototype state hydrated</span>;
 }
 
 async function renderWithPendingSession(environment: "production" | "development") {
@@ -89,4 +89,30 @@ it("shows prototype content for a guest development session", async () => {
 
   expect(main.getByText(routeContent)).toBeTruthy();
   expect(Route).toHaveBeenCalled();
+});
+
+it("shows all master data links to an exclusive live administrator with demo mode disabled", async () => {
+  const { pending } = await renderWithPendingSession("production");
+  await act(async () => {
+    pending.resolve(
+      Response.json({
+        id: "admin",
+        username: "campus_admin",
+        roles: ["ADMINISTRATOR"],
+        departmentId: null,
+        isActive: true,
+      }),
+    );
+  });
+
+  expect(screen.getByText("Prototype state hydrated").dataset.demoAvailable).toBe("false");
+  fireEvent.keyDown(screen.getByRole("button", { name: "ผู้ดูแลระบบ" }), { key: "ArrowDown" });
+  const menu = within(await screen.findByRole("menu"));
+  for (const [name, href] of [
+    ["ประเภทปัญหา", "/admin/categories"],
+    ["หน่วยงาน", "/admin/departments"],
+    ["สถานที่", "/admin/locations"],
+  ]) {
+    expect(menu.getByRole("menuitem", { name }).getAttribute("href")).toBe(href);
+  }
 });

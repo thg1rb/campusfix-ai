@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Ban, Building2, CheckCircle2, MapPin, Pencil, PlusCircle, Tags } from "lucide-react";
 import { toast } from "sonner";
 import { ActionLabel, useActionFeedback } from "@/components/shared/ActionFeedback";
@@ -31,6 +31,23 @@ import { CampusHeading } from "@/components/shared/CampusHeading";
 import { PaginationBar } from "@/components/shared/PaginationBar";
 import { allResults, matchesSearch, ResultFilters } from "@/components/shared/ResultFilters";
 import { usePagination } from "@/hooks/usePagination";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useLiveSession } from "@/features/auth/LiveSession";
+import { identityErrorMessage } from "@/features/auth/authErrors";
+import { ApiError } from "@/lib/api/client";
+import { useApiResource } from "@/lib/api/useApiResource";
+import {
+  createAdminCategory,
+  createAdminDepartment,
+  createAdminLocation,
+  listAdminCategories,
+  listAdminDepartmentsPage,
+  listAdminLocations,
+  updateAdminCategory,
+  updateAdminDepartment,
+  updateAdminLocation,
+} from "@/lib/api/masterdata";
+import { AdminRequestStatus } from "./AdminRequestStatus";
 import {
   AccountStatus,
   accountStats,
@@ -42,19 +59,88 @@ import {
 import { Choice, ErrorNotice, labelOptions } from "@/components/shared/Controls";
 import { TextField } from "@/components/shared/FormControls";
 import { CampusMap } from "@/features/map";
+import { inCampus } from "@/lib/domain/validation";
 import { usePrototype } from "@/lib/store/PrototypeStore";
 import type { StoreAction } from "@/lib/store/mutations";
 import type { CampusLocation, CampusLocationType, Category, Department } from "@/types/domain";
 
 type MasterAction = Extract<StoreAction, { type: "master" }>;
 type Collection = MasterAction["collection"];
-type Item = Category | Department | CampusLocation;
+type Item = Category | (Department & { staffUsernames?: string[] }) | CampusLocation;
+type SaveResult = { ok: true } | { ok: false; message: string };
+type SaveItem = (action: MasterAction, previous?: Item) => Promise<SaveResult>;
+
+const listItems = {
+  categories: listAdminCategories,
+  departments: listAdminDepartmentsPage,
+  locations: listAdminLocations,
+};
+
+function masterDataError(error: unknown): string {
+  if (error instanceof ApiError) {
+    switch (error.code) {
+      case "NAME_TAKEN":
+        return "ชื่อนี้ถูกใช้แล้ว กรุณาเลือกชื่ออื่น";
+      case "COORDINATES_OUT_OF_BOUNDS":
+        return "กรุณาระบุพิกัดภายในวิทยาเขตบางเขน";
+      case "NOT_FOUND":
+        return "ไม่พบรายการนี้ กรุณาโหลดข้อมูลใหม่";
+    }
+  }
+  return identityErrorMessage(error);
+}
+
+function changedFields<T extends object>(input: T, previous: Partial<T>): Partial<T> {
+  return Object.fromEntries(
+    (Object.keys(input) as (keyof T)[])
+      .filter((key) => input[key] !== previous[key])
+      .map((key) => [key, input[key]]),
+  ) as Partial<T>;
+}
+
+function saveLive(action: MasterAction, previous?: Item) {
+  const { item } = action;
+  const status = previous && item.isActive !== previous.isActive ? { isActive: item.isActive } : {};
+  switch (action.collection) {
+    case "categories": {
+      const input = { name: item.name, description: action.item.description };
+      if (!previous) return createAdminCategory(input);
+      const patch = { ...changedFields(input, previous), ...status };
+      if (Object.keys(patch).length) return updateAdminCategory(item.id, patch);
+      return;
+    }
+    case "departments": {
+      const input = { name: item.name, responsibilityScope: action.item.responsibilityScope };
+      if (!previous) return createAdminDepartment(input);
+      const patch = { ...changedFields(input, previous), ...status };
+      if (Object.keys(patch).length) return updateAdminDepartment(item.id, patch);
+      return;
+    }
+    case "locations": {
+      const { name, type, lat, lng } = action.item;
+      const input = { name, type, lat, lng };
+      if (!previous) return createAdminLocation(input);
+      const patch = { ...changedFields(input, previous), ...status };
+      if (Object.keys(patch).length) return updateAdminLocation(item.id, patch);
+    }
+  }
+}
 
 const nouns: Record<Collection, string> = {
   categories: "ประเภทปัญหา",
   departments: "หน่วยงาน",
   locations: "สถานที่",
 };
+const nameLimits: Record<Collection, number> = {
+  categories: 120,
+  departments: 160,
+  locations: 200,
+};
+
+function trimMasterDataText(value: string) {
+  return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+}
+
 const locationTypes: Record<CampusLocationType, string> = {
   BUILDING: "อาคาร",
   COMMON_AREA: "พื้นที่ส่วนกลาง",
@@ -73,37 +159,64 @@ function masterAction(collection: Collection, item: Item): MasterAction {
   throw new Error("Unexpected master data collection");
 }
 
-function ItemEditor({ collection, item }: { collection: Collection; item?: Item }) {
-  const { dispatch } = usePrototype();
+function ItemEditor({
+  collection,
+  item,
+  saveItem,
+  disabled,
+}: {
+  collection: Collection;
+  item?: Item;
+  saveItem: SaveItem;
+  disabled?: boolean;
+}) {
   const action = useActionFeedback();
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(item?.name ?? "");
-  const [details, setDetails] = useState(
-    item && "description" in item
-      ? item.description
-      : item && "responsibilityScope" in item
-        ? item.responsibilityScope
-        : "",
-  );
-  const [type, setType] = useState<CampusLocationType>(
-    item && "type" in item ? item.type : "BUILDING",
-  );
-  const [lat, setLat] = useState(String(item && "lat" in item ? item.lat : ""));
-  const [lng, setLng] = useState(String(item && "lng" in item ? item.lng : ""));
+  const [name, setName] = useState("");
+  const [details, setDetails] = useState("");
+  const [type, setType] = useState<CampusLocationType>("BUILDING");
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
   const [error, setError] = useState("");
   const noun = nouns[collection];
   const heading = item ? `แก้ไข${noun}` : `เพิ่ม${noun}`;
+  const detailsLabel = collection === "categories" ? "คำอธิบาย" : "ขอบเขตความรับผิดชอบ";
+  const coordinates = { lat: Number(lat), lng: Number(lng) };
+  const hasCoordinates =
+    lat.trim() !== "" &&
+    lng.trim() !== "" &&
+    Number.isFinite(coordinates.lat) &&
+    Number.isFinite(coordinates.lng);
+  const point = hasCoordinates && inCampus(coordinates) ? coordinates : undefined;
 
   function save() {
-    const base = { id: item?.id ?? crypto.randomUUID(), name, isActive: item?.isActive ?? true };
+    const trimmedName = trimMasterDataText(name);
+    const trimmedDetails = trimMasterDataText(details);
+    if (/\p{Cc}/u.test(name)) return setError("ชื่อห้ามมีอักขระควบคุม");
+    if (!trimmedName) return setError(`กรุณากรอกชื่อ${noun}`);
+    if ([...trimmedName].length > nameLimits[collection]) {
+      return setError(`ชื่อ${noun}ต้องมีความยาวไม่เกิน ${nameLimits[collection]} ตัวอักษร`);
+    }
+    if (collection !== "locations") {
+      if ([...trimmedDetails].length > 1000) {
+        return setError(`${detailsLabel}ต้องมีความยาวไม่เกิน 1,000 ตัวอักษร`);
+      }
+      if (trimmedDetails.includes("\0")) return setError(`${detailsLabel}ห้ามมีอักขระ NUL`);
+    }
+    if (collection === "locations" && !point) {
+      return setError(
+        hasCoordinates ? "กรุณาระบุพิกัดภายในวิทยาเขตบางเขน" : "กรุณาระบุละติจูดและลองจิจูดเป็นตัวเลข",
+      );
+    }
+    const base = { id: item?.id ?? "", name: trimmedName, isActive: item?.isActive ?? true };
     const next =
       collection === "locations"
-        ? { ...base, type, lat: Number(lat), lng: Number(lng) }
+        ? { ...base, type, ...coordinates }
         : collection === "categories"
-          ? { ...base, description: details.trim() }
-          : { ...base, responsibilityScope: details.trim() };
+          ? { ...base, description: trimmedDetails }
+          : { ...base, responsibilityScope: trimmedDetails };
     void action.run(
-      () => dispatch(masterAction(collection, next)),
+      () => saveItem(masterAction(collection, next), item),
       (result) => {
         if (!result.ok) {
           setError(result.message);
@@ -112,13 +225,6 @@ function ItemEditor({ collection, item }: { collection: Collection; item?: Item 
         setOpen(false);
         setError("");
         toast.success(`บันทึก${noun}แล้ว`);
-        if (!item) {
-          setName("");
-          setDetails("");
-          setType("BUILDING");
-          setLat("");
-          setLng("");
-        }
       },
     );
   }
@@ -127,6 +233,20 @@ function ItemEditor({ collection, item }: { collection: Collection; item?: Item 
     <Dialog
       open={open}
       onOpenChange={(value) => {
+        if (action.pending) return;
+        if (value) {
+          setName(item?.name ?? "");
+          setDetails(
+            item && "description" in item
+              ? item.description
+              : item && "responsibilityScope" in item
+                ? item.responsibilityScope
+                : "",
+          );
+          setType(item && "type" in item ? item.type : "BUILDING");
+          setLat(item && "lat" in item ? String(item.lat) : "");
+          setLng(item && "lng" in item ? String(item.lng) : "");
+        }
         setOpen(value);
         setError("");
       }}
@@ -134,6 +254,7 @@ function ItemEditor({ collection, item }: { collection: Collection; item?: Item 
       <DialogTrigger asChild>
         <Button
           variant={item ? "outline" : "default"}
+          disabled={disabled}
           aria-label={item ? `แก้ไข ${item.name}` : heading}
         >
           {item ? <Pencil aria-hidden="true" /> : <PlusCircle aria-hidden="true" />}
@@ -147,58 +268,89 @@ function ItemEditor({ collection, item }: { collection: Collection; item?: Item 
             {item ? item.name : `บันทึก${noun}สำหรับการทำงานในวิทยาเขตบางเขน`}
           </DialogDescription>
         </DialogHeader>
-        <TextField label={`ชื่อ${noun}`} value={name} onChange={setName} required />
-        {collection === "locations" ? (
-          <>
-            <Choice
-              label="ประเภทสถานที่"
-              value={type}
-              onChange={(value) => setType(value as CampusLocationType)}
-              options={labelOptions(locationTypes)}
-            />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextField label="ละติจูด" value={lat} onChange={setLat} required />
-              <TextField label="ลองจิจูด" value={lng} onChange={setLng} required />
-            </div>
-            <CampusMap
-              point={
-                lat && lng && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
-                  ? { lat: Number(lat), lng: Number(lng) }
-                  : undefined
-              }
-              onPoint={(point) => {
-                setLat(point.lat.toFixed(6));
-                setLng(point.lng.toFixed(6));
-              }}
-            />
-          </>
-        ) : (
-          <TextField
-            label={collection === "categories" ? "คำอธิบาย" : "ขอบเขตความรับผิดชอบ"}
-            value={details}
-            onChange={setDetails}
-            multiline
-          />
-        )}
-        {error && <ErrorNotice message={error} />}
-        <DialogFooter>
-          <Button onClick={save} disabled={action.pending}>
-            <ActionLabel pending={action.pending}>บันทึก{noun}</ActionLabel>
-          </Button>
-        </DialogFooter>
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            save();
+          }}
+        >
+          <TextField label={`ชื่อ${noun}`} value={name} onChange={setName} required />
+          {collection === "locations" ? (
+            <>
+              <Choice
+                label="ประเภทสถานที่"
+                value={type}
+                onChange={(value) => setType(value as CampusLocationType)}
+                options={labelOptions(locationTypes)}
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextField
+                  label="ละติจูด"
+                  value={lat}
+                  onChange={setLat}
+                  inputMode="decimal"
+                  required
+                />
+                <TextField
+                  label="ลองจิจูด"
+                  value={lng}
+                  onChange={setLng}
+                  inputMode="decimal"
+                  required
+                />
+              </div>
+              <CampusMap
+                point={point}
+                onPoint={(point) => {
+                  setLat(point.lat.toFixed(6));
+                  setLng(point.lng.toFixed(6));
+                }}
+              />
+            </>
+          ) : (
+            <TextField label={detailsLabel} value={details} onChange={setDetails} multiline />
+          )}
+          {error && <ErrorNotice message={error} />}
+          <DialogFooter>
+            <Button type="submit" disabled={action.pending}>
+              <ActionLabel pending={action.pending}>บันทึก{noun}</ActionLabel>
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ToggleItem({ item, collection }: { item: Item; collection: Collection }) {
-  const { dispatch } = usePrototype();
+function ToggleItem({
+  item,
+  collection,
+  saveItem,
+  disabled,
+}: {
+  item: Item;
+  collection: Collection;
+  saveItem: SaveItem;
+  disabled: boolean;
+}) {
+  const action = useActionFeedback();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
   const label = item.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน";
   return (
-    <AlertDialog>
+    <AlertDialog
+      open={open}
+      onOpenChange={(value) => {
+        if (action.pending) return;
+        setError("");
+        setOpen(value);
+      }}
+    >
       <AlertDialogTrigger asChild>
         <Button
           variant={item.isActive ? "destructive" : "outline"}
+          disabled={disabled}
           aria-label={`${label} ${item.name}`}
         >
           {item.isActive ? <Ban aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
@@ -215,18 +367,29 @@ function ToggleItem({ item, collection }: { item: Item; collection: Collection }
             {item.name} · ประวัติที่อ้างถึงรายการนี้จะยังแสดงได้
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {error && <ErrorNotice message={error} />}
         <AlertDialogFooter>
-          <AlertDialogCancel>กลับ</AlertDialogCancel>
+          <AlertDialogCancel disabled={action.pending}>กลับ</AlertDialogCancel>
           <AlertDialogAction
-            onClick={async () => {
-              const result = await dispatch(
-                masterAction(collection, { ...item, isActive: !item.isActive }),
+            disabled={action.pending}
+            onClick={(event) => {
+              event.preventDefault();
+              setError("");
+              void action.run(
+                () =>
+                  saveItem(masterAction(collection, { ...item, isActive: !item.isActive }), item),
+                (result) => {
+                  if (!result.ok) {
+                    setError(result.message);
+                    return;
+                  }
+                  setOpen(false);
+                  toast.success(`${label}แล้ว`);
+                },
               );
-              if (result.ok) toast.success(`${label}แล้ว`);
-              else toast.error(result.message);
             }}
           >
-            ยืนยัน{label}
+            <ActionLabel pending={action.pending}>ยืนยัน{label}</ActionLabel>
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -237,16 +400,51 @@ function ToggleItem({ item, collection }: { item: Item; collection: Collection }
 const collectionIcons = { categories: Tags, departments: Building2, locations: MapPin };
 
 export function MasterDataScreen({ collection }: { collection: Collection }) {
-  const { state } = usePrototype();
+  const { state, dispatch, demoAvailable } = usePrototype();
+  const { session } = useLiveSession();
+  const admin = session.user;
+  const live =
+    session.status === "authenticated" &&
+    admin !== null &&
+    admin.isActive &&
+    admin.departmentId === null &&
+    admin.roles.length === 1 &&
+    admin.roles[0] === "ADMINISTRATOR";
+  const demo = session.status === "guest" && demoAvailable;
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [type, setType] = useState("all");
-  const pager = usePagination();
+  const debouncedQuery = useDebouncedValue(query.trim());
+  const pager = usePagination(
+    JSON.stringify([collection, live ? debouncedQuery : query, status, type]),
+  );
+  const { requestedPage, size, setPage } = pager;
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      const result = await listItems[collection](
+        {
+          page: requestedPage,
+          pageSize: size,
+          q: debouncedQuery,
+          isActive: status === "all" ? undefined : status === "active",
+          type:
+            collection === "locations" && type !== "all" ? (type as CampusLocationType) : undefined,
+        },
+        signal,
+      );
+      if (!signal.aborted && requestedPage > 1 && result.items.length === 0) {
+        setPage(Math.max(1, Math.min(requestedPage - 1, result.pagination.totalPages)));
+      }
+      return result;
+    },
+    [collection, debouncedQuery, requestedPage, size, status, type, setPage],
+  );
+  const request = useApiResource(load, live);
   const noun = nouns[collection];
-  if (!state) return null;
-  const items: Item[] = state[collection];
+  if (!live && (!demo || !state)) return null;
+  const items: Item[] = demo ? (state?.[collection] ?? []) : [];
   const staff = new Map<string, string[]>();
-  if (collection === "departments") {
+  if (demo && state && collection === "departments") {
     for (const user of state.users) {
       if (user.departmentId) {
         const names = staff.get(user.departmentId) ?? [];
@@ -255,7 +453,7 @@ export function MasterDataScreen({ collection }: { collection: Collection }) {
       }
     }
   }
-  const page = pager.current(
+  const demoPage = pager.current(
     items.filter(
       (item) =>
         matchesStatus(status, item.isActive) &&
@@ -270,15 +468,43 @@ export function MasterDataScreen({ collection }: { collection: Collection }) {
         ),
     ),
   );
+  const remote = request.result;
+  const remotePage = remote.status === "ready" ? remote.value : request.previousValue;
+  const stale = live && remote.status !== "ready";
+  const page =
+    live && remotePage
+      ? {
+          items: remotePage.items,
+          controls: pager.controls(remotePage.pagination.totalItems, remotePage.pagination.page),
+        }
+      : demoPage;
+
+  const saveItem: SaveItem = async (action, previous) => {
+    if (demo) {
+      return dispatch(
+        masterAction(collection, { ...action.item, id: action.item.id || crypto.randomUUID() }),
+      );
+    }
+    try {
+      const mutation = saveLive(action, previous);
+      if (!mutation) return { ok: true };
+      await mutation;
+      request.reload();
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: masterDataError(error) };
+    }
+  };
+
   return (
     <>
       <CampusHeading
         title={`จัดการ${noun}`}
         context={adminContext}
-        stats={accountStats(items)}
+        stats={demo ? accountStats(items) : undefined}
         icon={collectionIcons[collection]}
       >
-        <ItemEditor collection={collection} />
+        <ItemEditor collection={collection} saveItem={saveItem} disabled={stale} />
       </CampusHeading>
       <ResultFilters
         label={`ค้นหา${noun}`}
@@ -286,13 +512,11 @@ export function MasterDataScreen({ collection }: { collection: Collection }) {
         query={query}
         onQuery={(value) => {
           setQuery(value);
-          pager.reset();
         }}
         onClear={() => {
           setQuery("");
           setStatus("all");
           setType("all");
-          pager.reset();
         }}
       >
         <div className="w-full sm:w-48">
@@ -302,7 +526,6 @@ export function MasterDataScreen({ collection }: { collection: Collection }) {
             options={statusOptions}
             onChange={(value) => {
               setStatus(value);
-              pager.reset();
             }}
           />
         </div>
@@ -314,61 +537,83 @@ export function MasterDataScreen({ collection }: { collection: Collection }) {
               options={[allResults, ...labelOptions(locationTypes)]}
               onChange={(value) => {
                 setType(value);
-                pager.reset();
               }}
             />
           </div>
         )}
       </ResultFilters>
-      <AdminTable
-        label={noun}
-        headings={[noun, "รายละเอียด", "สถานะ", "จัดการ"]}
-        empty={!page.items.length ? `ไม่พบ${noun}ที่ตรงกับตัวกรอง` : undefined}
-      >
-        {page.items.map((item) => (
-          <TableRow key={item.id}>
-            <TableCell className="min-w-36 whitespace-normal font-medium">{item.name}</TableCell>
-            <TableCell className="min-w-44 whitespace-normal">
-              {"description" in item ? (
-                item.description
-              ) : "responsibilityScope" in item ? (
-                <div className="grid gap-1.5">
-                  <p>{item.responsibilityScope}</p>
-                  <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
-                    <span>เจ้าหน้าที่</span>
-                    {(staff.get(item.id) ?? []).map((name) => (
-                      <Badge key={name} variant="outline" data-tone="teal">
-                        @{name}
-                      </Badge>
-                    ))}
-                    {!staff.get(item.id)?.length && <span>—</span>}
-                  </div>
-                </div>
-              ) : (
-                <div className="grid gap-1.5">
-                  <Badge variant="outline" data-tone="info">
-                    {locationTypes[item.type]}
-                  </Badge>
-                  <span className="inline-flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted-foreground">
-                    <MapPin size={16} aria-hidden="true" />
-                    {item.lat.toFixed(4)}, {item.lng.toFixed(4)}
-                  </span>
-                </div>
-              )}
-            </TableCell>
-            <TableCell>
-              <AccountStatus active={item.isActive} />
-            </TableCell>
-            <TableCell>
-              <div className="flex gap-2">
-                <ItemEditor key={`${item.id}:${item.name}`} collection={collection} item={item} />
-                <ToggleItem collection={collection} item={item} />
-              </div>
-            </TableCell>
-          </TableRow>
-        ))}
-      </AdminTable>
-      <PaginationBar {...page.controls} />
+      {stale && <AdminRequestStatus request={remote} retry={request.reload} />}
+      {(!live || remotePage) && (
+        <div className="grid gap-4" aria-busy={request.isRefreshing}>
+          <AdminTable
+            label={noun}
+            headings={[noun, "รายละเอียด", "สถานะ", "จัดการ"]}
+            empty={!page.items.length ? `ไม่พบ${noun}ที่ตรงกับตัวกรอง` : undefined}
+          >
+            {page.items.map((item: Item) => {
+              const staffNames =
+                live && "responsibilityScope" in item
+                  ? (item.staffUsernames ?? [])
+                  : (staff.get(item.id) ?? []);
+              return (
+                <TableRow key={item.id}>
+                  <TableCell className="min-w-36 whitespace-normal font-medium">
+                    {item.name}
+                  </TableCell>
+                  <TableCell className="min-w-44 whitespace-normal">
+                    {"description" in item ? (
+                      item.description
+                    ) : "responsibilityScope" in item ? (
+                      <div className="grid gap-1.5">
+                        <p>{item.responsibilityScope}</p>
+                        <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+                          <span>เจ้าหน้าที่</span>
+                          {staffNames.map((name) => (
+                            <Badge key={name} variant="outline" data-tone="teal">
+                              @{name}
+                            </Badge>
+                          ))}
+                          {!staffNames.length && <span>—</span>}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid gap-1.5">
+                        <Badge variant="outline" data-tone="info">
+                          {locationTypes[item.type]}
+                        </Badge>
+                        <span className="inline-flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted-foreground">
+                          <MapPin size={16} aria-hidden="true" />
+                          {item.lat.toFixed(6)}, {item.lng.toFixed(6)}
+                        </span>
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <AccountStatus active={item.isActive} />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <ItemEditor
+                        collection={collection}
+                        item={item}
+                        saveItem={saveItem}
+                        disabled={stale}
+                      />
+                      <ToggleItem
+                        collection={collection}
+                        item={item}
+                        saveItem={saveItem}
+                        disabled={stale}
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </AdminTable>
+          <PaginationBar {...page.controls} disabled={stale} />
+        </div>
+      )}
     </>
   );
 }
