@@ -1,11 +1,13 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ImagePlus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { uploadReportImage } from "@/lib/api/media";
+import { uploadErrorMessage } from "../liveReport";
 import { demoImage } from "@/data/seed";
 import { imageError } from "@/lib/domain/validation";
 import type { ReportImage } from "@/types/domain";
@@ -34,11 +36,17 @@ export function ImageUploader({
   onChange,
   error,
   optional = false,
+  live = false,
+  disabled = false,
+  onBusyChange,
 }: {
   images: ReportImage[];
   onChange: (images: ReportImage[]) => void;
   error?: string;
   optional?: boolean;
+  live?: boolean;
+  disabled?: boolean;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const id = useId();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -46,6 +54,9 @@ export function ImageUploader({
   const [localError, setLocalError] = useState("");
   const [busy, setBusy] = useState(false);
   const message = localError || error;
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => () => controller.current?.abort(), []);
+
   return (
     <Field data-invalid={!!message}>
       <FieldLabel htmlFor={id}>รูปภาพประกอบ{optional ? " (ถ้ามี)" : ""}</FieldLabel>
@@ -66,7 +77,7 @@ export function ImageUploader({
         tabIndex={-1}
         accept="image/png,image/jpeg,.jpg,.jpeg,.png"
         multiple
-        disabled={busy}
+        disabled={busy || disabled}
         aria-required={!optional}
         aria-invalid={!!message}
         aria-describedby={id + "-hint" + (message ? " " + id + "-error" : "")}
@@ -88,8 +99,35 @@ export function ImageUploader({
             return;
           }
           setBusy(true);
+          onBusyChange?.(true);
           setLocalError("");
+          const request = new AbortController();
+          controller.current = request;
           try {
+            if (live) {
+              const results = await Promise.allSettled(
+                files.map((file) => uploadReportImage(file, request.signal)),
+              );
+              if (request.signal.aborted) return;
+              const additions: ReportImage[] = [];
+              for (const result of results) {
+                if (result.status === "rejected") {
+                  setLocalError(uploadErrorMessage(result.reason));
+                  continue;
+                }
+                const { imageId, previewUrl, fileName, mimeType, sizeBytes } = result.value;
+                additions.push({
+                  id: imageId,
+                  url: previewUrl,
+                  fileName,
+                  mimeType,
+                  sizeBytes,
+                  alt: fileName,
+                });
+              }
+              if (additions.length) onChange([...images, ...additions]);
+              return;
+            }
             const additions = await Promise.all(
               files.map(async (file) => ({
                 id: crypto.randomUUID(),
@@ -100,11 +138,14 @@ export function ImageUploader({
                 alt: file.name,
               })),
             );
-            onChange([...images, ...additions]);
+            if (!request.signal.aborted) onChange([...images, ...additions]);
           } catch {
             setLocalError("ไม่สามารถเปิดรูปภาพนี้ได้ กรุณาเลือกไฟล์ภาพใหม่");
           } finally {
-            setBusy(false);
+            if (!request.signal.aborted) {
+              setBusy(false);
+              onBusyChange?.(false);
+            }
           }
         }}
       />
@@ -118,27 +159,29 @@ export function ImageUploader({
           ref={pickButton}
           type="button"
           variant="outline"
-          disabled={busy || images.length >= 5}
+          disabled={busy || disabled || images.length >= 5}
           aria-invalid={!!message}
           aria-describedby={id + "-hint" + (message ? " " + id + "-error" : "")}
           onClick={() => fileInput.current?.click()}
         >
           <ImagePlus aria-hidden="true" /> เลือกรูปภาพ
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={busy || images.length >= 5}
-          onClick={() => {
-            setLocalError("");
-            onChange([
-              ...images,
-              { ...demoImage("walkway-light", "ภาพตัวอย่างเสาไฟทางเดิน"), id: crypto.randomUUID() },
-            ]);
-          }}
-        >
-          เพิ่มรูปตัวอย่างจำลอง
-        </Button>
+        {!live && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy || disabled || images.length >= 5}
+            onClick={() => {
+              setLocalError("");
+              onChange([
+                ...images,
+                { ...demoImage("walkway-light", "ภาพตัวอย่างเสาไฟทางเดิน"), id: crypto.randomUUID() },
+              ]);
+            }}
+          >
+            เพิ่มรูปตัวอย่างจำลอง
+          </Button>
+        )}
       </div>
       {busy && (
         <p role="status" className="text-sm text-muted-foreground">
@@ -157,7 +200,7 @@ export function ImageUploader({
               variant="outline"
               size="icon"
               aria-label={`ลบรูปภาพที่ ${index + 1}`}
-              disabled={busy}
+              disabled={busy || disabled}
               className="absolute right-1.5 top-1.5 z-10 rounded-full"
               onClick={(event) => {
                 event.stopPropagation();

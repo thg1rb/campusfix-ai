@@ -115,7 +115,7 @@ Entity primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPT
   * `rejection_reason` TEXT NULL *(required when `status = 'REJECTED'`, `BR-REV-007`)*
   * `reviewed_by` UUID NULL REFERENCES `users(id)`, `reviewed_at` TIMESTAMPTZ NULL
   * `created_at` TIMESTAMPTZ NOT NULL, `submitted_at` TIMESTAMPTZ NULL, `updated_at` TIMESTAMPTZ NOT NULL, `cancelled_at` TIMESTAMPTZ NULL
-  * *Indexes:* `(status, submitted_at DESC)` for Reviewer queue; `(reporter_id, created_at DESC)`; `(ticket_id)` where `ticket_id IS NOT NULL`; retention index on `(status, created_at)` and `(status, cancelled_at)`.
+  * *Indexes:* `(status, submitted_at DESC)` for Reviewer queue; `(reporter_id, created_at DESC)`; `(reporter_id, status, updated_at DESC)`; `(reporter_id, updated_at DESC, id DESC)`; `(ticket_id)` where `ticket_id IS NOT NULL`; partial retention indexes on `created_at` for Draft and `cancelled_at` for Cancelled.
 * **`report_images`** *(supports staged upload prior to Report creation + transactional binding)*
   * `id` UUID PK
   * `report_id` UUID NULL REFERENCES `reports(id)` ON DELETE CASCADE *(NULL while staged. Phase 3 creates this column without a foreign key. Phase 4 adds the foreign key and binds images in the Report transaction.)*

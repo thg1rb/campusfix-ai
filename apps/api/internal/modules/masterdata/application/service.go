@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"maps"
 
 	audit "github.com/thg1rb/ku-spot/apps/api/internal/modules/audit/domain"
@@ -188,4 +189,13 @@ func (s *Service) CreateLocation(ctx context.Context, actor domain.User, value d
 
 func (s *Service) UpdateLocation(ctx context.Context, actor domain.User, id string, apply func(*data.CampusLocation)) (data.CampusLocation, error) {
 	return s.locations.update(ctx, actor, id, apply)
+}
+
+// IsActiveLocation checks and locks the location for the caller's write transaction.
+func (s *Service) IsActiveLocation(ctx context.Context, id string) (bool, error) {
+	location, err := s.locations.repo.Lock(ctx, id)
+	if errors.Is(err, data.ErrNotFound) {
+		return false, nil
+	}
+	return location.IsActive, err
 }

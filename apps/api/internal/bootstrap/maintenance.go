@@ -7,6 +7,7 @@ import (
 
 	identity "github.com/thg1rb/ku-spot/apps/api/internal/modules/identity/application"
 	media "github.com/thg1rb/ku-spot/apps/api/internal/modules/media/application"
+	reports "github.com/thg1rb/ku-spot/apps/api/internal/modules/reports/application"
 	"github.com/thg1rb/ku-spot/apps/api/internal/platform/apperror"
 )
 
@@ -14,15 +15,21 @@ type maintenance struct {
 	interval time.Duration
 	media    *media.Service
 	identity *identity.Service
+	reports  *reports.Service
 }
 
 func (a *Application) RunMaintenance(ctx context.Context) {
 	ticker := time.NewTicker(a.maintenance.interval)
 	defer ticker.Stop()
+	retention := time.NewTicker(24 * time.Hour)
+	defer retention.Stop()
+	a.maintenance.purgeReports(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-retention.C:
+			a.maintenance.purgeReports(ctx)
 		case <-ticker.C:
 			a.maintenance.run(ctx)
 		}
@@ -46,5 +53,16 @@ func (m maintenance) run(ctx context.Context) {
 		slog.Error("purge expired sessions", "deleted", sessions, "error", apperror.Diagnostic(err))
 	} else {
 		slog.Info("purged expired sessions", "deleted", sessions)
+	}
+}
+
+func (m maintenance) purgeReports(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	counts, err := m.reports.PurgeExpiredReports(ctx)
+	if err != nil {
+		slog.Error("purge expired reports", "deleted", counts.Total, "error", apperror.Diagnostic(err))
+	} else {
+		slog.Info("purged expired reports", "drafts", counts.Draft, "cancelled", counts.Cancelled)
 	}
 }

@@ -15,11 +15,13 @@ export function CampusMapPicker({
   value,
   onChange,
   error,
+  clearUnavailable = false,
 }: {
   locations: CampusLocation[];
   value: ReportLocation | null;
   onChange: (value: ReportLocation) => void;
   error?: string;
+  clearUnavailable?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const options = locations.filter(
@@ -27,8 +29,13 @@ export function CampusMapPicker({
   );
   const label = value?.locationName ?? "";
   function pick(point: { lat: number; lng: number }) {
+    const locationId = value?.locationId ?? null;
+    const unavailable =
+      clearUnavailable &&
+      locationId &&
+      !locations.some((item) => item.id === locationId && item.isActive);
     onChange({
-      locationId: value?.locationId ?? null,
+      locationId: unavailable ? null : locationId,
       locationName: label || "จุดที่ปักหมุดในวิทยาเขตบางเขน",
       detailNote: value?.detailNote,
       lat: point.lat,

@@ -15,27 +15,72 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Choice, AccessNotice, labelOptions, PageFrame } from "@/components/shared/Controls";
+import { Choice, ErrorNotice, labelOptions, PageFrame } from "@/components/shared/Controls";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { reportStatusLabels } from "@/components/shared/Badges";
 import { formatThaiDateTime } from "@/lib/format";
 import { usePrototype } from "@/lib/store/PrototypeStore";
-import { isExclusiveAdmin } from "@/lib/domain/permissions";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useApiResource } from "@/lib/api/useApiResource";
+import { cancelPendingReport, listMyReports } from "@/lib/api/reports";
+import type { ReportStatus } from "@/types/domain";
+import { asReport, reportErrorMessage } from "../liveReport";
+import { ReporterAccess, ReportLoading, ReportLoadError } from "../components/ReporterAccess";
 import { CampusHeading } from "@/components/shared/CampusHeading";
 import { allResults, matchesSearch, ResultFilters } from "@/components/shared/ResultFilters";
 import { PaginationBar } from "@/components/shared/PaginationBar";
 import { usePagination } from "@/hooks/usePagination";
 import { ReportListCard, reportListTitle } from "../components/ReportListCard";
 
-export default function MyReportsScreen() {
-  const { state, user, dispatch } = usePrototype();
+function ReportList({
+  live,
+  userId,
+  canWrite,
+}: {
+  live: boolean;
+  userId: string;
+  canWrite: boolean;
+}) {
+  const { state, dispatch } = usePrototype();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
-  const pagination = usePagination();
-  if (!state || !user || isExclusiveAdmin(user))
-    return <AccessNotice loggedIn={!!user} path="/my-reports" />;
-  const mine = state.reports.filter((item) => item.reporterId === user.id);
+  const debounced = useDebouncedValue(query.trim());
+  const pagination = usePagination(JSON.stringify([filter, live ? debounced : query]));
+  const { requestedPage, size, setPage } = pagination;
+  const [cancelling, setCancelling] = useState<string>();
+  const cancellingRef = useRef(false);
+  const [error, setError] = useState("");
+  const load = useCallback(
+    (signal: AbortSignal) =>
+      listMyReports(
+        {
+          page: requestedPage,
+          pageSize: size,
+          q: debounced,
+          status: filter === "all" ? undefined : (filter as ReportStatus),
+        },
+        signal,
+      ),
+    [requestedPage, size, debounced, filter],
+  );
+  const resource = useApiResource(load, live);
+  const response =
+    resource.result.status === "ready" ? resource.result.value : resource.previousValue;
+  if (live && !response) {
+    if (resource.result.status === "error")
+      return <ReportLoadError error={resource.result.error} reload={resource.reload} />;
+    return <ReportLoading />;
+  }
+  if (
+    live &&
+    resource.result.status === "ready" &&
+    requestedPage > Math.max(1, resource.result.value.pagination.totalPages)
+  ) {
+    setPage(Math.max(1, resource.result.value.pagination.totalPages));
+  }
+
+  const mine = live ? [] : (state?.reports.filter((item) => item.reporterId === userId) ?? []);
   const filtered = mine
     .filter(
       (item) =>
@@ -50,8 +95,52 @@ export default function MyReportsScreen() {
         ),
     )
     .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const page = pagination.current(filtered);
+  const page = response
+    ? {
+        items: response.items.map(asReport),
+        controls: {
+          ...pagination.controls(response.pagination.totalItems, response.pagination.page),
+          size: response.pagination.pageSize,
+        },
+      }
+    : pagination.current(filtered);
 
+  const statusCount = (status: ReportStatus) =>
+    mine.filter((report) => report.status === status).length;
+  const counts = response?.counts ?? {
+    total: mine.length,
+    draft: statusCount("DRAFT"),
+    pendingReview: statusCount("PENDING_REVIEW"),
+    confirmed: statusCount("CONFIRMED"),
+    rejected: statusCount("REJECTED"),
+    cancelled: statusCount("CANCELLED"),
+  };
+
+  async function cancel(id: string) {
+    if (cancellingRef.current) return;
+    setError("");
+    setCancelling(id);
+    cancellingRef.current = true;
+    try {
+      if (live) {
+        await cancelPendingReport(id);
+        resource.reload();
+      } else {
+        const result = await dispatch({ type: "cancelReport", id });
+        if (!result.ok) {
+          toast.error(result.message);
+          return;
+        }
+      }
+      toast.success("ยกเลิกรายงานแล้ว");
+    } catch (cause) {
+      setError(reportErrorMessage(cause));
+      resource.reload();
+    } finally {
+      setCancelling(undefined);
+      cancellingRef.current = false;
+    }
+  }
   return (
     <PageFrame wide>
       <CampusHeading
@@ -59,23 +148,25 @@ export default function MyReportsScreen() {
         context="มหาวิทยาลัยเกษตรศาสตร์ · วิทยาเขตบางเขน"
         icon={FileText}
         stats={[
-          { label: "ทั้งหมด", value: mine.length },
-          {
-            label: "รอตรวจสอบ",
-            value: mine.filter((report) => report.status === "PENDING_REVIEW").length,
-          },
-          {
-            label: "ยืนยันแล้ว",
-            value: mine.filter((report) => report.status === "CONFIRMED").length,
-          },
-          { label: "ฉบับร่าง", value: mine.filter((report) => report.status === "DRAFT").length },
+          { label: "ทั้งหมด", value: counts.total },
+          { label: "รอตรวจสอบ", value: counts.pendingReview },
+          { label: "ยืนยันแล้ว", value: counts.confirmed },
+          { label: "ฉบับร่าง", value: counts.draft },
+          ...(live
+            ? [
+                { label: "ปฏิเสธ", value: counts.rejected },
+                { label: "ยกเลิก", value: counts.cancelled },
+              ]
+            : []),
         ]}
       >
-        <Button asChild>
-          <Link href="/reports/new">
-            <Plus aria-hidden="true" /> แจ้งปัญหา
-          </Link>
-        </Button>
+        {canWrite && (
+          <Button asChild>
+            <Link href="/reports/new">
+              <Plus aria-hidden="true" /> แจ้งปัญหา
+            </Link>
+          </Button>
+        )}
       </CampusHeading>
       <ResultFilters
         label="ค้นหารายงาน"
@@ -83,12 +174,10 @@ export default function MyReportsScreen() {
         query={query}
         onQuery={(value) => {
           setQuery(value);
-          pagination.reset();
         }}
         onClear={() => {
           setQuery("");
           setFilter("all");
-          pagination.reset();
         }}
       >
         <div className="w-full sm:w-52">
@@ -98,16 +187,29 @@ export default function MyReportsScreen() {
             options={[allResults, ...labelOptions(reportStatusLabels)]}
             onChange={(next) => {
               setFilter(next);
-              pagination.reset();
             }}
           />
         </div>
       </ResultFilters>
+      {error && <ErrorNotice message={error} />}
+      {live && resource.isRefreshing && (
+        <p role="status" className="text-sm text-muted-foreground">
+          กำลังอัปเดตรายงาน…
+        </p>
+      )}
+      {live && resource.result.status === "error" && (
+        <div className="grid gap-2">
+          <ErrorNotice message={reportErrorMessage(resource.result.error)} />
+          <Button variant="outline" className="justify-self-start" onClick={resource.reload}>
+            ลองอีกครั้ง
+          </Button>
+        </div>
+      )}
       {page.items.length === 0 && <EmptyState title="ไม่พบรายงานที่ตรงกับตัวกรอง" />}
       <ul className="grid gap-3">
         {page.items.map((report) => (
           <ReportListCard key={report.id} report={report}>
-            {report.status === "DRAFT" && (
+            {report.status === "DRAFT" && canWrite && (
               <>
                 <p className="text-sm text-muted-foreground">ฉบับร่างเก็บไว้ 30 วันนับจากวันที่สร้าง</p>
                 <Button asChild variant="outline" className="justify-self-start">
@@ -115,14 +217,16 @@ export default function MyReportsScreen() {
                 </Button>
               </>
             )}
-            {report.status === "PENDING_REVIEW" && (
+            {report.status === "PENDING_REVIEW" && canWrite && (
               <div className="flex flex-wrap gap-2">
                 <Button asChild variant="outline">
                   <Link href={`/my-reports/${report.reportNumber}/edit`}>แก้ไขรายงาน</Link>
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive">ยกเลิกรายงาน</Button>
+                    <Button variant="destructive" disabled={!!cancelling || resource.isRefreshing}>
+                      ยกเลิกรายงาน
+                    </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
@@ -133,13 +237,7 @@ export default function MyReportsScreen() {
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>กลับ</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={async () => {
-                          const result = await dispatch({ type: "cancelReport", id: report.id });
-                          if (result.ok) toast.success("ยกเลิกรายงานแล้ว");
-                          else toast.error(result.message);
-                        }}
-                      >
+                      <AlertDialogAction onClick={() => void cancel(report.id)}>
                         ยืนยันยกเลิกรายงาน
                       </AlertDialogAction>
                     </AlertDialogFooter>
@@ -147,8 +245,9 @@ export default function MyReportsScreen() {
                 </AlertDialog>
               </div>
             )}
-            {report.status === "CONFIRMED" &&
-              state.tickets
+            {!live &&
+              report.status === "CONFIRMED" &&
+              state?.tickets
                 .filter((ticket) => ticket.id === report.ticketId)
                 .map((ticket) => (
                   <Button key={ticket.id} asChild variant="outline" className="justify-self-start">
@@ -168,7 +267,15 @@ export default function MyReportsScreen() {
           </ReportListCard>
         ))}
       </ul>
-      <PaginationBar {...page.controls} />
+      <PaginationBar {...page.controls} disabled={resource.isRefreshing} />
     </PageFrame>
+  );
+}
+
+export default function MyReportsScreen() {
+  return (
+    <ReporterAccess path="/my-reports">
+      {(access) => <ReportList key={`${access.live}:${access.userId}`} {...access} />}
+    </ReporterAccess>
   );
 }

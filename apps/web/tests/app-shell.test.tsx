@@ -8,7 +8,7 @@ import { LiveSessionProvider } from "@/features/auth/LiveSession";
 import { PrototypeStoreProvider, usePrototype } from "@/lib/store/PrototypeStore";
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/reports/new",
+  usePathname: () => "/reviewer",
   useRouter: () => ({ push: vi.fn() }),
 }));
 

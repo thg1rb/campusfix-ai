@@ -6,6 +6,7 @@ const exact = new Map<string, RouteMode>([
   ["/login", "login"],
   ["/login/select-account", "demo-login"],
   ["/settings/profile", "live"],
+  ["/reports/new", "live"],
   ["/admin", "live"],
   ["/admin/users", "live"],
   ["/admin/locations", "live"],
@@ -14,10 +15,8 @@ const exact = new Map<string, RouteMode>([
 ]);
 
 const subtrees: { mode: RouteMode; paths: string[] }[] = [
-  {
-    mode: "prototype-only",
-    paths: ["/reports/new", "/my-reports", "/reviewer", "/department"],
-  },
+  { mode: "live", paths: ["/my-reports"] },
+  { mode: "prototype-only", paths: ["/reviewer", "/department"] },
   { mode: "prototype-public", paths: ["/feed", "/map", "/tickets", "/reports", "/u"] },
 ];
 
