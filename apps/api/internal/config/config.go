@@ -13,6 +13,7 @@ type Config struct {
 	DatabaseURL    string
 	AIURL          string
 	Auth           Auth
+	Storage        Storage
 	SwaggerEnabled bool
 }
 
@@ -30,6 +31,10 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("AI_BASE_URL must be an HTTP(S) base URL")
 	}
 	auth, err := loadAuth()
+	if err != nil {
+		return Config{}, err
+	}
+	storage, err := loadStorage()
 	if err != nil {
 		return Config{}, err
 	}
@@ -53,5 +58,6 @@ func Load() (Config, error) {
 		DatabaseURL:    databaseURL.String(),
 		AIURL:          aiURL.JoinPath("healthz").String(),
 		Auth:           auth,
+		Storage:        storage,
 	}, nil
 }

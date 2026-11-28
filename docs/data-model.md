@@ -118,12 +118,12 @@ Entity primary keys use `UUID` (`gen_random_uuid()`), timestamps use `TIMESTAMPT
   * *Indexes:* `(status, submitted_at DESC)` for Reviewer queue; `(reporter_id, created_at DESC)`; `(ticket_id)` where `ticket_id IS NOT NULL`; retention index on `(status, created_at)` and `(status, cancelled_at)`.
 * **`report_images`** *(supports staged upload prior to Report creation + transactional binding)*
   * `id` UUID PK
-  * `report_id` UUID NULL REFERENCES `reports(id)` ON DELETE CASCADE *(NULL while staged/unattached; set inside the same SQL transaction when creating/updating a Draft or submitting a Report)*
-  * `uploaded_by` UUID NOT NULL REFERENCES `users(id)` *(owner checked before previewing staged images or binding to a Report)*
-  * `storage_key` TEXT NOT NULL, `file_name` TEXT NOT NULL, `mime_type` TEXT NOT NULL (`image/png` | `image/jpeg`), `size_bytes` INTEGER NOT NULL CHECK (`size_bytes > 0 AND size_bytes <= 10485760`), `sort_order` SMALLINT NOT NULL DEFAULT 0, `exif_stripped` BOOLEAN NOT NULL DEFAULT TRUE
-  * `expires_at` TIMESTAMPTZ NULL *(set to `created_at + 24 hours` while `report_id IS NULL`; cleared to `NULL` once attached to a Report)*
+  * `report_id` UUID NULL REFERENCES `reports(id)` ON DELETE CASCADE *(NULL while staged. Phase 3 creates this column without a foreign key. Phase 4 adds the foreign key and binds images in the Report transaction.)*
+  * `uploaded_by` UUID NOT NULL REFERENCES `users(id)` ON DELETE RESTRICT *(owner checked before previewing staged images or binding to a Report)*
+  * `storage_key` TEXT NOT NULL UNIQUE, `file_name` TEXT NOT NULL, `mime_type` TEXT NOT NULL (`image/png` | `image/jpeg`), `size_bytes` INTEGER NOT NULL CHECK (`size_bytes > 0 AND size_bytes <= 10485760`) stores sanitized bytes, `sort_order` SMALLINT NOT NULL DEFAULT 0 CHECK (`sort_order >= 0`), `exif_stripped` BOOLEAN NOT NULL DEFAULT TRUE
+  * `expires_at` TIMESTAMPTZ NULL *(set to `created_at + 24 hours` while `report_id IS NULL`; cleared to `NULL` once attached to a Report)*. Enforced by CHECK (`(report_id IS NULL) = (expires_at IS NOT NULL)`).
   * `created_at` TIMESTAMPTZ NOT NULL
-  * *Indexes:* `(report_id, sort_order)` where `report_id IS NOT NULL`; partial cleanup index `(expires_at)` where `report_id IS NULL`.
+  * *Indexes:* `(report_id, sort_order)` where `report_id IS NOT NULL`; partial cleanup index `(expires_at)` where `report_id IS NULL`, and `(uploaded_by, created_at DESC)`.
   * *Access Control:* Staged images (`report_id IS NULL`) are readable ONLY by `uploaded_by`. Once attached, read visibility strictly inherits the parent Report's access rules (`DRAFT`/`CANCELLED`: owner only; `PENDING_REVIEW`/`REJECTED`: owner + active `REVIEWER`; `CONFIRMED`: Public).
 * **`ai_analysis_runs`**
   * `id` UUID PK, `report_id` UUID NOT NULL REFERENCES `reports(id)` ON DELETE CASCADE

@@ -210,3 +210,8 @@ func (r *Repository) UpdateAccess(ctx context.Context, before, after domain.User
 	}
 	return nil
 }
+
+func (r *Repository) PurgeExpiredSessions(ctx context.Context, now, revokedBefore time.Time) (int64, error) {
+	result := r.db.DB(ctx).Exec("DELETE FROM sessions WHERE expires_at <= ? OR revoked_at <= ?", now, revokedBefore)
+	return result.RowsAffected, result.Error
+}

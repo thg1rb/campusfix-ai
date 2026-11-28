@@ -20,10 +20,12 @@ var errRecoveredPanic = errors.New("handler panicked")
 
 func NewServer(database, gateway Checker, overrides ...RouteTimeout) *fiber.App {
 	app := fiber.New(fiber.Config{
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  30 * time.Second,
-		ErrorHandler: handleError,
+		BodyLimit:                    12 * 1024 * 1024,
+		ReadTimeout:                  30 * time.Second,
+		WriteTimeout:                 30 * time.Second,
+		IdleTimeout:                  30 * time.Second,
+		ErrorHandler:                 handleError,
+		DisablePreParseMultipartForm: true,
 	})
 	app.Use(requestContext(overrides))
 	app.Use(recover.New(recover.Config{

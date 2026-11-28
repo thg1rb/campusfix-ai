@@ -51,6 +51,7 @@ type Repository interface {
 	InsertSession(context.Context, string, string, time.Time) error
 	RevokeSession(context.Context, string) error
 	RevokeUserSessions(context.Context, string) error
+	PurgeExpiredSessions(context.Context, time.Time, time.Time) (int64, error)
 	UpdateUsername(context.Context, string, string) (domain.User, error)
 	ListUsers(context.Context, UserFilter, pagination.Query) ([]domain.User, int64, error)
 	DepartmentActive(context.Context, string) (bool, error)
@@ -305,4 +306,9 @@ func (s *Service) record(ctx context.Context, actor domain.User, id, action stri
 		EntityType: "USER", EntityID: id, Action: action, ActorType: "USER", ActorUserID: &actor.ID,
 		ActorRoles: roles, DepartmentID: actor.DepartmentID, Details: details,
 	})
+}
+
+func (s *Service) PurgeExpiredSessions(ctx context.Context) (int64, error) {
+	now := s.now()
+	return s.repo.PurgeExpiredSessions(ctx, now, now.Add(-24*time.Hour))
 }

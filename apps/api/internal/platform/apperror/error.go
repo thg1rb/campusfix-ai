@@ -13,6 +13,7 @@ func New(status int, code, message string) *Error {
 }
 
 var (
+	PayloadTooLarge = New(413, "PAYLOAD_TOO_LARGE", "The request body exceeds the allowed size.")
 	Invalid         = New(400, "INVALID_REQUEST", "The request is invalid.")
 	Unauthenticated = New(401, "UNAUTHENTICATED", "Sign in to continue.")
 	Forbidden       = New(403, "FORBIDDEN", "You do not have access.")

@@ -67,13 +67,15 @@ func RequireExclusiveAdmin(c fiber.Ctx) error {
 	return c.Next()
 }
 
+var AdminNonOperational = apperror.New(403, "ADMIN_NON_OPERATIONAL", "Administrators cannot perform operational actions.")
+
 func RejectAdminOperational(c fiber.Ctx) error {
 	actor, ok := Actor(c)
 	if !ok {
 		return apperror.Unauthenticated
 	}
 	if slices.Contains(actor.Roles, domain.Administrator) {
-		return apperror.New(403, "ADMIN_NON_OPERATIONAL", "Administrators cannot perform operational actions.")
+		return AdminNonOperational
 	}
 	return c.Next()
 }

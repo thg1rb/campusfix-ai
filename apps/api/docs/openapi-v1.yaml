@@ -3,7 +3,7 @@ info:
   title: KU Spot API
   version: 1.0.0
   description: |
-    KU Spot is Kasetsart University's platform for reporting and resolving campus facility issues. This reference covers the Phase 0–2 Go API.
+    KU Spot is Kasetsart University's platform for reporting and resolving campus facility issues. This reference covers the Phase 0–3 Go API.
 
     ### Authentication and writes
     Google OAuth 2.0 accepts verified @ku.th identities. A successful callback issues an HttpOnly, SameSite=Lax session cookie. HTTPS requires Secure cookies. The API checks the current active account and session on each protected request. Administrator routes require ADMINISTRATOR as the sole role and no department.
@@ -11,12 +11,12 @@ info:
     With a session cookie, writes require a matching Origin or, when Origin is absent, a matching Referer for APP_BASE_URL. Sec-Fetch-Site must be same-origin when present. Browsers manage these headers and the HttpOnly cookie. The direct Swagger UI on port 8080 can call the direct API on that origin. For authenticated browser writes, the page must also be on APP_BASE_URL. Use the same-origin Web proxy with the application, or use an HTTP client with a valid session cookie and matching Origin. The Web proxy handles /api/v1/*; use the direct API for the two probe paths.
 
     ### Responses and pagination
-    API errors use the error envelope with camelCase fields, an empty details object for current errors, and a requestId matching X-Request-Id. OAuth callback outcomes use redirects. Probes use dedicated JSON. API and readiness responses use Cache-Control no-store. Lists default to page 1 and 25 items, with page sizes 25, 50 and 100. Empty pages return an empty items array.
+    API errors use the error envelope with camelCase fields, an empty details object for current errors, and a requestId matching X-Request-Id. OAuth callback outcomes use redirects. Probes use dedicated JSON. API and readiness responses default to Cache-Control no-store. Authorized image previews declare their own cache policy. Lists default to page 1 and 25 items, with page sizes 25, 50 and 100. Empty pages return an empty items array.
 
     ### Deadlines and HTTP listener responses
-    The Go API installs a cooperative 15-second request deadline. A propagated context deadline becomes 503 SERVICE_UNAVAILABLE. The Web proxy has a 30-second upstream budget and also returns 503 on upstream failure. The listener has 30-second read, write, and idle timeouts. Read timeouts can return 408; a write timeout can close the connection. The current API has no application-level rate limiter.
+    The Go API installs a cooperative 15-second request deadline, or 25 seconds for media uploads. A propagated context deadline becomes 503 SERVICE_UNAVAILABLE. The Web proxy has a 30-second upstream budget and also returns 503 on upstream failure. The listener has 30-second read, write, and idle timeouts. Read timeouts can return 408; a write timeout can close the connection. The current API has no application-level rate limiter.
 
-    The listener rejects bodies over 4 MiB with 413. Before routing, malformed HTTP can produce 400, oversized headers 431, unsupported methods or transfer codings 501, and network read errors 502 when a response can be sent. These failures can use the generic status-error payload when the API path cannot be recovered. Where the API path is known, the status is preserved and the error envelope uses INVALID_REQUEST for 400 or INTERNAL_ERROR for the other listener errors above. Unmatched API paths and unsupported methods on a known API route return 404 NOT_FOUND and 405 METHOD_NOT_ALLOWED respectively.
+    The listener rejects bodies over 12 MiB with 413 PAYLOAD_TOO_LARGE. JSON decoders also reject raw or decoded bodies over 4 MiB with the same status and code. Before routing, malformed HTTP can produce 400, oversized headers 431, unsupported methods or transfer codings 501, and network read errors 502 when a response can be sent. Listener errors can use the generic status-error payload when the API path cannot be recovered. A body overflow without a recoverable path uses the API error envelope with a generated request ID. Where the API path is known, the status is preserved and the error envelope uses INVALID_REQUEST for 400, PAYLOAD_TOO_LARGE for 413, and INTERNAL_ERROR for the other listener errors above. Unmatched API paths and unsupported methods on a known API route return 404 NOT_FOUND and 405 METHOD_NOT_ALLOWED respectively.
 servers:
 - url: http://localhost:8080
   description: Direct Go API and operational probes
@@ -32,6 +32,7 @@ tags:
 - name: Admin Departments
 - name: Admin Locations
 - name: Admin Audit Logs
+- name: Media
 paths:
   /healthz:
     get:
@@ -993,6 +994,117 @@ paths:
           $ref: '#/components/responses/Forbidden'
       security:
       - cookieAuth: []
+  /api/v1/media/report-images:
+    post:
+      operationId: stageReportImage
+      tags: [Media]
+      summary: Stage one Report image
+      description: Sanitizes one PNG or JPEG and stages it for the authenticated uploader for 24 hours. The file can be up to 10 MiB before and after sanitization. The image can be up to 10000 pixels on each axis and 40000000 pixels in total.
+      security:
+      - cookieAuth: []
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Referer'
+      - $ref: '#/components/parameters/SecFetchSite'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PNG or JPEG image. The server verifies the file bytes.
+            encoding:
+              file:
+                contentType: image/png, image/jpeg
+      responses:
+        '201':
+          description: Image staged.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              $ref: '#/components/headers/Cache-Control'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagedReportImageResponse'
+        '400':
+          $ref: '#/components/responses/InvalidMediaUpload'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/MediaUploadForbidden'
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaUpload'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/v1/media/report-images/{imageId}:
+    get:
+      operationId: getReportImage
+      tags: [Media]
+      summary: Preview a Report image
+      description: Staged images are visible to their uploader until expiry. Attached images inherit Report visibility. Phase 3 denies attached reads pending Report persistence. Missing, expired, and inaccessible images all return 404, including private reads without a session.
+      security:
+      - {}
+      - cookieAuth: []
+      parameters:
+      - $ref: '#/components/parameters/RequestId'
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Sanitized PNG or JPEG bytes.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/X-Request-Id'
+            Cache-Control:
+              description: private, no-store for private previews or public, max-age=3600, immutable for public images.
+              schema:
+                type: string
+                enum: ['private, no-store', 'public, max-age=3600, immutable']
+            X-Content-Type-Options:
+              schema:
+                type: string
+                enum: [nosniff]
+            Content-Disposition:
+              description: Inline image with a safe filename.
+              schema:
+                type: string
+                example: 'inline; filename="photo.jpg"'
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/BodyTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 components:
   securitySchemes:
     cookieAuth:
@@ -1112,6 +1224,84 @@ components:
         enum:
         - no-referrer
   responses:
+    InvalidMediaUpload:
+      description: Malformed multipart, unsupported or corrupt image, dimensions outside the limits, or an oversized file.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            INVALID_REQUEST:
+              value:
+                error:
+                  code: INVALID_REQUEST
+                  message: The request is invalid.
+                  details: {}
+                  requestId: ku-request-2026
+            INVALID_MEDIA_FORMAT:
+              value:
+                error:
+                  code: INVALID_MEDIA_FORMAT
+                  message: Use a valid PNG or JPEG within the image dimension limits.
+                  details: {}
+                  requestId: ku-request-2026
+            MEDIA_TOO_LARGE:
+              value:
+                error:
+                  code: MEDIA_TOO_LARGE
+                  message: The image exceeds 10 MiB.
+                  details: {}
+                  requestId: ku-request-2026
+    MediaUploadForbidden:
+      description: Invalid origin proof or an administrator attempted an operational action.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            FORBIDDEN:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: You do not have access.
+                  details: {}
+                  requestId: ku-request-2026
+            ADMIN_NON_OPERATIONAL:
+              value:
+                error:
+                  code: ADMIN_NON_OPERATIONAL
+                  message: Administrators cannot perform operational actions.
+                  details: {}
+                  requestId: ku-request-2026
+    UnsupportedMediaUpload:
+      description: The request must be multipart/form-data with an uncompressed body.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+        Cache-Control:
+          $ref: '#/components/headers/Cache-Control'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            UNSUPPORTED_MEDIA_TYPE:
+              value:
+                error:
+                  code: UNSUPPORTED_MEDIA_TYPE
+                  message: Use Content-Type multipart/form-data.
+                  details: {}
+                  requestId: ku-request-2026
     MasterNameTaken:
       description: The name is already reserved. Uniqueness is case-insensitive.
       headers:
@@ -1349,7 +1539,7 @@ components:
                   details: {}
                   requestId: ku-request-2026
     BodyTooLarge:
-      description: The HTTP request body exceeds Fiber’s 4 MiB limit. The listener rejects it before endpoint execution.
+      description: The request exceeds the 12 MiB HTTP transport limit or the 4 MiB raw or decoded JSON limit.
       headers:
         X-Request-Id:
           $ref: '#/components/headers/X-Request-Id'
@@ -1360,15 +1550,15 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
           examples:
-            INTERNAL_ERROR:
+            PAYLOAD_TOO_LARGE:
               value:
                 error:
-                  code: INTERNAL_ERROR
-                  message: The request could not be completed.
+                  code: PAYLOAD_TOO_LARGE
+                  message: The request body exceeds the allowed size.
                   details: {}
                   requestId: ku-request-2026
     ProbeBodyTooLarge:
-      description: The request body exceeds Fiber’s 4 MiB limit.
+      description: The request body exceeds the 12 MiB HTTP transport limit.
       headers:
         X-Request-Id:
           $ref: '#/components/headers/X-Request-Id'
@@ -1377,7 +1567,7 @@ components:
           schema:
             $ref: '#/components/schemas/ProbeError'
     UnsupportedMediaType:
-      description: The request needs Content-Type application/json. Media type parameters are allowed.
+      description: The request needs Content-Type application/json and a supported content encoding. Media type parameters are allowed.
       headers:
         X-Request-Id:
           $ref: '#/components/headers/X-Request-Id'
@@ -1521,6 +1711,32 @@ components:
                   details: {}
                   requestId: ku-request-2026
   schemas:
+    StagedReportImageResponse:
+      type: object
+      additionalProperties: false
+      required: [imageId, fileName, mimeType, sizeBytes, previewUrl, expiresAt]
+      properties:
+        imageId:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: photo.jpg
+        mimeType:
+          type: string
+          enum: [image/png, image/jpeg]
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 10485760
+        previewUrl:
+          type: string
+          example: /api/v1/media/report-images/f98d99e1-7df2-462a-9ea8-edc9cc0eeb45
+        expiresAt:
+          type: string
+          format: date-time
     HealthResponse:
       type: object
       required:

@@ -21,7 +21,7 @@ import (
 
 func openAPIApp(t *testing.T, enabled bool) *fiber.App {
 	t.Helper()
-	app, err := New(config.Config{
+	app, err := New(t.Context(), config.Config{
 		DatabaseURL:    "postgresql://kuspot@127.0.0.1:1/kuspot?sslmode=disable",
 		AIURL:          "http://127.0.0.1:1/healthz",
 		Auth:           config.Auth{AppBaseURL: "http://localhost:3000"},
@@ -136,11 +136,15 @@ func checkOpenAPIOperation(t *testing.T, path string, op *openapi3.Operation, gl
 	if op.Security != nil {
 		security = *op.Security
 	}
+	requiresAuth := len(security) > 0
 	for _, requirement := range security {
-		if len(requirement) > 0 {
-			required = append(required, 401)
+		if len(requirement) == 0 {
+			requiresAuth = false
 			break
 		}
+	}
+	if requiresAuth {
+		required = append(required, 401)
 	}
 	if op.RequestBody != nil {
 		required = append(required, 400, 415)
