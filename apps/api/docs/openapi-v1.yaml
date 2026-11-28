@@ -3,7 +3,7 @@ info:
   title: KU Spot API
   version: 1.0.0
   description: |
-    KU Spot is Kasetsart University's platform for reporting and resolving campus facility issues. This reference covers the Phase 0–1 Go API.
+    KU Spot is Kasetsart University's platform for reporting and resolving campus facility issues. This reference covers the Phase 0–2 Go API.
 
     ### Authentication and writes
     Google OAuth 2.0 accepts verified @ku.th identities. A successful callback issues an HttpOnly, SameSite=Lax session cookie. HTTPS requires Secure cookies. The API checks the current active account and session on each protected request. Administrator routes require ADMINISTRATOR as the sole role and no department.
@@ -27,7 +27,10 @@ tags:
 - name: Auth
 - name: Profile
 - name: Admin Users
+- name: Public Master Data
+- name: Admin Categories
 - name: Admin Departments
+- name: Admin Locations
 - name: Admin Audit Logs
 paths:
   /healthz:
@@ -476,44 +479,458 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AdminUpdateUserRequest'
-  /api/v1/admin/departments:
+  /api/v1/public/master-data:
     get:
-      operationId: listAdminDepartments
+      operationId: "getPublicMasterData"
       tags:
-      - Admin Departments
-      summary: List departments
-      description: Requires an active exclusive ADMINISTRATOR. Returns active and inactive departments for user
-        assignment, sorted by case-insensitive name, then ID.
+        - "Public Master Data"
+      summary: "Get public master data"
+      description: "Returns only active entries ordered by lowercase name and ID. Department rows omit staff usernames."
       parameters:
-      - $ref: '#/components/parameters/RequestId'
-      - $ref: '#/components/parameters/Page'
-      - $ref: '#/components/parameters/PageSize'
+        - {"$ref": "#/components/parameters/RequestId"}
+      security: []
       responses:
-        '200':
-          description: A page of department summaries.
+        "200":
+          description: "Get public master data."
           headers:
             X-Request-Id:
-              $ref: '#/components/headers/X-Request-Id'
+              "$ref": "#/components/headers/X-Request-Id"
             Cache-Control:
-              $ref: '#/components/headers/Cache-Control'
+              "$ref": "#/components/headers/Cache-Control"
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedDepartments'
-        '413':
-          $ref: '#/components/responses/BodyTooLarge'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '400':
-          $ref: '#/components/responses/InvalidRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                "$ref": "#/components/schemas/PublicMasterDataResponse"
+        "413":
+          "$ref": "#/components/responses/BodyTooLarge"
+        "500":
+          "$ref": "#/components/responses/InternalError"
+        "503":
+          "$ref": "#/components/responses/ServiceUnavailable"
+  /api/v1/admin/categories:
+    get:
+      operationId: "listAdminCategories"
+      tags:
+        - "Admin Categories"
+      summary: "List categories"
+      description: "Requires an active exclusive administrator. Lists active and disabled rows sorted by lowercase name and ID. Search matches name or description."
+      parameters:
+        - {"$ref": "#/components/parameters/RequestId"}
+        - {"$ref": "#/components/parameters/Page"}
+        - {"$ref": "#/components/parameters/PageSize"}
+        - {"$ref": "#/components/parameters/MasterSearch"}
+        - {"$ref": "#/components/parameters/MasterActive"}
       security:
-      - cookieAuth: []
+        - {"cookieAuth": []}
+      responses:
+        "200":
+          description: "List categories."
+          headers:
+            X-Request-Id:
+              "$ref": "#/components/headers/X-Request-Id"
+            Cache-Control:
+              "$ref": "#/components/headers/Cache-Control"
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PaginatedCategories"
+        "400":
+          "$ref": "#/components/responses/InvalidRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthenticated"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "413":
+          "$ref": "#/components/responses/BodyTooLarge"
+        "500":
+          "$ref": "#/components/responses/InternalError"
+        "503":
+          "$ref": "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: "createAdminCategory"
+      tags:
+        - "Admin Categories"
+      summary: "Create a category"
+      description: "Requires an active exclusive administrator and same-origin write proof. New records are active."
+      parameters:
+        - {"$ref": "#/components/parameters/RequestId"}
+        - {"$ref": "#/components/parameters/Origin"}
+        - {"$ref": "#/components/parameters/Referer"}
+        - {"$ref": "#/components/parameters/SecFetchSite"}
+      security:
+        - {"cookieAuth": []}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/CreateCategoryRequest"
+      responses:
+        "201":
+          description: "Create a category."
+          headers:
+            X-Request-Id:
+              "$ref": "#/components/headers/X-Request-Id"
+            Cache-Control:
+              "$ref": "#/components/headers/Cache-Control"
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Category"
+        "400":
+          "$ref": "#/components/responses/InvalidRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthenticated"
+        "403":
+          "$ref": "#/components/responses/AdminWriteForbidden"
+        "409":
+          "$ref": "#/components/responses/MasterNameTaken"
+        "413":
+          "$ref": "#/components/responses/BodyTooLarge"
+        "415":
+          "$ref": "#/components/responses/UnsupportedMediaType"
+        "422":
+          "$ref": "#/components/responses/InvalidMasterData"
+        "500":
+          "$ref": "#/components/responses/InternalError"
+        "503":
+          "$ref": "#/components/responses/ServiceUnavailable"
+  /api/v1/admin/categories/{id}:
+    patch:
+      operationId: "updateAdminCategory"
+      tags:
+        - "Admin Categories"
+      summary: "Update a category"
+      description: "Requires an active exclusive administrator and same-origin write proof. Applies only supplied fields. Set isActive to false to disable the record."
+      parameters:
+        - {"$ref": "#/components/parameters/RequestId"}
+        - {"$ref": "#/components/parameters/MasterId"}
+        - {"$ref": "#/components/parameters/Origin"}
+        - {"$ref": "#/components/parameters/Referer"}
+        - {"$ref": "#/components/parameters/SecFetchSite"}
+      security:
+        - {"cookieAuth": []}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UpdateCategoryRequest"
+      responses:
+        "200":
+          description: "Update a category."
+          headers:
+            X-Request-Id:
+              "$ref": "#/components/headers/X-Request-Id"
+            Cache-Control:
+              "$ref": "#/components/headers/Cache-Control"
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Category"
+        "400":
+          "$ref": "#/components/responses/InvalidRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthenticated"
+        "403":
+          "$ref": "#/components/responses/AdminWriteForbidden"
+        "404":
+          "$ref": "#/components/responses/MasterNotFound"
+        "409":
+          "$ref": "#/components/responses/MasterNameTaken"
+        "413":
+          "$ref": "#/components/responses/BodyTooLarge"
+        "415":
+          "$ref": "#/components/responses/UnsupportedMediaType"
+        "422":
+          "$ref": "#/components/responses/InvalidMasterData"
+        "500":
+          "$ref": "#/components/responses/InternalError"
+        "503":
+          "$ref": "#/components/responses/ServiceUnavailable"
+  /api/v1/admin/departments:
+    get:
+      operationId: "listAdminDepartments"
+      tags:
+        - "Admin Departments"
+      summary: "List departments"
+      description: "Requires an active exclusive administrator. Lists active and disabled rows sorted by lowercase name and ID. Search matches name or responsibility scope. Includes currently active assigned staff usernames."
+      parameters:
+        - {"$ref": "#/components/parameters/RequestId"}
+        - {"$ref": "#/components/parameters/Page"}
+        - {"$ref": "#/components/parameters/PageSize"}
+        - {"$ref": "#/components/parameters/MasterSearch"}
+        - {"$ref": "#/components/parameters/MasterActive"}
+      security:
+        - {"cookieAuth": []}
+      responses:
+        "200":
+          description: "List departments."
+          headers:
+            X-Request-Id:
+              "$ref": "#/components/headers/X-Request-Id"
+            Cache-Control:
+              "$ref": "#/components/headers/Cache-Control"
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PaginatedDepartments"
+        "400":
+          "$ref": "#/components/responses/InvalidRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthenticated"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "413":
+          "$ref": "#/components/responses/BodyTooLarge"
+        "500":
+          "$ref": "#/components/responses/InternalError"
+        "503":
+          "$ref": "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: "createAdminDepartment"
+      tags:
+        - "Admin Departments"
+      summary: "Create a department"
+      description: "Requires an active exclusive administrator and same-origin write proof. New records are active."
+      parameters:
+        - {"$ref": "#/components/parameters/RequestId"}
+        - {"$ref": "#/components/parameters/Origin"}
+        - {"$ref": "#/components/parameters/Referer"}
+        - {"$ref": "#/components/parameters/SecFetchSite"}
+      security:
+        - {"cookieAuth": []}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/CreateDepartmentRequest"
+      responses:
+        "201":
+          description: "Create a department."
+          headers:
+            X-Request-Id:
+              "$ref": "#/components/headers/X-Request-Id"
+            Cache-Control:
+              "$ref": "#/components/headers/Cache-Control"
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/DepartmentSummary"
+        "400":
+          "$ref": "#/components/responses/InvalidRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthenticated"
+        "403":
+          "$ref": "#/components/responses/AdminWriteForbidden"
+        "409":
+          "$ref": "#/components/responses/MasterNameTaken"
+        "413":
+          "$ref": "#/components/responses/BodyTooLarge"
+        "415":
+          "$ref": "#/components/responses/UnsupportedMediaType"
+        "422":
+          "$ref": "#/components/responses/InvalidMasterData"
+        "500":
+          "$ref": "#/components/responses/InternalError"
+        "503":
+          "$ref": "#/components/responses/ServiceUnavailable"
+  /api/v1/admin/departments/{id}:
+    patch:
+      operationId: "updateAdminDepartment"
+      tags:
+        - "Admin Departments"
+      summary: "Update a department"
+      description: "Requires an active exclusive administrator and same-origin write proof. Applies only supplied fields. Set isActive to false to disable the record."
+      parameters:
+        - {"$ref": "#/components/parameters/RequestId"}
+        - {"$ref": "#/components/parameters/MasterId"}
+        - {"$ref": "#/components/parameters/Origin"}
+        - {"$ref": "#/components/parameters/Referer"}
+        - {"$ref": "#/components/parameters/SecFetchSite"}
+      security:
+        - {"cookieAuth": []}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UpdateDepartmentRequest"
+      responses:
+        "200":
+          description: "Update a department."
+          headers:
+            X-Request-Id:
+              "$ref": "#/components/headers/X-Request-Id"
+            Cache-Control:
+              "$ref": "#/components/headers/Cache-Control"
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/DepartmentSummary"
+        "400":
+          "$ref": "#/components/responses/InvalidRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthenticated"
+        "403":
+          "$ref": "#/components/responses/AdminWriteForbidden"
+        "404":
+          "$ref": "#/components/responses/MasterNotFound"
+        "409":
+          "$ref": "#/components/responses/MasterNameTaken"
+        "413":
+          "$ref": "#/components/responses/BodyTooLarge"
+        "415":
+          "$ref": "#/components/responses/UnsupportedMediaType"
+        "422":
+          "$ref": "#/components/responses/InvalidMasterData"
+        "500":
+          "$ref": "#/components/responses/InternalError"
+        "503":
+          "$ref": "#/components/responses/ServiceUnavailable"
+  /api/v1/admin/locations:
+    get:
+      operationId: "listAdminLocations"
+      tags:
+        - "Admin Locations"
+      summary: "List locations"
+      description: "Requires an active exclusive administrator. Lists active and disabled rows sorted by lowercase name and ID. Search matches name."
+      parameters:
+        - {"$ref": "#/components/parameters/RequestId"}
+        - {"$ref": "#/components/parameters/Page"}
+        - {"$ref": "#/components/parameters/PageSize"}
+        - {"$ref": "#/components/parameters/MasterSearch"}
+        - {"$ref": "#/components/parameters/MasterActive"}
+        - {"$ref": "#/components/parameters/MasterLocationType"}
+      security:
+        - {"cookieAuth": []}
+      responses:
+        "200":
+          description: "List locations."
+          headers:
+            X-Request-Id:
+              "$ref": "#/components/headers/X-Request-Id"
+            Cache-Control:
+              "$ref": "#/components/headers/Cache-Control"
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PaginatedLocations"
+        "400":
+          "$ref": "#/components/responses/InvalidRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthenticated"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "413":
+          "$ref": "#/components/responses/BodyTooLarge"
+        "500":
+          "$ref": "#/components/responses/InternalError"
+        "503":
+          "$ref": "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: "createAdminLocation"
+      tags:
+        - "Admin Locations"
+      summary: "Create a location"
+      description: "Requires an active exclusive administrator and same-origin write proof. New records are active."
+      parameters:
+        - {"$ref": "#/components/parameters/RequestId"}
+        - {"$ref": "#/components/parameters/Origin"}
+        - {"$ref": "#/components/parameters/Referer"}
+        - {"$ref": "#/components/parameters/SecFetchSite"}
+      security:
+        - {"cookieAuth": []}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/CreateLocationRequest"
+      responses:
+        "201":
+          description: "Create a location."
+          headers:
+            X-Request-Id:
+              "$ref": "#/components/headers/X-Request-Id"
+            Cache-Control:
+              "$ref": "#/components/headers/Cache-Control"
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/CampusLocation"
+        "400":
+          "$ref": "#/components/responses/InvalidRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthenticated"
+        "403":
+          "$ref": "#/components/responses/AdminWriteForbidden"
+        "409":
+          "$ref": "#/components/responses/MasterNameTaken"
+        "413":
+          "$ref": "#/components/responses/BodyTooLarge"
+        "415":
+          "$ref": "#/components/responses/UnsupportedMediaType"
+        "422":
+          "$ref": "#/components/responses/InvalidMasterLocation"
+        "500":
+          "$ref": "#/components/responses/InternalError"
+        "503":
+          "$ref": "#/components/responses/ServiceUnavailable"
+  /api/v1/admin/locations/{id}:
+    patch:
+      operationId: "updateAdminLocation"
+      tags:
+        - "Admin Locations"
+      summary: "Update a location"
+      description: "Requires an active exclusive administrator and same-origin write proof. Applies only supplied fields. Set isActive to false to disable the record."
+      parameters:
+        - {"$ref": "#/components/parameters/RequestId"}
+        - {"$ref": "#/components/parameters/MasterId"}
+        - {"$ref": "#/components/parameters/Origin"}
+        - {"$ref": "#/components/parameters/Referer"}
+        - {"$ref": "#/components/parameters/SecFetchSite"}
+      security:
+        - {"cookieAuth": []}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UpdateLocationRequest"
+      responses:
+        "200":
+          description: "Update a location."
+          headers:
+            X-Request-Id:
+              "$ref": "#/components/headers/X-Request-Id"
+            Cache-Control:
+              "$ref": "#/components/headers/Cache-Control"
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/CampusLocation"
+        "400":
+          "$ref": "#/components/responses/InvalidRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthenticated"
+        "403":
+          "$ref": "#/components/responses/AdminWriteForbidden"
+        "404":
+          "$ref": "#/components/responses/MasterNotFound"
+        "409":
+          "$ref": "#/components/responses/MasterNameTaken"
+        "413":
+          "$ref": "#/components/responses/BodyTooLarge"
+        "415":
+          "$ref": "#/components/responses/UnsupportedMediaType"
+        "422":
+          "$ref": "#/components/responses/InvalidMasterLocation"
+        "500":
+          "$ref": "#/components/responses/InternalError"
+        "503":
+          "$ref": "#/components/responses/ServiceUnavailable"
   /api/v1/admin/audit-logs:
     get:
       operationId: listAuditLogs
@@ -609,6 +1026,31 @@ components:
         - 100
         example: 25
         default: 25
+    MasterId:
+      name: "id"
+      in: "path"
+      required: true
+      schema:
+        type: "string"
+        format: "uuid"
+    MasterSearch:
+      name: "q"
+      in: "query"
+      description: "Trimmed case-insensitive literal substring search."
+      schema:
+        type: "string"
+    MasterActive:
+      name: "isActive"
+      in: "query"
+      description: "Filter by active status. Omit to include both statuses."
+      schema:
+        type: "boolean"
+    MasterLocationType:
+      name: "type"
+      in: "query"
+      description: "Exact campus location type."
+      schema:
+        "$ref": "#/components/schemas/CampusLocationType"
     Origin:
       name: Origin
       in: header
@@ -664,6 +1106,89 @@ components:
         enum:
         - no-referrer
   responses:
+    MasterNameTaken:
+      description: "The name is already reserved. Uniqueness is case-insensitive."
+      headers:
+        X-Request-Id:
+          "$ref": "#/components/headers/X-Request-Id"
+        Cache-Control:
+          "$ref": "#/components/headers/Cache-Control"
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorEnvelope"
+          examples:
+            NAME_TAKEN:
+              value:
+                error:
+                  code: "NAME_TAKEN"
+                  message: "name is already taken"
+                  details: {}
+                  requestId: "ku-request-2026"
+    MasterNotFound:
+      description: "The master data record does not exist."
+      headers:
+        X-Request-Id:
+          "$ref": "#/components/headers/X-Request-Id"
+        Cache-Control:
+          "$ref": "#/components/headers/Cache-Control"
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorEnvelope"
+          examples:
+            NOT_FOUND:
+              value:
+                error:
+                  code: "NOT_FOUND"
+                  message: "The requested resource was not found."
+                  details: {}
+                  requestId: "ku-request-2026"
+    InvalidMasterData:
+      description: "One or more master data fields failed validation."
+      headers:
+        X-Request-Id:
+          "$ref": "#/components/headers/X-Request-Id"
+        Cache-Control:
+          "$ref": "#/components/headers/Cache-Control"
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorEnvelope"
+          examples:
+            VALIDATION_ERROR:
+              value:
+                error:
+                  code: "VALIDATION_ERROR"
+                  message: "The request did not pass validation."
+                  details: {}
+                  requestId: "ku-request-2026"
+    InvalidMasterLocation:
+      description: "One or more location fields failed validation."
+      headers:
+        X-Request-Id:
+          "$ref": "#/components/headers/X-Request-Id"
+        Cache-Control:
+          "$ref": "#/components/headers/Cache-Control"
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorEnvelope"
+          examples:
+            VALIDATION_ERROR:
+              value:
+                error:
+                  code: "VALIDATION_ERROR"
+                  message: "The request did not pass validation."
+                  details: {}
+                  requestId: "ku-request-2026"
+            COORDINATES_OUT_OF_BOUNDS:
+              value:
+                error:
+                  code: "COORDINATES_OUT_OF_BOUNDS"
+                  message: "coordinates must be within KU Bangkhen"
+                  details: {}
+                  requestId: "ku-request-2026"
     InvalidRequest:
       description: Malformed request data or invalid path or query parameter.
       headers:
@@ -1290,29 +1815,260 @@ components:
         name: Campus Facilities
         responsibilityScope: Building and walkway maintenance
         isActive: true
-    PaginatedDepartments:
-      type: object
+    PublicMasterDataResponse:
+      type: "object"
       required:
-      - items
-      - pagination
+        - "categories"
+        - "departments"
+        - "locations"
+      properties:
+        categories:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/Category"
+        departments:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/DepartmentSummary"
+        locations:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/CampusLocation"
+    CampusLocationType:
+      type: "string"
+      enum:
+        - "BUILDING"
+        - "COMMON_AREA"
+        - "ROAD"
+        - "ACTIVITY_PLAZA"
+        - "SERVICE_POINT"
+        - "LANDMARK"
+    Category:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "id"
+        - "name"
+        - "description"
+        - "isActive"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 120
+          description: "Trimmed name without control characters."
+        description:
+          type: "string"
+          maxLength: 1000
+        isActive:
+          type: "boolean"
+    PaginatedCategories:
+      type: "object"
+      required:
+        - "items"
+        - "pagination"
       properties:
         items:
-          type: array
+          type: "array"
           items:
-            $ref: '#/components/schemas/DepartmentSummary'
+            "$ref": "#/components/schemas/Category"
         pagination:
-          $ref: '#/components/schemas/PaginationMeta'
-      example:
+          "$ref": "#/components/schemas/PaginationMeta"
+    CreateCategoryRequest:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "name"
+      properties:
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 120
+          description: "Trimmed name without control characters."
+        description:
+          type: "string"
+          maxLength: 1000
+    UpdateCategoryRequest:
+      type: "object"
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 120
+          description: "Trimmed name without control characters."
+        description:
+          type: "string"
+          maxLength: 1000
+        isActive:
+          type: "boolean"
+    Department:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "id"
+        - "name"
+        - "responsibilityScope"
+        - "isActive"
+        - "staffUsernames"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 160
+          description: "Trimmed name without control characters."
+        responsibilityScope:
+          type: "string"
+          maxLength: 1000
+        isActive:
+          type: "boolean"
+        staffUsernames:
+          type: "array"
+          items:
+            type: "string"
+    PaginatedDepartments:
+      type: "object"
+      required:
+        - "items"
+        - "pagination"
+      properties:
         items:
-        - id: 037c5330-84e6-45f3-8830-1ea2f01e7813
-          name: Campus Facilities
-          responsibilityScope: Building and walkway maintenance
-          isActive: true
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/Department"
         pagination:
-          page: 1
-          pageSize: 25
-          totalItems: 1
-          totalPages: 1
+          "$ref": "#/components/schemas/PaginationMeta"
+    CreateDepartmentRequest:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "name"
+      properties:
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 160
+          description: "Trimmed name without control characters."
+        responsibilityScope:
+          type: "string"
+          maxLength: 1000
+    UpdateDepartmentRequest:
+      type: "object"
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 160
+          description: "Trimmed name without control characters."
+        responsibilityScope:
+          type: "string"
+          maxLength: 1000
+        isActive:
+          type: "boolean"
+    CampusLocation:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "id"
+        - "name"
+        - "type"
+        - "lat"
+        - "lng"
+        - "isActive"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 200
+          description: "Trimmed name without control characters."
+        type:
+          "$ref": "#/components/schemas/CampusLocationType"
+        lat:
+          type: "number"
+          format: "double"
+          minimum: 13.839
+          maximum: 13.858
+        lng:
+          type: "number"
+          format: "double"
+          minimum: 100.557
+          maximum: 100.58
+        isActive:
+          type: "boolean"
+    PaginatedLocations:
+      type: "object"
+      required:
+        - "items"
+        - "pagination"
+      properties:
+        items:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/CampusLocation"
+        pagination:
+          "$ref": "#/components/schemas/PaginationMeta"
+    CreateLocationRequest:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "name"
+        - "type"
+        - "lat"
+        - "lng"
+      properties:
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 200
+          description: "Trimmed name without control characters."
+        type:
+          "$ref": "#/components/schemas/CampusLocationType"
+        lat:
+          type: "number"
+          format: "double"
+          minimum: 13.839
+          maximum: 13.858
+        lng:
+          type: "number"
+          format: "double"
+          minimum: 100.557
+          maximum: 100.58
+    UpdateLocationRequest:
+      type: "object"
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 200
+          description: "Trimmed name without control characters."
+        type:
+          "$ref": "#/components/schemas/CampusLocationType"
+        lat:
+          type: "number"
+          format: "double"
+          minimum: 13.839
+          maximum: 13.858
+        lng:
+          type: "number"
+          format: "double"
+          minimum: 100.557
+          maximum: 100.58
+        isActive:
+          type: "boolean"
     AuditEntityType:
       type: string
       enum:

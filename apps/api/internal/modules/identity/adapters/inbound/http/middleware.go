@@ -78,7 +78,7 @@ func RejectAdminOperational(c fiber.Ctx) error {
 	return c.Next()
 }
 
-func (h *Handler) checkWriteOrigin(c fiber.Ctx) error {
+func (h *Handler) CheckWriteOrigin(c fiber.Ctx) error {
 	if site := c.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
 		return apperror.Forbidden
 	}

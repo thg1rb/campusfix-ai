@@ -14,6 +14,9 @@ import (
 	identityHTTP "github.com/thg1rb/ku-spot/apps/api/internal/modules/identity/adapters/inbound/http"
 	identityDB "github.com/thg1rb/ku-spot/apps/api/internal/modules/identity/adapters/outbound/postgres"
 	identity "github.com/thg1rb/ku-spot/apps/api/internal/modules/identity/application"
+	masterHTTP "github.com/thg1rb/ku-spot/apps/api/internal/modules/masterdata/adapters/inbound/http"
+	masterDB "github.com/thg1rb/ku-spot/apps/api/internal/modules/masterdata/adapters/outbound/postgres"
+	master "github.com/thg1rb/ku-spot/apps/api/internal/modules/masterdata/application"
 	"github.com/thg1rb/ku-spot/apps/api/internal/platform/database"
 	"github.com/thg1rb/ku-spot/apps/api/internal/platform/http"
 )
@@ -45,6 +48,8 @@ func registerIdentity(app *fiber.App, db *database.Connection, settings config.A
 	handler := identityHTTP.New(identityService, provider, settings, clock)
 	api := app.Group("/api/v1")
 	handler.Register(api)
+	masterService := master.New(masterDB.Categories(db), masterDB.Departments(db), masterDB.Locations(db), db, auditService)
+	masterHTTP.Register(api, masterService, handler)
 	api.Get("/admin/audit-logs", handler.OptionalAuth, identityHTTP.RequireExclusiveAdmin, auditHTTP.List(auditService, func(c fiber.Ctx) audit.AdminActor {
 		actor, _ := identityHTTP.Actor(c)
 		return actor

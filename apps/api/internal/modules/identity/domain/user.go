@@ -54,13 +54,6 @@ type ExternalIdentity struct {
 	AvatarURL     string
 }
 
-type Department struct {
-	ID                  string
-	Name                string
-	ResponsibilityScope string
-	IsActive            bool
-}
-
 func ValidRole(role Role) bool {
 	switch role {
 	case Reporter, Reviewer, Staff, Administrator:

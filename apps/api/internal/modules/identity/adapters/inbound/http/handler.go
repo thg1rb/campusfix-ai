@@ -1,11 +1,8 @@
 package http
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
-	"mime"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +13,7 @@ import (
 	"github.com/thg1rb/ku-spot/apps/api/internal/modules/identity/application"
 	"github.com/thg1rb/ku-spot/apps/api/internal/modules/identity/domain"
 	"github.com/thg1rb/ku-spot/apps/api/internal/platform/apperror"
+	platform "github.com/thg1rb/ku-spot/apps/api/internal/platform/http"
 	"github.com/thg1rb/ku-spot/apps/api/internal/platform/pagination"
 )
 
@@ -37,12 +35,11 @@ func New(service *application.Service, provider application.AuthProvider, a conf
 func (h *Handler) Register(router fiber.Router) {
 	router.Get("/auth/login", h.login)
 	router.Get("/auth/callback", h.callback)
-	router.Post("/auth/logout", h.checkWriteOrigin, h.OptionalAuth, RequireAuth, h.logout)
+	router.Post("/auth/logout", h.CheckWriteOrigin, h.OptionalAuth, RequireAuth, h.logout)
 	router.Get("/me", h.OptionalAuth, RequireAuth, h.me)
-	router.Patch("/me/username", h.checkWriteOrigin, h.OptionalAuth, RequireAuth, h.updateUsername)
+	router.Patch("/me/username", h.CheckWriteOrigin, h.OptionalAuth, RequireAuth, h.updateUsername)
 	router.Get("/admin/users", h.OptionalAuth, RequireExclusiveAdmin, h.listUsers)
-	router.Patch("/admin/users/:id", h.checkWriteOrigin, h.OptionalAuth, RequireExclusiveAdmin, h.updateUser)
-	router.Get("/admin/departments", h.OptionalAuth, RequireExclusiveAdmin, h.listDepartments)
+	router.Patch("/admin/users/:id", h.CheckWriteOrigin, h.OptionalAuth, RequireExclusiveAdmin, h.updateUser)
 }
 
 type profile struct {
@@ -74,27 +71,11 @@ func (h *Handler) me(c fiber.Ctx) error {
 	return c.JSON(profile(actor))
 }
 
-func decode(c fiber.Ctx, target any) error {
-	mediaType, _, err := mime.ParseMediaType(c.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
-		return apperror.New(415, "UNSUPPORTED_MEDIA_TYPE", "Use Content-Type application/json.")
-	}
-	parser := json.NewDecoder(bytes.NewReader(c.Body()))
-	parser.DisallowUnknownFields()
-	if err := parser.Decode(target); err != nil {
-		return apperror.Invalid
-	}
-	if err := parser.Decode(new(any)); !errors.Is(err, io.EOF) {
-		return apperror.Invalid
-	}
-	return nil
-}
-
 func (h *Handler) updateUsername(c fiber.Ctx) error {
 	var input struct {
 		Username string `json:"username"`
 	}
-	if err := decode(c, &input); err != nil {
+	if err := platform.DecodeJSON(c, &input); err != nil {
 		return err
 	}
 	actor, _ := Actor(c)
@@ -133,30 +114,6 @@ func (h *Handler) listUsers(c fiber.Ctx) error {
 	return c.JSON(pagination.Result[profile]{Items: profiles, Pagination: result.Pagination})
 }
 
-type departmentResponse struct {
-	ID                  string `json:"id"`
-	Name                string `json:"name"`
-	ResponsibilityScope string `json:"responsibilityScope"`
-	IsActive            bool   `json:"isActive"`
-}
-
-func (h *Handler) listDepartments(c fiber.Ctx) error {
-	page, err := pagination.Parse(c.Query("page"), c.Query("pageSize"))
-	if err != nil {
-		return err
-	}
-	actor, _ := Actor(c)
-	result, err := h.service.ListDepartments(c.Context(), actor, page)
-	if err != nil {
-		return err
-	}
-	items := make([]departmentResponse, 0, len(result.Items))
-	for _, item := range result.Items {
-		items = append(items, departmentResponse(item))
-	}
-	return c.JSON(pagination.Result[departmentResponse]{Items: items, Pagination: result.Pagination})
-}
-
 func parsePatch(c fiber.Ctx) (application.UserPatch, error) {
 	var patch application.UserPatch
 	var input struct {
@@ -164,7 +121,7 @@ func parsePatch(c fiber.Ctx) (application.UserPatch, error) {
 		DepartmentID json.RawMessage `json:"departmentId"`
 		IsActive     json.RawMessage `json:"isActive"`
 	}
-	if err := decode(c, &input); err != nil {
+	if err := platform.DecodeJSON(c, &input); err != nil {
 		return patch, err
 	}
 	if input.Roles != nil && (json.Unmarshal(input.Roles, &patch.Roles) != nil || patch.Roles == nil) {

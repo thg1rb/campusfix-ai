@@ -43,6 +43,12 @@ func (p provider) Exchange(_ context.Context, code, verifier, nonce string) (dom
 
 func testDatabase(t *testing.T) *database.Connection {
 	t.Helper()
+	db, _ := testDatabaseWithURL(t)
+	return db
+}
+
+func testDatabaseWithURL(t *testing.T) (*database.Connection, string) {
+	t.Helper()
 	dsn := os.Getenv("KU_SPOT_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("set KU_SPOT_TEST_DATABASE_URL to run PostgreSQL integration tests")
@@ -89,7 +95,7 @@ func testDatabase(t *testing.T) *database.Connection {
 		t.Fatalf("apply schema migrations: %v\n%s", err, strings.ReplaceAll(string(output), u.String(), "[database URL]"))
 	}
 
-	return db
+	return db, u.String()
 }
 
 func TestUserAccessPostgres(t *testing.T) {
