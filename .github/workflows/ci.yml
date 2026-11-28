@@ -136,6 +136,7 @@ jobs:
               - 'compose.yaml'
               - 'compose.dev.yaml'
               - 'apps/*/Dockerfile'
+              - 'infra/**'
               - '.github/workflows/ci.yml'
 
       - name: Validate Compose configurations

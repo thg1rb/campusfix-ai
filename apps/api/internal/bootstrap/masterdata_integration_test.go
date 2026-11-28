@@ -27,7 +27,13 @@ func TestMasterDataMigrationPostgres(t *testing.T) {
 	db, dsn := testDatabaseWithURL(t)
 	for _, direction := range []string{"down", "up"} {
 		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
-		command := exec.CommandContext(ctx, "go", "run", "github.com/pressly/goose/v3/cmd/goose@v3.30.1", "-dir", "migrations", direction)
+		args := []string{"run", "github.com/pressly/goose/v3/cmd/goose@v3.30.1", "-dir", "migrations"}
+		if direction == "down" {
+			args = append(args, "down-to", "20261127081507")
+		} else {
+			args = append(args, "up-to", "20261128061015")
+		}
+		command := exec.CommandContext(ctx, "go", args...)
 		command.Dir = "../.."
 		command.Env = append(os.Environ(), "GOOSE_DRIVER=postgres", "GOOSE_DBSTRING="+dsn)
 		output, err := command.CombinedOutput()

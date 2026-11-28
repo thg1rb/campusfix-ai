@@ -69,12 +69,12 @@ The response is `{ categories, departments, locations }`. Each array contains ac
 
 ## 5. Reporter Endpoints (`UC-RPT-001`..`005`)
 
-All require authenticated non-Admin user (`REPORTER`).
+Report writes require an authenticated non-administrator. Media previews follow the visibility rules below.
 
 | Method & Path | Behavior & Rules |
 | --- | --- |
-| `POST /api/v1/media/report-images` | Multipart upload for a single image (`.png`/`.jpg`/`.jpeg`, `≤ 10 MB`). Strips EXIF server-side, stores a **staged** `report_images` row (`report_id = NULL`, `uploaded_by = caller`, `expires_at = +24h`), and returns `{ "imageId": "...", "previewUrl": "/api/v1/media/report-images/:imageId", "expiresAt": "..." }`. |
-| `GET /api/v1/media/report-images/:imageId` | Serves EXIF-stripped image bytes enforcing report-aligned access control: staged (`report_id IS NULL`) → `uploaded_by` only; `DRAFT`/`CANCELLED` → owner only; `PENDING_REVIEW`/`REJECTED` → owner or active `REVIEWER`; `CONFIRMED` → Public (no login required). |
+| `POST /api/v1/media/report-images` | Same-origin multipart upload with one `file` field. Accepts PNG/JPEG up to 10 MiB. Strips metadata, preserves JPEG orientation, and stages the image for 24 hours. Returns `201` with `imageId`, `fileName`, `mimeType`, sanitized `sizeBytes`, relative `previewUrl`, and `expiresAt`. |
+| `GET /api/v1/media/report-images/:imageId` | Returns sanitized PNG/JPEG bytes. An unexpired staged image is visible only to its uploader. A `DRAFT` or `CANCELLED` attachment is visible to its Report owner. A `PENDING_REVIEW` or `REJECTED` attachment is visible to its owner and active Reviewers. A `CONFIRMED` attachment is public. Phase 3 denies attached reads until Report persistence is available. |
 | `GET /api/v1/my-reports` | Lists caller's own reports (`DRAFT`, `PENDING_REVIEW`, `CONFIRMED`, `REJECTED`, `CANCELLED`). |
 | `GET /api/v1/reports/:id` | Returns report detail + latest AI analysis run. Accessible by owner (`reporterId`) or `REVIEWER` (for `PENDING_REVIEW`/`REJECTED`). |
 | `POST /api/v1/reports/drafts` | Save new `DRAFT` (`UC-RPT-001`). Partial fields allowed; any `imageIds` are validated for caller ownership and bound to the new Report in the same transaction (clearing `expires_at`). |
@@ -82,6 +82,10 @@ All require authenticated non-Admin user (`REPORTER`).
 | `POST /api/v1/reports/:id/submit` | Submit `DRAFT` (or `POST /api/v1/reports` to create+submit directly, `UC-RPT-002`). Validates Description, Location+Map Point, `1–5` caller-owned staged/attached `imageIds` (binding them inside the same transaction and clearing `expires_at`); assigns `reportNumber`; sets `PENDING_REVIEW`, `version = 1`; triggers `UC-AI-001` without failing submission on AI outage. Optional `requestedTargetTicketId` (must be Active, `UC-RPT-005`). |
 | `PATCH /api/v1/reports/:id` | Edit `PENDING_REVIEW` report (`UC-RPT-003`, owner only). Validates/binds any new caller-owned staged `imageIds` in the same transaction, increments `version`, marks prior AI runs `isOutdated = true`, triggers `UC-AI-002`. Returns `409` if already `CONFIRMED`/`REJECTED`. |
 | `POST /api/v1/reports/:id/cancel` | Cancel `PENDING_REVIEW` report (`UC-RPT-004`, owner only) → `CANCELLED` with `cancelledAt`. |
+
+Media upload returns `400 INVALID_REQUEST` for malformed multipart, `400 INVALID_MEDIA_FORMAT` for unsupported, corrupt, or oversized-dimension images, and `400 MEDIA_TOO_LARGE` when the raw or sanitized file exceeds 10 MiB. It returns `401 UNAUTHENTICATED` for missing or invalid sessions, `403 FORBIDDEN` for invalid origin proof, `403 ADMIN_NON_OPERATIONAL` for administrators, and `415 UNSUPPORTED_MEDIA_TYPE` when the request is not multipart. The HTTP transport rejects bodies over 12 MiB with `413 PAYLOAD_TOO_LARGE`.
+
+Media preview returns `400 INVALID_REQUEST` for a malformed UUID and `404 NOT_FOUND` for a missing, expired, or inaccessible image, including private requests without an authenticated session. A staged row is eligible only while `expires_at > now`. Authorized responses include `X-Content-Type-Options: nosniff`, an inline `Content-Disposition`, and `Cache-Control: private, no-store` or `public, max-age=3600, immutable` for public images. Both operations can return `500 INTERNAL_ERROR` for unexpected failures or `503 SERVICE_UNAVAILABLE` when a dependency is unavailable.
 
 ---
 

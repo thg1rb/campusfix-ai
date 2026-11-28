@@ -47,7 +47,7 @@ internal/modules/<module-name>/
 | --- | --- | --- |
 | `identity` | Auth callback, session issuance/validation, user provisioning, Username updates (`UC-AUTH-001`, `UC-USR-001`), Admin user/role management (`UC-ADM-001`). | `users`, `user_roles`, `sessions` |
 | `masterdata` | Categories, Departments, Campus Locations CRUD & soft-disable (`UC-ADM-002`..`004`). | `categories`, `departments`, `campus_locations` |
-| `media` | Upload validation (`.png`/`.jpg`/`.jpeg`, ≤10 MB, 1–5/report), EXIF stripping, object storage adapter, signed/public serving, purge cleanup. | `report_images`, `activity_evidence_images` |
+| `media` | Upload validation (`.png`/`.jpg`/`.jpeg`, ≤10 MB, 1–5/report), EXIF stripping, object storage adapter, API-mediated image serving, purge cleanup. | `report_images`, `activity_evidence_images` |
 | `reports` | Draft save/resume, Report submission, Pending edit (`version++`), Cancel, AI analysis orchestration & storage (`UC-RPT-001`..`005`, `UC-AI-001`..`002`). | `reports`, `ai_analysis_runs`, `ticket_candidates` |
 | `review` | Incoming queue, optimistic-lock Confirm (Existing/New Ticket), Reject with reason, Confirmed Report correction, Ticket AI re-evaluation approval (`UC-REV-001`..`005`, `UC-AI-003`). | Coordinates `reports` + `tickets` |
 | `tickets` | Public Feed/Search/Filter/Map, Ticket Detail, Status transitions (`Start`, `Resume`), Multi-Department management & completion, Auto-`RESOLVED`, Public Activity Timeline, `Mark Affected` (`UC-PUB-*`, `UC-MAP-001`, `UC-DEP-001`..`003`, `UC-TKT-001`..`004`, `UC-REV-006`, `UC-AFF-001`). | `tickets`, `ticket_department_assignments`, `ticket_ai_reevaluations`, `ticket_affected_users`, `public_activity_events` |
@@ -84,15 +84,15 @@ internal/modules/<module-name>/
 ## 4. Media Upload, Storage & EXIF Stripping
 
 * **Constraints (`BR-RPT-003`..`005`):** `1–5` images required at submission; each file `≤ 10 MB`; accept only verified PNG/JPEG magic bytes (`.png`, `.jpg`, `.jpeg`). No video files in MVP.
-* **EXIF Stripping:** `apps/api` decodes and re-encodes (or strips metadata segments from) every uploaded JPEG/PNG image **before** persisting to object storage so GPS, camera model, timestamps, and author metadata never reach storage or public responses.
+* **EXIF Stripping:** `apps/api` verifies PNG/JPEG signatures, checks dimensions before decoding (10,000 px per axis and 40 million pixels total), applies JPEG EXIF orientation, and re-encodes every uploaded image **before** persisting to object storage so GPS, camera model, timestamps, and author metadata never reach storage or public responses.
 * **Staged Upload & Transactional Binding Lifecycle:**
   1. `POST /api/v1/media/report-images` validates format/size, strips EXIF, writes the object to storage, and inserts a staged `report_images` row with `report_id = NULL`, `uploaded_by = actor.id`, and `expires_at = NOW() + 24 hours`.
-  2. While `report_id IS NULL`, only `uploaded_by` may read/preview the image (`GET /api/v1/media/report-images/:imageId`); all others receive `403`/`404`.
+  2. While `report_id IS NULL`, only `uploaded_by` may preview it before `expires_at` (`GET /api/v1/media/report-images/:imageId`). Missing, expired, and inaccessible images return `404 NOT_FOUND`, including anonymous private reads.
   3. On Draft save/update (`POST/PATCH /reports/drafts`), direct submit (`POST /reports`), Draft submit (`POST /reports/:id/submit`), or Pending edit (`PATCH /reports/:id`), `apps/api` verifies inside the **same SQL transaction** that every referenced `imageId` belongs to `actor.id` AND is either staged (`report_id IS NULL` and not expired) or already attached to that same `report.id`, then binds `report_id = report.id`, sets `sort_order`, and clears `expires_at = NULL`.
   4. Once attached, image read authorization inherits the parent Report's visibility (`DRAFT`/`CANCELLED`: owner only; `PENDING_REVIEW`/`REJECTED`: owner + active `REVIEWER`; `CONFIRMED`: Public).
-* **Storage Adapter (`internal/adapters/storage/`):** Abstract behind an `ObjectStore` port (local disk volume for dev/compose, S3-compatible / MinIO for staging/production).
+* **Storage Adapter (`internal/adapters/storage/`):** A private S3-compatible bucket sits behind the `ObjectStore` port. Compose builds and runs pinned upstream MinIO, and deployed environments can use a private S3-compatible service. The API authorizes all image reads. See [ADR 0004](decisions/0004-media-storage-and-exif-stripping.md).
 * **Purge Cleanup:**
-  * Daily (or hourly) cleanup deletes expired staged images (`report_id IS NULL AND expires_at <= NOW()`) and removes their storage objects.
+  * Hourly by default, cleanup deletes expired staged images (`report_id IS NULL AND expires_at <= NOW()`) and their storage objects. Failed object deletion rolls back the batch for retry. Identity cleanup deletes expired sessions and sessions revoked for at least 24 hours.
   * When the 30-day retention job purges `DRAFT` or `CANCELLED` Reports (`BR-RET-001`..`002`), delete orphaned media objects asynchronously after DB deletion commits.
 
 ---
@@ -149,16 +149,19 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 
 | HTTP Status | Standard Error Codes (`/api/v1/*`) | Typical Trigger |
 | --- | --- | --- |
-| `400` | `INVALID_REQUEST`, `INVALID_MEDIA_FORMAT`, `MEDIA_TOO_LARGE` | Malformed JSON, unsupported file type, >10 MB image |
+| `400` | `INVALID_REQUEST`, `INVALID_MEDIA_FORMAT`, `MEDIA_TOO_LARGE` | Malformed JSON, unsupported file type, raw or sanitized image exceeds 10 MiB |
 | `401` | `UNAUTHENTICATED` | Missing or expired session on write/private endpoint |
 | `403` | `FORBIDDEN`, `SEPARATION_OF_DUTIES_VIOLATION`, `ADMIN_NON_OPERATIONAL`, `THREAD_ACCESS_DENIED` | Role check failed, self-review/self-operate attempt, Admin trying operational action, non-participant accessing Thread |
 | `404` | `NOT_FOUND` | Unknown entity ID or unauthorized private record hidden as not found |
-| `415` | `UNSUPPORTED_MEDIA_TYPE` | Identity PATCH without an `application/json` content type |
+| `413` | `PAYLOAD_TOO_LARGE` | HTTP body exceeds 12 MiB or raw/decoded JSON exceeds 4 MiB |
+| `415` | `UNSUPPORTED_MEDIA_TYPE` | Endpoint receives an unsupported media type or content encoding |
 | `409` | `STALE_REPORT_VERSION`, `STALE_REEVALUATION`, `TRANSITION_FORBIDDEN`, `TICKET_IS_FINAL`, `THREAD_READ_ONLY`, `USERNAME_TAKEN`, `ALREADY_COMPLETED` | Optimistic lock mismatch (`BR-RPT-012`), stale/outdated AI re-evaluation apply, invalid state transition, mutating Final (`RESOLVED`) Ticket, posting to Thread outside `WAITING_INFORMATION`, duplicate username |
 | `422` | `VALIDATION_ERROR`, `REJECTION_REASON_REQUIRED`, `DEPARTMENT_REQUIRED`, `EXCLUSIVE_ADMIN_CONFLICT`, `SINGLE_DEPARTMENT_LIMIT` | Missing mandatory domain fields or role/department constraint violation |
 | `503` | `SERVICE_UNAVAILABLE` | Unexpected downstream outage on `/api/v1/*` business routes (not used by `/readyz`, which returns `{ "status": "unavailable", "checks": { ... } }`) |
 
 ---
+
+The API request context defaults to 15 seconds. Media upload uses 25 seconds within the Web proxy’s 30-second deadline.
 
 ## 8. Key Libraries & Dependencies Registry
 
@@ -202,6 +205,18 @@ All `/api/v1/*` business API error responses use one consistent JSON structure (
 | `github.com/santhosh-tekuri/jsonschema/v6` | `v6.0.3` | Schema validation used by kin-openapi (indirect) |
 | `go.yaml.in/yaml/v4` | `v4.0.0` | OpenAPI YAML decoding in kin-openapi (indirect) |
 | `gopkg.in/yaml.v3` | `v3.0.1` | Embedded YAML parsing in Fiber Swagger UI (indirect) |
+| `github.com/minio/minio-go/v7` | `v7.4.1` | Private S3-compatible object storage |
+| `github.com/valyala/fasthttp` | `v1.80.0` | Fiber transport and bounded JSON body decompression |
+| `github.com/cespare/xxhash/v2` | `v2.3.0` | S3 client hashing (indirect) |
+| `github.com/dustin/go-humanize` | `v1.0.1` | S3 client byte and size formatting (indirect) |
+| `github.com/klauspost/cpuid/v2` | `v2.4.0` | CPU feature detection for S3 client checksums (indirect) |
+| `github.com/klauspost/crc32` | `v1.3.0` | S3 client CRC32 checksums (indirect) |
+| `github.com/minio/crc64nvme` | `v1.1.1` | S3 client CRC64 checksums (indirect) |
+| `github.com/minio/md5-simd` | `v1.1.2` | S3 client MD5 checksums (indirect) |
+| `github.com/rs/xid` | `v1.6.0` | S3 client identifiers (indirect) |
+| `github.com/zeebo/xxh3` | `v1.1.0` | S3 client XXH3 checksums (indirect) |
+| `go.yaml.in/yaml/v3` | `v3.0.6` | S3 client YAML support (indirect) |
+| `gopkg.in/ini.v1` | `v1.67.3` | S3 client INI configuration support (indirect) |
 | `gorm.io/gorm` | `v1.31.2` | Persistence ORM inside `adapters/outbound/postgres/` only |
 | `gorm.io/driver/postgres` | `v1.6.3` | PostgreSQL driver for GORM (`pgx/v5`) |
 | `github.com/pressly/goose/v3` *(CLI via `Makefile`)* | `v3.30.1` | Explicit SQL schema migrations (`make migration-create`, `make migrate`) |

@@ -80,9 +80,19 @@ func handleError(c fiber.Ctx, err error) error {
 		slog.Error("HTTP request failed", "request_id", c.GetRespHeader("X-Request-Id"),
 			"error_type", apiError.Code, "status", status, "error", apperror.Diagnostic(err))
 	}
-	if !isAPI(c.Path()) {
+	// The listener can discard the request path when a chunked body crosses its limit.
+	transportOverflow := status == fiber.StatusRequestEntityTooLarge && c.Path() == "/"
+	if !isAPI(c.Path()) && !transportOverflow {
 		return c.Status(status).JSON(fiber.Map{"status": "error"})
 	}
+	if c.GetRespHeader("X-Request-Id") == "" {
+		id := c.Get("X-Request-Id")
+		if !requestIDPattern.MatchString(id) {
+			id = uuid.NewString()
+		}
+		c.Set("X-Request-Id", id)
+	}
+	c.Set("Cache-Control", "no-store")
 	return c.Status(status).JSON(fiber.Map{"error": fiber.Map{
 		"code": apiError.Code, "message": apiError.Message, "details": fiber.Map{},
 		"requestId": c.GetRespHeader("X-Request-Id"),
@@ -103,6 +113,8 @@ func standardError(status int) *apperror.Error {
 		return apperror.New(status, "METHOD_NOT_ALLOWED", "This method is not supported.")
 	case 409:
 		return apperror.New(status, "CONFLICT", "The request conflicts with current data.")
+	case 413:
+		return apperror.PayloadTooLarge
 	case 422:
 		return apperror.New(status, "VALIDATION_ERROR", "The request did not pass validation.")
 	case 503:

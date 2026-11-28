@@ -20,14 +20,23 @@ func run() (err error) {
 	if err != nil {
 		return err
 	}
-	app, err := bootstrap.New(settings)
+	signals, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	app, err := bootstrap.New(signals, settings)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, app.Database.Close()) }()
 
-	signals, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		app.RunMaintenance(signals)
+	}()
+	defer func() {
+		stop()
+		<-done
+	}()
 	return app.Server.Listen(settings.Address, fiber.ListenConfig{
 		GracefulContext:       signals,
 		ShutdownTimeout:       8 * time.Second,

@@ -8,9 +8,9 @@
 
 | Component | Current Status | Reality Check |
 | --- | --- | --- |
-| **Infrastructure, Compose & CI** | **Ready (Bootstrap + Path-Filtered CI)** | `compose.yaml`, `compose.dev.yaml`, `Makefile`, `scripts/smoke.sh`, and path-filtered GitHub Actions CI (`.github/workflows/ci.yml`: 3 clean jobs `CI / Web`, `CI / API`, `CI / AI` with path-filtered checks, including PostgreSQL-backed API race tests for API and workflow changes) configured. |
+| **Infrastructure, Compose & CI** | **Ready (Compose, MinIO and Path-Filtered CI)** | `compose.yaml`, `compose.dev.yaml`, `Makefile`, `scripts/smoke.sh`, and path-filtered GitHub Actions CI (`.github/workflows/ci.yml`: 3 clean jobs `CI / Web`, `CI / API`, `CI / AI` with path-filtered checks, including PostgreSQL-backed API race tests for API and workflow changes) configured. Compose builds MinIO from pinned upstream source and provisions the private local S3 bucket through the API. |
 | **`apps/web` (Next.js 16)** | **Phase 2 admin master data integrated** | Full UI prototype migrated to `apps/web` with App Router screens, Leaflet campus map, shadcn primitives, domain helpers (`src/lib/domain/`), and unit tests (`tests/*.test.ts`). Authentication, username settings, Admin Users, Audit Logs, and Master Data use the Go API. Live sessions synchronize across tabs, and admin searches debounce requests while keeping visible results during refresh. Public browsing uses labeled prototype data. Prototype-only operational screens are available to development guests after session resolution. |
-| **`apps/api` (Go / Fiber v3)** | **Phase 0–2 implemented** | Health and readiness, Goose schema, record numbers, audit, Google OAuth sessions, profiles, and administrator user management are available. Identity writes enforce origin and media type. PostgreSQL integration tests cover session expiry and the requirement for every user to have at least one role at commit. Master Data provides auditable admin writes and an active-only public reference endpoint. Embedded Swagger UI covers all 20 documented routes. `make check-api` validates the OpenAPI schema and examples, checks route parity and operation metadata, and exercises documentation serving. |
+| **`apps/api` (Go / Fiber v3)** | **Phase 0–3 implemented** | Health and readiness, Goose schema, record numbers, audit, Google OAuth sessions, profiles, and administrator user management are available. Identity writes enforce origin and media type. PostgreSQL integration tests cover session expiry and the requirement for every user to have at least one role at commit. Master Data provides auditable admin writes and an active-only public reference endpoint. Phase 3 adds staged media, orientation-preserving EXIF stripping, and expired image and session cleanup. Embedded Swagger UI covers all 22 documented operations. `make check-api` validates the OpenAPI schema and examples, checks route parity and operation metadata, and exercises documentation serving. |
 | **`apps/ai` (Python / FastAPI)** | **Implemented (Ticket Severity + Multi-Dept Recommendation)** | Pluggable Gemini Triage & Embedding Gateway (`contracts/ai-triage.v1.yaml` `v1.3.0`: `/v1/triage/rephrase`, `/v1/triage/analyze`, `/v1/triage/summarize-ticket` with deterministic 4-factor ticket-level severity per `BR-AI-013` and multi-department recommendation per `BR-AI-010`, `/v1/triage/embed-ticket`, `X-API-Key` auth, unit-length vectors) with `pytest` suite (`apps/ai/tests/`) and cross-domain evaluation demo (`apps/ai/evaluation/demo_cross_domain.py`). |
 | **Documentation & Contracts** | **Aligned to Freeze 1 + PR #2** | Root/scoped `AGENTS.md`, BRD, Business Rules (`BR-*`), Use Cases (`UC-*`), Architecture (including Dependency Registry), Data Model, Design System, Contracts (`api-v1.md`, `ai-triage.v1.yaml`, `ai-gateway.md`), ADRs, and Testing specs are synchronized. |
 
@@ -25,7 +25,7 @@
 | Admin Users & Audit Logs | Live API | Implemented | N/A | Applied in verification | Mock-provider and Web tests pass |
 | Master Data CRUD (`UC-ADM-002`..`004`) | Live admin screens validate forms before writes | Unchanged PATCH requests preserve timestamps and audit history | N/A | Applied in verification | Go unit, PostgreSQL integration, and Web tests cover validation and no-op edits |
 | Public Master Data | Typed API client available | Implemented | N/A | Applied in verification | Live HTTP and PostgreSQL tests pass |
-| Media Upload & EXIF Stripping (`BR-RPT-003`..`005`) | Prototype DataURL | Not Started | N/A | Not Started | Not Started |
+| Media Upload & EXIF Stripping (`BR-RPT-003`..`005`) | Typed upload and preview client available. Prototype uploader uses DataURLs. | Staged uploads, private previews, EXIF stripping, and 24-hour expiry | N/A | `report_images` applied | PostgreSQL, live MinIO, and Web proxy tests pass. See [ADR 0004](decisions/0004-media-storage-and-exif-stripping.md). |
 | Report Draft / Submit / Edit / Cancel (`UC-RPT-001`..`005`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |
 | AI Triage, Embeddings & Ticket Synthesis (`UC-AI-001`..`003`) | Prototype Mock | Not Started | **Done (PR #2)** | Not Started | Not Started |
 | Reviewer Triage, Optimistic Lock & Dept Edits (`UC-REV-001`..`006`) | Prototype Mock | Not Started | N/A | Not Started | Not Started |
@@ -44,28 +44,22 @@
 
 1. **Browser-only persistence & mock AI in `apps/web`:** `PrototypeStore.tsx`, `prototypeDatabase.ts`, `DemoSimulationBar.tsx`, and `mockAiService.ts` must be replaced incrementally via a typed HTTP API client in `apps/web/src/lib/api/` (tracked under planned ADR `0006`).
 2. **Live Google OAuth:** Configure the public callback and credentials using [ADR 0003](decisions/0003-identity-session-and-auth-provider.md). The live admin overview shows Audit Logs. Analytics and retention controls remain in the development demo. The live master data client is available for the future migration of public filters and map pickers.
-3. **EXIF stripping is not yet implemented:** `apps/web` stores uploaded images as local DataURLs in the prototype. Server-side validation and EXIF stripping must be enforced in `apps/api` before storing or serving any image.
+3. **Report image UI migration:** Prototype screens store images as local DataURLs. Phase 4 will switch those screens to the typed client alongside live Report persistence and wire the Report visibility resolver.
 
 ---
 
 ## 4. Recommended Implementation Roadmap (Vertical Slices)
 
 1. **Phase 0–1 — Platform and Identity:** Implemented in the API. See [ADR 0003](decisions/0003-identity-session-and-auth-provider.md).
-   - Expired session row cleanup is deferred to Phase 2 retention work.
-2. **Phase 2 — Master Data, Media Pipeline & Report Lifecycle:**
-   - Categories, departments, and campus locations support live administration and active-only public reads. Operational prototype screens still use their seed references.
-   - Implement `media` adapter with magic-byte validation, ≤10 MB limit, and EXIF stripping (planned ADR `0004`).
-   - Implement `reports` module (`DRAFT`, `PENDING_REVIEW`, `CANCELLED`, version bumping, 30-day retention job).
-3. **Phase 3 — Go API ↔ AI Gateway Triage & Matching Integration:**
-   - `apps/ai` endpoints (`contracts/ai-triage.v1.yaml`) and `pytest` suite are implemented (PR #2).
-   - Wire `apps/api` to `/v1/triage/*` with `X-API-Key`, backend-computed cosine similarity + keyword duplicate matching against Active Tickets, async/bounded-timeout AI triage, fallback logging, and Ticket re-evaluation (`UC-AI-001`..`003`; planned ADR `0005`).
-4. **Phase 4 — Reviewer, Ticket Operations & Multi-Department Resolution:**
-   - Implement `review` and `tickets` modules: optimistic lock `409`, Separation of Duties, multi-department assignments, per-department completion, Auto-`RESOLVED`, Public Feed/Map/Detail, and `Mark Affected`.
-5. **Phase 5 — Threads, Feedback, Email & Analytics:**
-   - Implement `threads` (strictly private), `feedback` (`RESOLVED` only), `notifications` (Major Event Emails to Reporters only), and `analytics` (System + Department).
-6. **Phase 6 — Frontend Integration & E2E Verification:**
-   - Migrate `apps/web` screens from `PrototypeStore` to live `/api/v1/*` endpoints (planned ADR `0006`).
-   - Run full unit, integration, contract, Playwright E2E, `make check`, `make smoke`, and `make smoke-outage`.
+2. **Phase 2 — Master Data:** Categories, departments, and campus locations support live administration and active-only public reads. Operational prototype screens still use seed references.
+3. **Phase 3 — Media Pipeline:** Implemented staged PNG/JPEG uploads, server-side EXIF stripping, private MinIO-backed storage, typed Web client, and hourly cleanup for expired staged images and sessions. See [ADR 0004](decisions/0004-media-storage-and-exif-stripping.md).
+4. **Phase 4 — Report Lifecycle:** Implement Draft, Submit, Edit, and Cancel, version increments, and 30-day retention. Add the image foreign key, wire Report visibility, and switch the uploader to live persistence.
+5. **Phase 5 — AI Gateway Triage & Matching Integration:**
+   - `apps/ai` endpoints (`contracts/ai-triage.v1.yaml`) and the `pytest` suite are implemented.
+   - Wire `apps/api` to `/v1/triage/*` with `X-API-Key`, backend-computed cosine similarity and keyword matching against Active Tickets, bounded AI triage, fallback logging, and Ticket re-evaluation (`UC-AI-001`..`003`, planned ADR `0005`).
+6. **Phase 6 — Reviewer, Ticket Operations & Multi-Department Resolution:** Implement reviewer and ticket modules for optimistic locking, Separation of Duties, multi-department assignment and completion, auto-resolution, the public feed and map, and Mark Affected.
+7. **Phase 7 — Threads, Feedback, Email & Analytics:** Implement private threads, feedback on resolved Tickets, Major Event Email, and system and department analytics.
+8. **Phase 8 — Frontend Integration & E2E Verification:** Migrate the remaining screens to live `/api/v1/*` endpoints (planned ADR `0006`). Run unit, integration, contract, Playwright E2E, `make check`, `make smoke`, and `make smoke-outage`.
 
 ---
 
